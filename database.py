@@ -69,6 +69,8 @@ def init_db():
             type          TEXT,
             entry_price   REAL,
             exit_price    REAL,
+            sl_price      REAL,
+            tp_price      REAL,
             pnl_pct       REAL,
             pnl_usd       REAL,
             exit_reason   TEXT,
@@ -114,6 +116,15 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_alerts_ts        ON alerts(timestamp);
     """)
     conn.commit()
+
+    # Migração: adiciona colunas novas em tabelas já existentes
+    for col, coltype in [("sl_price", "REAL"), ("tp_price", "REAL")]:
+        try:
+            conn.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {coltype}")
+            conn.commit()
+        except Exception:
+            pass  # coluna já existe
+
     conn.close()
 
 
@@ -183,14 +194,16 @@ def insert_paper_trade(trade: dict):
     conn.execute("""
         INSERT INTO paper_trades (
             timestamp, symbol, type, entry_price, exit_price,
-            pnl_pct, pnl_usd, exit_reason, capital_after
-        ) VALUES (?,?,?,?,?,?,?,?,?)
+            sl_price, tp_price, pnl_pct, pnl_usd, exit_reason, capital_after
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
     """, (
         trade["timestamp"],
         trade["symbol"],
         trade["type"],
         trade["entry_price"],
         trade["exit_price"],
+        trade.get("sl_price"),
+        trade.get("tp_price"),
         round(trade["pnl_pct"], 4),
         round(trade["pnl_usd"], 2),
         trade["exit_reason"],

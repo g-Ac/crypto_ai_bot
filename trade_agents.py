@@ -16,7 +16,10 @@ from datetime import datetime, timedelta
 import database as db
 from dotenv import load_dotenv
 from anthropic import Anthropic
-from config import STOP_LOSS_MAP, STOP_LOSS_PCT, AGENT_INITIAL_CAPITAL, COOLDOWN_MINUTES
+from config import (
+    STOP_LOSS_MAP, STOP_LOSS_PCT, AGENT_INITIAL_CAPITAL, COOLDOWN_MINUTES,
+    ATR_SL_MULTIPLIER, ATR_SL_FLOOR_PCT,
+)
 
 load_dotenv()
 
@@ -164,7 +167,7 @@ def get_atr(symbol, period=14):
     try:
         resp = requests.get(
             f"https://api.binance.com/api/v3/klines"
-            f"?symbol={symbol}&interval=5m&limit={period + 5}",
+            f"?symbol={symbol}&interval=1h&limit={period + 5}",
             timeout=10,
         )
         if resp.status_code != 200:
@@ -222,10 +225,11 @@ def agent_risk(signal_data, analyst_result):
     sl_pct = STOP_LOSS_MAP.get(symbol, STOP_LOSS_PCT)
 
     if atr:
-        # ATR-based SL: 1.5x ATR
-        atr_sl_pct = (atr * 1.5 / price) * 100
-        # Use the larger of config SL or ATR SL (more conservative)
-        sl_pct = max(sl_pct, atr_sl_pct)
+        # ATR-based SL (1h): ATR_SL_MULTIPLIER x ATR, minimo de ATR_SL_FLOOR_PCT
+        atr_sl_pct = (atr * ATR_SL_MULTIPLIER / price) * 100
+        sl_pct = max(atr_sl_pct, ATR_SL_FLOOR_PCT)
+    else:
+        sl_pct = max(sl_pct, ATR_SL_FLOOR_PCT)
 
     # SL and TP prices
     if direction == "BUY":

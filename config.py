@@ -46,9 +46,15 @@ STOP_LOSS_MAP = {
 # Paper Trading
 PAPER_INITIAL_CAPITAL = 10000
 PAPER_MAX_POSITIONS = 3          # maximo de posicoes abertas simultaneas
+PAPER_REWARD_RATIO = 2.0         # TP = SL_distance * reward_ratio
 
 # Cooldown apos stop_loss
 COOLDOWN_MINUTES = 30            # minutos de espera antes de reabrir posicao no mesmo ativo
+
+# SL dinamico baseado em ATR
+ATR_SL_MULTIPLIER = 1.5          # SL = ATR * 1.5
+ATR_TP_MULTIPLIER = 2.0          # TP = ATR * 2.0
+ATR_SL_FLOOR_PCT = 2.0           # SL minimo de 2% independente do ATR
 
 # Multi-Agent Trading
 AGENT_INITIAL_CAPITAL = 10000
