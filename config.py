@@ -59,6 +59,16 @@ ATR_SL_FLOOR_PCT = 2.0           # SL minimo de 2% independente do ATR
 # Multi-Agent Trading
 AGENT_INITIAL_CAPITAL = 10000
 
+# Agent V2 (Claude como decisor principal)
+AGENT_MODEL = "claude-haiku-4-5-20251001"
+AGENT_MAX_TOKENS = 1024
+AGENT_TEMPERATURE = 0.3
+AGENT_RISK_PER_TRADE_PCT = 2.0      # % do capital por trade (baseado em risco no SL)
+AGENT_MAX_RISK_PER_TRADE_PCT = 5.0  # teto absoluto de exposicao
+AGENT_MIN_CONFIDENCE = 60           # confianca minima para abrir posicao (0-100)
+AGENT_MIN_RR = 1.5                  # R/R minimo aceito (tp_pct / sl_pct)
+AGENT_POSITION_TIMEOUT_MIN = 240    # fecha posicao automaticamente apos X minutos
+
 # Pump Trading capital
 PUMP_INITIAL_CAPITAL = 5000
 
