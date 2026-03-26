@@ -1,119 +1,72 @@
-# Opensquad
+# Crypto AI Bot
 
-Crie squads de agentes de IA que trabalham juntos — direto do seu IDE.
+Bot de trading automatico de criptomoedas rodando em Raspberry Pi 4.
 
-## Como Usar
+## Sistemas de Trading
 
-Abra esta pasta no seu IDE e digite:
+| Sistema | Descricao |
+|---|---|
+| **Paper Trader** | Algoritmico puro, sem IA. Testa a estrategia tecnica. |
+| **Agent Trader** | Claude Haiku valida cada sinal antes de executar. |
+| **Pump Scanner** | Detecta anomalias de volume e price action em 50 moedas. |
 
-```
-/opensquad
-```
+## Acesso
 
-Isso abre o menu principal. De lá você pode criar squads, executá-los e mais.
+| Recurso | Endereco |
+|---|---|
+| Dashboard Web | http://192.168.0.24:5000 |
+| SSH | `ssh pi@192.168.0.24` |
 
-Você também pode ser direto — descreva o que quer em linguagem natural:
+## Comandos Telegram
 
-```
-/opensquad crie um squad para escrever posts no LinkedIn sobre IA
-/opensquad execute o squad meu-squad
-```
+| Comando | Acao |
+|---|---|
+| `/status` | Resumo geral dos 3 sistemas |
+| `/posicoes` | Posicoes abertas no momento |
+| `/pausar` | Para de abrir novas posicoes |
+| `/retomar` | Volta a operar normalmente |
+| `/relatorio` | Relatorio do dia |
+| `/ajuda` | Lista todos os comandos |
 
-## Criar um Squad
-
-Digite `/opensquad` e escolha "Criar squad" no menu, ou seja direto:
-
-```
-/opensquad crie um squad para [o que você precisa]
-```
-
-O Arquiteto fará algumas perguntas, projetará o squad e configurará tudo automaticamente.
-
-## Executar um Squad
-
-Digite `/opensquad` e escolha "Executar squad" no menu, ou seja direto:
-
-```
-/opensquad execute o squad <nome-do-squad>
-```
-
-O squad executa automaticamente, pausando apenas nos checkpoints de decisão.
-
-## Escritório Virtual
-
-O Escritório Virtual é uma interface visual 2D que mostra seus agentes trabalhando em tempo real.
-
-**Passo 1 — Gere o dashboard** (no seu IDE):
-
-```
-/opensquad dashboard
-```
-
-**Passo 2 — Sirva localmente** (no terminal):
+## Deploy
 
 ```bash
-npx serve squads/<nome-do-squad>/dashboard
+# Subir mudancas para o Pi
+bash deploy.sh
 ```
 
-**Passo 3 —** Abra `http://localhost:3000` no seu navegador.
+O script commita, faz push para o GitHub, puxa no Pi e reinicia o servico automaticamente.
 
----
-
-# Opensquad (English)
-
-Create AI squads that work together — right from your IDE.
-
-## How to Use
-
-Open this folder in your IDE and type:
+## Estrutura dos Arquivos
 
 ```
-/opensquad
+crypto_ai_bot/
+├── main.py               # Loop principal
+├── supervisor.py         # Gerencia os 3 processos
+├── config.py             # Todos os parametros configuráveis
+├── strategy.py           # Logica de sinais tecnicos
+├── paper_trader.py       # Executor paper (algoritmico)
+├── trade_agents.py       # Executor agent (Claude Haiku)
+├── pump_scanner.py       # Scanner de pumps
+├── pump_trader.py        # Executor pump
+├── dashboard_server.py   # Dashboard Flask
+├── telegram_commands.py  # Comandos bidirecionais
+├── daily_report.py       # Relatorio diario + circuit breaker
+├── database.py           # SQLite (bot.db)
+├── templates/index.html  # Interface do dashboard
+├── deploy.sh             # Script de deploy
+└── GUIA.md               # Documentacao completa
 ```
 
-This opens the main menu. From there you can create squads, run them, and more.
-
-You can also be direct — describe what you want in plain language:
-
-```
-/opensquad create a squad for writing LinkedIn posts about AI
-/opensquad run my-squad
-```
-
-## Create a Squad
-
-Type `/opensquad` and choose "Create squad" from the menu, or be direct:
-
-```
-/opensquad create a squad for [what you need]
-```
-
-The Architect will ask a few questions, design the squad, and set everything up automatically.
-
-## Run a Squad
-
-Type `/opensquad` and choose "Run squad" from the menu, or be direct:
-
-```
-/opensquad run the <squad-name> squad
-```
-
-The squad runs automatically, pausing only at decision checkpoints.
-
-## Virtual Office
-
-The Virtual Office is a 2D visual interface that shows your agents working in real time.
-
-**Step 1 — Generate the dashboard** (in your IDE):
-
-```
-/opensquad dashboard
-```
-
-**Step 2 — Serve it locally** (in terminal):
+## Gerenciamento no Pi
 
 ```bash
-npx serve squads/<squad-name>/dashboard
+sudo systemctl status cryptobot    # Ver status
+sudo systemctl restart cryptobot   # Reiniciar
+sudo systemctl stop cryptobot      # Parar
+journalctl -u cryptobot -f         # Ver logs em tempo real
 ```
 
-**Step 3 —** Open `http://localhost:3000` in your browser.
+## Documentacao Completa
+
+Ver [GUIA.md](GUIA.md) para documentacao detalhada de todos os modulos, indicadores, config e deploy.
