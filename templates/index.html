@@ -91,6 +91,79 @@
     {% endfor %}
   </div>
 
+  <!-- RASPBERRY PI MONITOR -->
+  {% if pi.available %}
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Raspberry Pi</span>
+      <span class="text-muted" style="font-weight:400;font-size:.85rem;">uptime: {{ pi.uptime }}</span>
+    </div>
+    <div class="card-body pb-2">
+      <div class="row g-4">
+
+        <!-- CPU -->
+        <div class="col-6 col-md-3">
+          <div class="d-flex justify-content-between small text-muted mb-1">
+            <span>CPU</span>
+            <strong class="text-white">{{ pi.cpu_pct }}%</strong>
+          </div>
+          <div class="progress" style="height:8px;background:#21262d;">
+            <div class="progress-bar {% if pi.cpu_pct > 80 %}bg-danger{% elif pi.cpu_pct > 50 %}bg-warning{% else %}bg-success{% endif %}"
+                 style="width:{{ pi.cpu_pct }}%;transition:width .4s ease;"></div>
+          </div>
+        </div>
+
+        <!-- Temperatura -->
+        <div class="col-6 col-md-3">
+          <div class="d-flex justify-content-between small text-muted mb-1">
+            <span>Temperatura</span>
+            {% if pi.temp_c %}
+            <strong class="{% if pi.temp_c > 75 %}ret-negative{% elif pi.temp_c > 60 %}text-warning{% else %}ret-positive{% endif %}">
+              {{ pi.temp_c }}°C
+            </strong>
+            {% else %}
+            <strong class="text-muted">N/D</strong>
+            {% endif %}
+          </div>
+          <div class="progress" style="height:8px;background:#21262d;">
+            {% if pi.temp_c %}
+            <div class="progress-bar {% if pi.temp_c > 75 %}bg-danger{% elif pi.temp_c > 60 %}bg-warning{% else %}bg-success{% endif %}"
+                 style="width:{{ [pi.temp_c|int, 100]|min }}%;transition:width .4s ease;"></div>
+            {% else %}
+            <div class="progress-bar bg-secondary" style="width:0%"></div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- RAM -->
+        <div class="col-6 col-md-3">
+          <div class="d-flex justify-content-between small text-muted mb-1">
+            <span>RAM <span style="font-size:.75rem;">({{ pi.mem_used_mb }}MB / {{ pi.mem_total_mb }}MB)</span></span>
+            <strong class="text-white">{{ pi.mem_pct }}%</strong>
+          </div>
+          <div class="progress" style="height:8px;background:#21262d;">
+            <div class="progress-bar {% if pi.mem_pct > 80 %}bg-danger{% elif pi.mem_pct > 60 %}bg-warning{% else %}bg-success{% endif %}"
+                 style="width:{{ pi.mem_pct }}%;transition:width .4s ease;"></div>
+          </div>
+        </div>
+
+        <!-- Disco -->
+        <div class="col-6 col-md-3">
+          <div class="d-flex justify-content-between small text-muted mb-1">
+            <span>Disco <span style="font-size:.75rem;">({{ pi.disk_used_gb }}GB / {{ pi.disk_total_gb }}GB)</span></span>
+            <strong class="text-white">{{ pi.disk_pct }}%</strong>
+          </div>
+          <div class="progress" style="height:8px;background:#21262d;">
+            <div class="progress-bar {% if pi.disk_pct > 85 %}bg-danger{% elif pi.disk_pct > 70 %}bg-warning{% else %}bg-success{% endif %}"
+                 style="width:{{ pi.disk_pct }}%;transition:width .4s ease;"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- OPEN POSITIONS -->
   <div class="card mb-3">
     <div class="card-header d-flex justify-content-between">
