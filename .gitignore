@@ -1,0 +1,53 @@
+# === SEGREDOS (NUNCA commitar) ===
+.env
+
+# === BANCO DE DADOS (runtime) ===
+bot.db
+bot.db-shm
+bot.db-wal
+
+# === ESTADO DOS SISTEMAS (runtime) ===
+paper_state.json
+agent_state.json
+pump_positions.json
+bot_control.json
+pump_cooldown.json
+last_alert.json
+relevant_opportunities.json
+technical_analysis.json
+
+# === LOGS E DADOS HISTORICOS ===
+logs/
+*.log
+log.csv
+*.csv
+
+# === PYTHON ===
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+.venv-1/
+venv/
+
+# === NODE / PROJETOS NAO RELACIONADOS ===
+node_modules/
+package-lock.json
+dashboard/
+_opensquad/
+skills/
+squads/
+
+# === EDITOR / FERRAMENTAS ===
+.vscode/
+.agent/
+.claude/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === TEMPORARIOS ===
+*.tmp
+*.bak
