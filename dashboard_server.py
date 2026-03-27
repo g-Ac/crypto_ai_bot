@@ -10,7 +10,6 @@ Rotas:
 """
 import os
 import json
-import time
 import requests
 from datetime import datetime
 from flask import Flask, render_template, redirect, url_for, jsonify
@@ -21,55 +20,6 @@ from config import PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CA
 
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, template_folder=os.path.join(BOT_DIR, "templates"))
-
-
-def _get_pi_stats():
-    """Coleta metricas do hardware: CPU, RAM, disco, temperatura, uptime."""
-    try:
-        import psutil
-
-        cpu_pct = psutil.cpu_percent(interval=0.5)
-        mem     = psutil.virtual_memory()
-        disk    = psutil.disk_usage("/")
-
-        # Temperatura — leitura direta do kernel (Raspberry Pi)
-        temp = None
-        try:
-            with open("/sys/class/thermal/thermal_zone0/temp") as f:
-                temp = round(int(f.read().strip()) / 1000.0, 1)
-        except Exception:
-            try:
-                sensors = psutil.sensors_temperatures()
-                for key in ("cpu_thermal", "coretemp", "acpitz"):
-                    if sensors.get(key):
-                        temp = round(sensors[key][0].current, 1)
-                        break
-            except Exception:
-                pass
-
-        # Uptime
-        uptime_sec = time.time() - psutil.boot_time()
-        days    = int(uptime_sec // 86400)
-        hours   = int((uptime_sec % 86400) // 3600)
-        minutes = int((uptime_sec % 3600) // 60)
-        uptime_str = (f"{days}d " if days else "") + f"{hours}h {minutes}m"
-
-        return {
-            "available":    True,
-            "cpu_pct":      round(cpu_pct, 1),
-            "mem_pct":      round(mem.percent, 1),
-            "mem_used_mb":  round(mem.used  / 1024 / 1024),
-            "mem_total_mb": round(mem.total / 1024 / 1024),
-            "disk_pct":     round(disk.percent, 1),
-            "disk_used_gb": round(disk.used  / 1024 ** 3, 1),
-            "disk_total_gb":round(disk.total / 1024 ** 3, 1),
-            "temp_c":       temp,
-            "uptime":       uptime_str,
-        }
-    except ImportError:
-        return {"available": False, "error": "psutil nao instalado"}
-    except Exception as e:
-        return {"available": False, "error": str(e)}
 
 
 def _get_live_positions():
@@ -190,7 +140,6 @@ def _build_status():
     return {
         "paused": paused,
         "last_update": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "pi": _get_pi_stats(),
         "capital": {
             "paper": {"value": round(paper_cap, 2), "ret": _ret(paper_cap, PAPER_INITIAL_CAPITAL), "cb": cb_paper},
             "agent": {"value": round(agent_cap, 2), "ret": _ret(agent_cap, AGENT_INITIAL_CAPITAL), "cb": cb_agent},

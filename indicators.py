@@ -19,8 +19,4 @@ def add_indicators(df):
     df["body_ratio"] = (df["close"] - df["open"]) / candle_range.replace(0, float("nan"))
     df["body_ratio"] = df["body_ratio"].fillna(0)
 
-    df["atr14"] = ta.volatility.AverageTrueRange(
-        high=df["high"], low=df["low"], close=df["close"], window=14
-    ).average_true_range()
-
     return df

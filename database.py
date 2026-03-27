@@ -304,18 +304,6 @@ def get_cumulative_pnl(table: str, days: int = 30) -> list:
     return rows
 
 
-def get_trade_stats(table: str, limit: int = 20) -> list:
-    """Retorna trades recentes com campos resumidos para contexto do Agent Brain."""
-    conn = _get_conn()
-    rows = [dict(r) for r in conn.execute(
-        f"SELECT symbol, type, pnl_pct, pnl_usd, exit_reason FROM {table} "
-        f"ORDER BY id DESC LIMIT ?",
-        (limit,)
-    ).fetchall()]
-    conn.close()
-    return rows
-
-
 # ── SELF-TEST ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

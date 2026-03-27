@@ -13,6 +13,7 @@ pump_positions.json
 bot_control.json
 pump_cooldown.json
 last_alert.json
+last_report_date.txt
 relevant_opportunities.json
 technical_analysis.json
 
