@@ -304,6 +304,95 @@ def get_cumulative_pnl(table: str, days: int = 30) -> list:
     return rows
 
 
+def get_all_time_stats(table: str, days: int = 30) -> dict:
+    """Metricas avancadas: win rate, profit factor, drawdown, melhor/pior trade."""
+    from datetime import timedelta
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    conn = _get_conn()
+    rows = [dict(r) for r in conn.execute(
+        f"SELECT pnl_pct, pnl_usd, capital_after FROM {table} "
+        f"WHERE timestamp >= ? AND pnl_pct IS NOT NULL AND exit_reason != 'open' "
+        f"ORDER BY id",
+        (cutoff,)
+    ).fetchall()]
+    conn.close()
+
+    if not rows:
+        return {
+            "total_trades": 0, "win_rate": 0, "avg_pnl_pct": 0,
+            "largest_win": 0, "largest_loss": 0, "profit_factor": 0,
+            "max_drawdown_pct": 0,
+        }
+
+    wins = [r for r in rows if float(r["pnl_pct"] or 0) > 0]
+    losses = [r for r in rows if float(r["pnl_pct"] or 0) < 0]
+    total = len(rows)
+    win_rate = (len(wins) / total * 100) if total > 0 else 0
+
+    sum_wins = sum(float(r["pnl_usd"] or 0) for r in wins)
+    sum_losses = abs(sum(float(r["pnl_usd"] or 0) for r in losses))
+    profit_factor = (sum_wins / sum_losses) if sum_losses > 0 else (99.0 if sum_wins > 0 else 0)
+
+    all_pnl_pct = [float(r["pnl_pct"] or 0) for r in rows]
+    largest_win = max(all_pnl_pct) if all_pnl_pct else 0
+    largest_loss = min(all_pnl_pct) if all_pnl_pct else 0
+    avg_pnl = sum(all_pnl_pct) / len(all_pnl_pct) if all_pnl_pct else 0
+
+    # Max drawdown from capital_after series
+    max_drawdown_pct = 0
+    capitals = [float(r["capital_after"] or 0) for r in rows if r["capital_after"]]
+    if capitals:
+        peak = capitals[0]
+        for c in capitals:
+            if c > peak:
+                peak = c
+            dd = ((peak - c) / peak * 100) if peak > 0 else 0
+            if dd > max_drawdown_pct:
+                max_drawdown_pct = dd
+
+    return {
+        "total_trades": total,
+        "win_rate": round(win_rate, 1),
+        "avg_pnl_pct": round(avg_pnl, 2),
+        "largest_win": round(largest_win, 2),
+        "largest_loss": round(largest_loss, 2),
+        "profit_factor": round(profit_factor, 2),
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
+    }
+
+
+def get_stats_by_symbol(table: str, days: int = 30) -> list:
+    """Performance agrupada por simbolo."""
+    from datetime import timedelta
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    conn = _get_conn()
+    rows = [dict(r) for r in conn.execute(
+        f"SELECT symbol, COUNT(*) as trades, "
+        f"SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins, "
+        f"SUM(CASE WHEN pnl_pct < 0 THEN 1 ELSE 0 END) as losses, "
+        f"ROUND(SUM(pnl_usd), 2) as total_pnl, "
+        f"ROUND(AVG(pnl_pct), 2) as avg_pnl_pct "
+        f"FROM {table} WHERE timestamp >= ? AND pnl_pct IS NOT NULL AND exit_reason != 'open' "
+        f"GROUP BY symbol ORDER BY total_pnl DESC",
+        (cutoff,)
+    ).fetchall()]
+    conn.close()
+    return rows
+
+
+def get_trades_range(table: str, days: int = 7, limit: int = 100) -> list:
+    """Trades dos ultimos N dias, limitado a N registros."""
+    from datetime import timedelta
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    conn = _get_conn()
+    rows = [dict(r) for r in conn.execute(
+        f"SELECT * FROM {table} WHERE timestamp >= ? ORDER BY id DESC LIMIT ?",
+        (cutoff, limit)
+    ).fetchall()]
+    conn.close()
+    return rows
+
+
 # ── SELF-TEST ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

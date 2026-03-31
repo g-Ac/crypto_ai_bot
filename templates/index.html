@@ -3,221 +3,608 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Crypto AI Bot — Dashboard</title>
+  <title>Crypto AI Bot -- Dashboard</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
-    body { background: #0d1117; color: #e6edf3; }
-    .card { background: #161b22; border: 1px solid #30363d; }
-    .card-header { background: #21262d; border-bottom: 1px solid #30363d; font-weight: 600; }
-    .table { color: #e6edf3; }
-    .table-dark { --bs-table-bg: #161b22; --bs-table-striped-bg: #1c2128; border-color: #30363d; }
-    .badge-running { background: #238636; }
-    .badge-paused  { background: #da3633; }
-    .capital-value { font-size: 1.6rem; font-weight: 700; }
-    .ret-positive  { color: #3fb950; }
-    .ret-negative  { color: #f85149; }
-    .ret-zero      { color: #8b949e; }
-    .cb-active     { color: #f85149; font-size: 0.75rem; }
-    .nav-tabs .nav-link { color: #8b949e; border-color: #30363d; }
-    .nav-tabs .nav-link.active { color: #e6edf3; background: #21262d; border-color: #30363d #30363d #21262d; }
-    .tab-content { background: #161b22; border: 1px solid #30363d; border-top: none; padding: 1rem; border-radius: 0 0 0.375rem 0.375rem; }
+    :root {
+      --bg-primary: #0d1117;
+      --bg-card: #161b22;
+      --bg-header: #21262d;
+      --border: #30363d;
+      --text-primary: #e6edf3;
+      --text-muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+      --blue: #58a6ff;
+      --orange: #f78166;
+      --purple: #bc8cff;
+    }
+    * { box-sizing: border-box; }
+    body { background: var(--bg-primary); color: var(--text-primary); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+
+    /* Header / Navbar */
+    .top-navbar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.5rem 1.25rem;
+    }
+    .brand-title { font-size: 1.15rem; font-weight: 700; color: #fff; letter-spacing: 0.3px; }
+
+    /* Health badges */
+    .health-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 600;
+      background: #1c2128; border: 1px solid var(--border); color: var(--text-muted);
+    }
+    .health-badge .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+    .health-ok .dot   { background: var(--green); }
+    .health-warn .dot  { background: var(--yellow); }
+    .health-crit .dot  { background: var(--red); }
+    .health-ok   { color: var(--green); }
+    .health-warn { color: var(--yellow); }
+    .health-crit { color: var(--red); }
+
+    /* Status badges */
+    .badge-running { background: #238636; color: #fff; }
+    .badge-paused  { background: #da3633; color: #fff; }
+
+    /* Cards */
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; }
+    .card-header {
+      background: var(--bg-header); border-bottom: 1px solid var(--border);
+      font-weight: 600; font-size: 0.85rem; padding: 0.6rem 1rem;
+    }
+    .card-body { padding: 1rem; }
+
+    /* Capital cards */
+    .capital-value { font-size: 1.5rem; font-weight: 700; font-family: 'Courier New', monospace; }
+    .ret-positive { color: var(--green); }
+    .ret-negative { color: var(--red); }
+    .ret-zero     { color: var(--text-muted); }
+    .cb-warning   { color: var(--red); font-size: 0.72rem; font-weight: 600; }
+
+    /* Metric mini-cards */
+    .metric-card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.75rem 1rem; text-align: center;
+    }
+    .metric-card .metric-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .metric-card .metric-value { font-size: 1.25rem; font-weight: 700; font-family: 'Courier New', monospace; }
+
+    /* Tables */
+    .table { color: var(--text-primary); font-size: 0.82rem; }
+    .table-dark {
+      --bs-table-bg: var(--bg-card);
+      --bs-table-striped-bg: #1c2128;
+      --bs-table-hover-bg: #1f2937;
+      border-color: var(--border);
+    }
+    .table thead th {
+      background: var(--bg-header); border-bottom: 2px solid var(--border);
+      font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.4px;
+      color: var(--text-muted); white-space: nowrap;
+    }
+    .table td { vertical-align: middle; border-color: var(--border); }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: var(--text-primary); }
+    th.sortable::after { content: ' \2195'; font-size: 0.65rem; opacity: 0.5; }
+
+    /* Tabs */
+    .nav-tabs { border-bottom: 1px solid var(--border); }
+    .nav-tabs .nav-link {
+      color: var(--text-muted); border: 1px solid transparent;
+      padding: 0.45rem 0.9rem; font-size: 0.82rem; font-weight: 500;
+    }
+    .nav-tabs .nav-link:hover { color: var(--text-primary); border-color: transparent; }
+    .nav-tabs .nav-link.active {
+      color: var(--text-primary); background: var(--bg-card);
+      border-color: var(--border) var(--border) var(--bg-card);
+    }
+    .tab-content {
+      background: var(--bg-card); border: 1px solid var(--border); border-top: none;
+      padding: 0.75rem; border-radius: 0 0 6px 6px;
+    }
+
+    /* Period selector */
+    .period-btn {
+      padding: 2px 10px; font-size: 0.72rem; border-radius: 4px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+    }
+    .period-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .period-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+    /* Confidence badges */
+    .conf-high   { background: #238636; color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; }
+    .conf-med    { background: #9e6a03; color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; }
+    .conf-low    { background: #da3633; color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; }
+
+    /* Chart */
     .chart-container { position: relative; height: 280px; }
-    .refresh-bar { font-size: 0.8rem; color: #8b949e; }
+
+    /* Logs terminal */
+    .log-terminal {
+      background: #010409; border: 1px solid var(--border); border-radius: 4px;
+      padding: 0.6rem 0.8rem; max-height: 280px; overflow-y: auto;
+      font-family: 'Courier New', Consolas, monospace; font-size: 0.7rem;
+      line-height: 1.5; color: var(--green);
+    }
+    .log-terminal::-webkit-scrollbar { width: 6px; }
+    .log-terminal::-webkit-scrollbar-track { background: #010409; }
+    .log-terminal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Misc */
+    .refresh-bar { font-size: 0.75rem; color: var(--text-muted); }
+    .text-mono { font-family: 'Courier New', monospace; }
+    .side-long  { color: var(--green); font-weight: 600; }
+    .side-short { color: var(--red); font-weight: 600; }
+    .tp1-ok { background: var(--green); color: #fff; font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+    .collapse-btn {
+      background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+      font-size: 0.72rem; padding: 2px 8px; border-radius: 3px; cursor: pointer;
+    }
+    .collapse-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
+    /* Loading spinner for AJAX */
+    .ajax-loading { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.8rem; }
   </style>
 </head>
 <body>
 
-<!-- HEADER -->
-<nav class="navbar px-3 py-2" style="background:#161b22; border-bottom:1px solid #30363d;">
-  <span class="navbar-brand fw-bold text-white mb-0">Crypto AI Bot</span>
-  <div class="d-flex align-items-center gap-3">
+<!-- ============================================================ -->
+<!-- SECTION 1: HEADER BAR                                        -->
+<!-- ============================================================ -->
+<nav class="top-navbar d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <!-- Left: Brand -->
+  <span class="brand-title">Crypto AI Bot</span>
+
+  <!-- Center: Health indicators -->
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    {% if health is defined and health %}
+      {% set cpu = health.cpu_pct|default(0)|float %}
+      {% set ram = health.ram_pct|default(0)|float %}
+      {% set disk = health.disk_pct|default(0)|float %}
+      {% set temp = health.temp_c|default(0)|float %}
+
+      <span class="health-badge {% if cpu >= 90 %}health-crit{% elif cpu >= 70 %}health-warn{% else %}health-ok{% endif %}">
+        <span class="dot"></span> CPU {{ "%.0f"|format(cpu) }}%
+      </span>
+      <span class="health-badge {% if ram >= 90 %}health-crit{% elif ram >= 80 %}health-warn{% else %}health-ok{% endif %}">
+        <span class="dot"></span> RAM {{ "%.0f"|format(ram) }}%
+      </span>
+      <span class="health-badge {% if disk >= 90 %}health-crit{% elif disk >= 80 %}health-warn{% else %}health-ok{% endif %}">
+        <span class="dot"></span> Disco {{ "%.0f"|format(disk) }}%
+      </span>
+      <span class="health-badge {% if temp >= 75 %}health-crit{% elif temp >= 65 %}health-warn{% else %}health-ok{% endif %}">
+        <span class="dot"></span> {{ "%.0f"|format(temp) }} C
+      </span>
+      {% if health.uptime is defined and health.uptime %}
+        <span class="health-badge" style="color:var(--text-muted);">Uptime: {{ health.uptime }}</span>
+      {% endif %}
+    {% else %}
+      <span class="health-badge" style="color:var(--text-muted);">Hardware: sem dados</span>
+    {% endif %}
+  </div>
+
+  <!-- Right: Status + controls -->
+  <div class="d-flex align-items-center gap-2">
     {% if paused %}
-      <span class="badge badge-paused px-3 py-2">&#9679; PAUSADO</span>
+      <span class="badge badge-paused px-2 py-1" style="font-size:0.78rem;">PAUSADO</span>
       <form method="post" action="/resume" class="mb-0">
-        <button class="btn btn-sm btn-success">Retomar</button>
+        <button class="btn btn-sm btn-success py-0 px-2" style="font-size:0.78rem;">Retomar</button>
       </form>
     {% else %}
-      <span class="badge badge-running px-3 py-2">&#9679; RODANDO</span>
+      <span class="badge badge-running px-2 py-1" style="font-size:0.78rem;">RODANDO</span>
       <form method="post" action="/pause" class="mb-0">
-        <button class="btn btn-sm btn-danger">Pausar</button>
+        <button class="btn btn-sm btn-danger py-0 px-2" style="font-size:0.78rem;">Pausar</button>
       </form>
     {% endif %}
-    <span class="refresh-bar">atualizado {{ last_update }}</span>
+    <span class="refresh-bar">{{ last_update }}</span>
   </div>
 </nav>
 
-<div class="container-fluid py-3 px-4">
+<div class="container-fluid py-3 px-3">
 
-  <!-- CAPITAL CARDS -->
-  <div class="row g-3 mb-3">
-    {% set systems = [
-      ("Paper Trading",  capital.paper,  "paper",  stats_today.paper),
-      ("Multi-Agent",    capital.agent,  "agent",  stats_today.agent),
-      ("Pump Scanner",   capital.pump,   "pump",   stats_today.pump),
-    ] %}
-    {% for name, cap, key, stats in systems %}
-    <div class="col-md-4">
-      <div class="card h-100">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <span>{{ name }}</span>
-          {% if cap.cb %}<span class="cb-active">&#9888; Circuit Breaker</span>{% endif %}
-        </div>
-        <div class="card-body">
-          <div class="capital-value">${{ "%.2f"|format(cap.value) }}</div>
-          <div class="{% if cap.ret > 0 %}ret-positive{% elif cap.ret < 0 %}ret-negative{% else %}ret-zero{% endif %}">
-            {% if cap.ret > 0 %}+{% endif %}{{ "%.2f"|format(cap.ret) }}% retorno total
+<!-- ============================================================ -->
+<!-- SECTION 2: CAPITAL CARDS                                     -->
+<!-- ============================================================ -->
+<div class="row g-3 mb-3">
+  {% set systems = [
+    ("Paper Trading", capital.paper,   stats_today.paper,   "paper",    "#58a6ff"),
+    ("Multi-Agent",   capital.agent,   stats_today.agent,   "agent",    "#3fb950"),
+    ("Pump Scanner",  capital.pump,    stats_today.pump,    "pump",     "#f78166"),
+    ("Scalping",      capital.scalping, stats_today.scalping, "scalping", "#bc8cff"),
+  ] %}
+  {% for name, cap, stats, key, color in systems %}
+  <div class="col-6 col-md-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span style="color:{{ color }};">{{ name }}</span>
+        {% if cap is defined and cap and cap.cb %}
+          <span class="cb-warning">CB ATIVO</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if cap is defined and cap %}
+          <div class="capital-value">${{ "%.2f"|format(cap.value|default(0)) }}</div>
+          {% set ret = cap.ret|default(0)|float %}
+          <div class="{% if ret > 0 %}ret-positive{% elif ret < 0 %}ret-negative{% else %}ret-zero{% endif %}" style="font-size:0.85rem;">
+            {% if ret > 0 %}+{% endif %}{{ "%.2f"|format(ret) }}% retorno
           </div>
-          <hr style="border-color:#30363d">
-          <div class="row text-center small">
-            <div class="col">
-              <div class="text-muted">Trades hoje</div>
-              <strong>{{ stats.count }}</strong>
+          <hr style="border-color:var(--border); margin:0.6rem 0;">
+          <div class="row text-center" style="font-size:0.78rem;">
+            <div class="col-4">
+              <div style="color:var(--text-muted);font-size:0.68rem;">Trades</div>
+              <strong>{{ stats.count|default(0) if stats is defined and stats else 0 }}</strong>
             </div>
-            <div class="col">
-              <div class="text-muted">P&amp;L hoje</div>
-              <strong class="{% if stats.pnl_usd > 0 %}ret-positive{% elif stats.pnl_usd < 0 %}ret-negative{% else %}ret-zero{% endif %}">
-                ${{ "%+.2f"|format(stats.pnl_usd) }}
+            <div class="col-4">
+              <div style="color:var(--text-muted);font-size:0.68rem;">P&amp;L</div>
+              {% set pnl = stats.pnl_usd|default(0)|float if stats is defined and stats else 0 %}
+              <strong class="{% if pnl > 0 %}ret-positive{% elif pnl < 0 %}ret-negative{% else %}ret-zero{% endif %}">
+                ${{ "%+.2f"|format(pnl) }}
               </strong>
             </div>
-            <div class="col">
-              <div class="text-muted">W / L</div>
-              <strong>{{ stats.wins }} / {{ stats.losses }}</strong>
+            <div class="col-4">
+              <div style="color:var(--text-muted);font-size:0.68rem;">W/L</div>
+              <strong>{{ stats.wins|default(0) if stats is defined and stats else 0 }}/{{ stats.losses|default(0) if stats is defined and stats else 0 }}</strong>
             </div>
           </div>
-        </div>
+        {% else %}
+          <div class="capital-value" style="color:var(--text-muted);">--</div>
+          <div style="color:var(--text-muted);font-size:0.82rem;">Sem dados</div>
+        {% endif %}
       </div>
     </div>
-    {% endfor %}
   </div>
+  {% endfor %}
+</div>
 
-  <!-- OPEN POSITIONS -->
-  <div class="card mb-3">
-    <div class="card-header d-flex justify-content-between">
-      <span>Posicoes Abertas</span>
-      {% if positions %}<span class="text-muted" style="font-weight:400;font-size:.85rem;">{{ positions|length }} posicao(oes)</span>{% endif %}
+<!-- ============================================================ -->
+<!-- SECTION 3: METRICS OVERVIEW                                  -->
+<!-- ============================================================ -->
+{% if metrics is defined and metrics %}
+<div class="row g-2 mb-3">
+  {% set mlist = [
+    ("Win Rate",      "%.1f%%"|format(metrics.win_rate|default(0)|float),          "blue"),
+    ("Profit Factor", "%.2f"|format(metrics.profit_factor|default(0)|float),       "green"),
+    ("Max Drawdown",  "%.1f%%"|format(metrics.max_drawdown_pct|default(0)|float),  "red"),
+    ("Trades (30d)",  metrics.total_trades|default(0),                              "blue"),
+    ("Melhor Trade",  "%+.2f%%"|format(metrics.largest_win|default(0)|float),      "green"),
+    ("Pior Trade",    "%+.2f%%"|format(metrics.largest_loss|default(0)|float),     "red"),
+  ] %}
+  {% for label, value, clr in mlist %}
+  <div class="col-4 col-md-2">
+    <div class="metric-card">
+      <div class="metric-label">{{ label }}</div>
+      <div class="metric-value" style="color:var(--{{ clr }});">{{ value }}</div>
     </div>
-    <div class="card-body p-0">
-      {% if positions %}
-      <div class="table-responsive">
-        <table class="table table-dark table-sm table-striped mb-0">
-          <thead>
-            <tr>
-              <th class="px-3">Sistema</th>
-              <th>Ativo</th>
-              <th>Lado</th>
-              <th>Entrada</th>
-              <th>Atual</th>
-              <th>P&amp;L</th>
-              <th>SL</th>
-              <th>TP</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for p in positions %}
-            <tr>
-              <td class="px-3"><span class="badge" style="background:#30363d;font-size:.75rem;">{{ p.system }}</span></td>
-              <td><strong>{{ p.symbol }}</strong></td>
-              <td>
-                <span class="badge {% if p.type == 'LONG' %}badge-running{% else %}badge-paused{% endif %}" style="font-size:.75rem;">
-                  {{ p.type }}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Performance by Symbol -->
+{% if by_symbol is defined and by_symbol and by_symbol|length > 0 %}
+<div class="card mb-3">
+  <div class="card-header">Performance por Ativo</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-dark table-sm table-striped table-hover mb-0" id="symbolTable">
+        <thead>
+          <tr>
+            <th class="px-3 sortable" data-col="0">Ativo</th>
+            <th class="sortable" data-col="1">Trades</th>
+            <th class="sortable" data-col="2">Wins</th>
+            <th class="sortable" data-col="3">Losses</th>
+            <th class="sortable" data-col="4">P&amp;L Total ($)</th>
+            <th class="sortable" data-col="5">P&amp;L Medio (%)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in by_symbol %}
+          <tr>
+            <td class="px-3"><strong>{{ s.symbol }}</strong></td>
+            <td>{{ s.trades }}</td>
+            <td style="color:var(--green);">{{ s.wins }}</td>
+            <td style="color:var(--red);">{{ s.losses }}</td>
+            <td>
+              {% set tpnl = s.total_pnl|default(0)|float %}
+              <span class="{% if tpnl > 0 %}ret-positive{% elif tpnl < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
+                ${{ "%+.2f"|format(tpnl) }}
+              </span>
+            </td>
+            <td>
+              {% set apnl = s.avg_pnl_pct|default(0)|float %}
+              <span class="{% if apnl > 0 %}ret-positive{% elif apnl < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
+                {{ "%+.2f"|format(apnl) }}%
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ============================================================ -->
+<!-- SECTION 4: OPEN POSITIONS                                    -->
+<!-- ============================================================ -->
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Posicoes Abertas</span>
+    {% if positions %}
+      <span style="font-weight:400;font-size:0.78rem;color:var(--text-muted);">{{ positions|length }} posicao(oes)</span>
+    {% endif %}
+  </div>
+  <div class="card-body p-0">
+    {% if positions %}
+    <div class="table-responsive">
+      <table class="table table-dark table-sm table-striped table-hover mb-0">
+        <thead>
+          <tr>
+            <th class="px-3">Sistema</th>
+            <th>Ativo</th>
+            <th>Lado</th>
+            <th>Entrada</th>
+            <th>Atual</th>
+            <th>P&amp;L</th>
+            <th>SL</th>
+            <th>TP</th>
+            <th>Extras</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in positions %}
+          <tr>
+            <td class="px-3">
+              <span class="badge" style="background:var(--bg-header);border:1px solid var(--border);font-size:0.7rem;">{{ p.system }}</span>
+            </td>
+            <td><strong>{{ p.symbol }}</strong></td>
+            <td>
+              {% if p.type == 'LONG' %}
+                <span class="side-long">LONG</span>
+              {% else %}
+                <span class="side-short">SHORT</span>
+              {% endif %}
+            </td>
+            <td class="text-mono" style="font-size:0.78rem;">{{ "%.4f"|format(p.entry_price|float) }}</td>
+            <td class="text-mono" style="font-size:0.78rem;">{{ "%.4f"|format(p.current_price|float) if p.current_price else "--" }}</td>
+            <td>
+              {% if p.pnl_pct is not none %}
+                {% set pnl = p.pnl_pct|float %}
+                <strong class="{% if pnl > 0 %}ret-positive{% elif pnl < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
+                  {{ "%+.2f"|format(pnl) }}%
+                </strong>
+              {% else %}--{% endif %}
+            </td>
+            <td class="text-mono" style="font-size:0.75rem;color:var(--text-muted);">{{ "%.4f"|format(p.sl_price|float) if p.sl_price else "--" }}</td>
+            <td class="text-mono" style="font-size:0.75rem;color:var(--text-muted);">{{ "%.4f"|format(p.tp_price|float) if p.tp_price else "--" }}</td>
+            <td style="font-size:0.75rem;">
+              {% if p.system == 'Agent' and p.analyst_confidence is defined and p.analyst_confidence is not none %}
+                {% set conf = p.analyst_confidence|float %}
+                <span class="{% if conf >= 70 %}conf-high{% elif conf >= 50 %}conf-med{% else %}conf-low{% endif %}">
+                  Conf: {{ "%.0f"|format(conf) }}%
                 </span>
-              </td>
-              <td class="font-monospace">{{ "%.4f"|format(p.entry_price) }}</td>
-              <td class="font-monospace">{{ "%.4f"|format(p.current_price) if p.current_price else "—" }}</td>
-              <td>
-                {% if p.pnl_pct is not none %}
-                  <strong class="{% if p.pnl_pct > 0 %}ret-positive{% elif p.pnl_pct < 0 %}ret-negative{% else %}ret-zero{% endif %}">
-                    {% if p.pnl_pct > 0 %}+{% endif %}{{ "%.2f"|format(p.pnl_pct) }}%
-                  </strong>
-                {% else %}—{% endif %}
-              </td>
-              <td class="text-muted font-monospace" style="font-size:.8rem;">{{ "%.4f"|format(p.sl_price|float) if p.sl_price else "—" }}</td>
-              <td class="text-muted font-monospace" style="font-size:.8rem;">{{ "%.4f"|format(p.tp_price|float) if p.tp_price else "—" }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <p class="text-muted px-3 py-2 mb-0">Nenhuma posicao aberta no momento.</p>
-      {% endif %}
+              {% endif %}
+              {% if p.system == 'Scalping' %}
+                {% if p.leverage is defined and p.leverage %}
+                  <span class="badge" style="background:var(--border);font-size:0.65rem;">{{ p.leverage }}x</span>
+                {% endif %}
+                {% if p.confluence_score is defined and p.confluence_score is not none %}
+                  <span class="badge" style="background:#1f6feb;font-size:0.65rem;">CS: {{ "%.0f"|format(p.confluence_score|float) }}</span>
+                {% endif %}
+                {% if p.tp1_price is defined and p.tp1_price %}
+                  <span style="color:var(--text-muted);font-size:0.68rem;">TP1: {{ "%.4f"|format(p.tp1_price|float) }}</span>
+                {% endif %}
+                {% if p.tp2_price is defined and p.tp2_price %}
+                  <span style="color:var(--text-muted);font-size:0.68rem;">TP2: {{ "%.4f"|format(p.tp2_price|float) }}</span>
+                {% endif %}
+                {% if p.tp1_hit is defined and p.tp1_hit %}
+                  <span class="tp1-ok">TP1 OK</span>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p style="color:var(--text-muted);padding:0.8rem 1rem;margin:0;font-size:0.82rem;">Nenhuma posicao aberta no momento.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: TRADE HISTORY                                     -->
+<!-- ============================================================ -->
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span>Historico de Trades</span>
+    <div class="d-flex gap-1" id="periodBtns">
+      <button class="period-btn active" data-days="0" onclick="setPeriod(0)">Hoje</button>
+      <button class="period-btn" data-days="7" onclick="setPeriod(7)">7d</button>
+      <button class="period-btn" data-days="30" onclick="setPeriod(30)">30d</button>
     </div>
   </div>
-
-  <!-- TRADES DE HOJE (ABAS) -->
-  <div class="mb-3">
-    <ul class="nav nav-tabs" id="tradeTabs">
-      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabPaper">Paper ({{ trades.paper|length }})</button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabAgent">Agent ({{ trades.agent|length }})</button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabPump">Pump ({{ trades.pump|length }})</button></li>
+  <div>
+    <ul class="nav nav-tabs px-2 pt-1" id="historyTabs">
+      <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#histPaper" data-system="paper">Paper</button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#histAgent" data-system="agent">Agent</button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#histPump" data-system="pump">Pump</button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#histScalping" data-system="scalping">Scalping</button>
+      </li>
     </ul>
     <div class="tab-content">
-      {% for tab_id, tab_trades, cols in [
-        ("tabPaper", trades.paper, ["timestamp","symbol","type","entry_price","exit_price","pnl_pct","pnl_usd","exit_reason"]),
-        ("tabAgent", trades.agent, ["timestamp","symbol","type","entry_price","exit_price","pnl_pct","pnl_usd","exit_reason"]),
-        ("tabPump",  trades.pump,  ["timestamp","symbol","type","entry_price","exit_price","pnl_pct","pnl_usd","exit_reason","duration_min"]),
+      {% for tab_id, tab_key, tab_trades in [
+        ("histPaper",    "paper",    trades.paper    if trades is defined and trades and trades.paper    else []),
+        ("histAgent",    "agent",    trades.agent    if trades is defined and trades and trades.agent    else []),
+        ("histPump",     "pump",     trades.pump     if trades is defined and trades and trades.pump     else []),
+        ("histScalping", "scalping", trades.scalping if trades is defined and trades and trades.scalping else []),
       ] %}
-      <div class="tab-pane fade {% if tab_id == 'tabPaper' %}show active{% endif %}" id="{{ tab_id }}">
-        {% if tab_trades %}
-        <div class="table-responsive">
-          <table class="table table-dark table-sm table-striped mb-0">
-            <thead><tr>{% for c in cols %}<th>{{ c }}</th>{% endfor %}</tr></thead>
-            <tbody>
-              {% for t in tab_trades %}
-              <tr>
-                {% for c in cols %}
-                <td>
-                  {% if c in ["pnl_pct","pnl_usd"] %}
-                    <span class="{% if t[c]|float > 0 %}ret-positive{% elif t[c]|float < 0 %}ret-negative{% else %}ret-zero{% endif %}">
-                      {% if c == "pnl_pct" %}{{ "%+.2f"|format(t[c]|float) }}%
-                      {% else %}${{ "%+.2f"|format(t[c]|float) }}{% endif %}
+      <div class="tab-pane fade {% if tab_id == 'histPaper' %}show active{% endif %}" id="{{ tab_id }}">
+        <div id="{{ tab_id }}_content">
+          {% if tab_trades %}
+          <div class="table-responsive">
+            <table class="table table-dark table-sm table-striped table-hover mb-0">
+              <thead>
+                <tr>
+                  <th class="px-2">Data/Hora</th>
+                  <th>Ativo</th>
+                  <th>Lado</th>
+                  <th>Entrada</th>
+                  <th>Saida</th>
+                  <th>P&amp;L %</th>
+                  <th>P&amp;L $</th>
+                  <th>Motivo</th>
+                  {% if tab_key == 'agent' %}<th>Confianca</th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for t in tab_trades %}
+                <tr>
+                  <td class="px-2" style="font-size:0.75rem;white-space:nowrap;">{{ t.timestamp|default(t.exit_time|default("--")) }}</td>
+                  <td><strong>{{ t.symbol|default("--") }}</strong></td>
+                  <td>
+                    {% if t.type|default("") == "LONG" %}
+                      <span class="side-long">LONG</span>
+                    {% elif t.type|default("") == "SHORT" %}
+                      <span class="side-short">SHORT</span>
+                    {% else %}
+                      {{ t.type|default("--") }}
+                    {% endif %}
+                  </td>
+                  <td class="text-mono" style="font-size:0.78rem;">{{ "%.4f"|format(t.entry_price|default(0)|float) }}</td>
+                  <td class="text-mono" style="font-size:0.78rem;">{{ "%.4f"|format(t.exit_price|default(0)|float) if t.exit_price else "--" }}</td>
+                  <td>
+                    {% set pp = t.pnl_pct|default(0)|float %}
+                    <span class="{% if pp > 0 %}ret-positive{% elif pp < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
+                      {{ "%+.2f"|format(pp) }}%
                     </span>
-                  {% elif c in ["entry_price","exit_price"] %}
-                    {{ "%.4f"|format(t[c]|float) if t[c] else "—" }}
-                  {% else %}
-                    {{ t[c] if t[c] is not none else "—" }}
+                  </td>
+                  <td>
+                    {% set pu = t.pnl_usd|default(0)|float %}
+                    <span class="{% if pu > 0 %}ret-positive{% elif pu < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
+                      ${{ "%+.2f"|format(pu) }}
+                    </span>
+                  </td>
+                  <td style="font-size:0.75rem;">{{ t.exit_reason|default("--") }}</td>
+                  {% if tab_key == 'agent' %}
+                  <td>
+                    {% if t.analyst_confidence is defined and t.analyst_confidence is not none %}
+                      {% set ac = t.analyst_confidence|float %}
+                      <span class="{% if ac >= 70 %}conf-high{% elif ac >= 50 %}conf-med{% else %}conf-low{% endif %}">
+                        {{ "%.0f"|format(ac) }}%
+                      </span>
+                    {% else %}--{% endif %}
+                  </td>
                   {% endif %}
-                </td>
+                </tr>
                 {% endfor %}
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p style="color:var(--text-muted);padding:0.8rem 1rem;margin:0;font-size:0.82rem;">Nenhum trade registrado.</p>
+          {% endif %}
         </div>
-        {% else %}
-        <p class="text-muted mb-0">Nenhum trade registrado.</p>
-        {% endif %}
       </div>
       {% endfor %}
     </div>
   </div>
+</div>
 
-  <!-- GRAFICO P&L ACUMULADO -->
-  <div class="card mb-3">
-    <div class="card-header">P&amp;L Acumulado — Ultimos 30 dias</div>
-    <div class="card-body">
-      <div class="chart-container">
-        <canvas id="pnlChart"></canvas>
+<!-- ============================================================ -->
+<!-- SECTION 6: CHART + LOGS                                      -->
+<!-- ============================================================ -->
+<div class="row g-3 mb-3">
+  <!-- Left: P&L Chart -->
+  <div class="col-lg-7 col-md-12">
+    <div class="card h-100">
+      <div class="card-header">P&amp;L Acumulado -- Ultimos 30 dias</div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="pnlChart"></canvas>
+        </div>
       </div>
     </div>
   </div>
 
-</div><!-- /container -->
+  <!-- Right: Logs -->
+  <div class="col-lg-5 col-md-12">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Logs</span>
+        <button class="collapse-btn" type="button" data-bs-toggle="collapse" data-bs-target="#logsCollapse" aria-expanded="true">
+          Ocultar/Mostrar
+        </button>
+      </div>
+      <div class="collapse show" id="logsCollapse">
+        <div class="card-body py-2 px-2">
+          <ul class="nav nav-tabs mb-2" id="logTabs" style="font-size:0.75rem;">
+            <li class="nav-item">
+              <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#logMain" onclick="loadLogs('main')">Main</button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#logScalping" onclick="loadLogs('scalping')">Scalping</button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#logPump" onclick="loadLogs('pump')">Pump</button>
+            </li>
+          </ul>
+          <div class="tab-content">
+            <div class="tab-pane fade show active" id="logMain">
+              <div class="log-terminal" id="logMainContent">
+                {% if logs is defined and logs %}
+                  {% for line in logs %}{{ line }}
+{% endfor %}
+                {% else %}
+                  Sem logs disponíveis.
+                {% endif %}
+              </div>
+            </div>
+            <div class="tab-pane fade" id="logScalping">
+              <div class="log-terminal" id="logScalpingContent">Carregando...</div>
+            </div>
+            <div class="tab-pane fade" id="logPump">
+              <div class="log-terminal" id="logPumpContent">Carregando...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-<!-- SCRIPTS -->
+</div><!-- /container-fluid -->
+
+<!-- ============================================================ -->
+<!-- SCRIPTS                                                      -->
+<!-- ============================================================ -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// Dados do gráfico injetados pelo servidor
-const paperChart = {{ chart.paper | tojson }};
-const agentChart = {{ chart.agent | tojson }};
-const pumpChart  = {{ chart.pump  | tojson }};
+// ── P&L Chart ────────────────────────────────────────────────────
+const paperChart   = {{ (chart.paper    if chart is defined and chart and chart.paper    else []) | tojson }};
+const agentChart   = {{ (chart.agent    if chart is defined and chart and chart.agent    else []) | tojson }};
+const pumpChart    = {{ (chart.pump     if chart is defined and chart and chart.pump     else []) | tojson }};
+const scalpingChart = {{ (chart.scalping if chart is defined and chart and chart.scalping else []) | tojson }};
 
-// Merge de todas as datas únicas
 const allDays = [...new Set([
   ...paperChart.map(d => d.day),
   ...agentChart.map(d => d.day),
   ...pumpChart.map(d => d.day),
+  ...scalpingChart.map(d => d.day),
 ])].sort();
 
 function getValues(chartData, days) {
@@ -231,27 +618,237 @@ new Chart(ctx, {
   data: {
     labels: allDays,
     datasets: [
-      { label: 'Paper', data: getValues(paperChart, allDays), borderColor: '#58a6ff', backgroundColor: 'transparent', tension: 0.3, spanGaps: true },
-      { label: 'Agent', data: getValues(agentChart, allDays), borderColor: '#3fb950', backgroundColor: 'transparent', tension: 0.3, spanGaps: true },
-      { label: 'Pump',  data: getValues(pumpChart,  allDays), borderColor: '#f78166', backgroundColor: 'transparent', tension: 0.3, spanGaps: true },
+      {
+        label: 'Paper',
+        data: getValues(paperChart, allDays),
+        borderColor: '#58a6ff',
+        backgroundColor: 'rgba(88,166,255,0.08)',
+        tension: 0.3,
+        spanGaps: true,
+        borderWidth: 2,
+        pointRadius: 1,
+        fill: false
+      },
+      {
+        label: 'Agent',
+        data: getValues(agentChart, allDays),
+        borderColor: '#3fb950',
+        backgroundColor: 'rgba(63,185,80,0.08)',
+        tension: 0.3,
+        spanGaps: true,
+        borderWidth: 2,
+        pointRadius: 1,
+        fill: false
+      },
+      {
+        label: 'Pump',
+        data: getValues(pumpChart, allDays),
+        borderColor: '#f78166',
+        backgroundColor: 'rgba(247,129,102,0.08)',
+        tension: 0.3,
+        spanGaps: true,
+        borderWidth: 2,
+        pointRadius: 1,
+        fill: false
+      },
+      {
+        label: 'Scalping',
+        data: getValues(scalpingChart, allDays),
+        borderColor: '#bc8cff',
+        backgroundColor: 'rgba(188,140,255,0.08)',
+        tension: 0.3,
+        spanGaps: true,
+        borderWidth: 2,
+        pointRadius: 1,
+        fill: false
+      }
     ]
   },
   options: {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { labels: { color: '#e6edf3' } },
-      tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: $${ctx.parsed.y?.toFixed(2)}` } }
+      legend: {
+        labels: { color: '#e6edf3', usePointStyle: true, pointStyle: 'circle', padding: 16, font: { size: 11 } }
+      },
+      tooltip: {
+        backgroundColor: '#21262d',
+        titleColor: '#e6edf3',
+        bodyColor: '#e6edf3',
+        borderColor: '#30363d',
+        borderWidth: 1,
+        callbacks: {
+          label: function(ctx) { return ' ' + ctx.dataset.label + ': $' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(2) : '--'); }
+        }
+      }
     },
     scales: {
-      x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
-      y: { ticks: { color: '#8b949e', callback: v => '$' + v.toFixed(0) }, grid: { color: '#21262d' } }
+      x: {
+        ticks: { color: '#8b949e', font: { size: 10 }, maxRotation: 45 },
+        grid: { color: '#21262d', drawBorder: false }
+      },
+      y: {
+        ticks: { color: '#8b949e', font: { size: 10 }, callback: function(v) { return '$' + v.toFixed(0); } },
+        grid: { color: '#21262d', drawBorder: false }
+      }
     }
   }
 });
 
-// Auto-refresh a cada 30 segundos
-setTimeout(() => location.reload(), 30000);
+// ── Trade History: Period selector + AJAX ─────────────────────────
+let currentPeriod = 0;
+
+function setPeriod(days) {
+  currentPeriod = days;
+  document.querySelectorAll('#periodBtns .period-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.days) === days);
+  });
+  // Reload trades for active tab
+  const activeTab = document.querySelector('#historyTabs .nav-link.active');
+  if (activeTab) {
+    loadTrades(activeTab.dataset.system, days);
+  }
+}
+
+function loadTrades(system, days) {
+  const containerId = 'hist' + system.charAt(0).toUpperCase() + system.slice(1) + '_content';
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  // Show loading
+  container.innerHTML = '<div class="ajax-loading">Carregando trades...</div>';
+
+  const url = '/api/trades?system=' + encodeURIComponent(system) + '&days=' + days;
+  fetch(url)
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(data => {
+      if (!data || !data.trades || data.trades.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted);padding:0.8rem 1rem;margin:0;font-size:0.82rem;">Nenhum trade registrado neste periodo.</p>';
+        return;
+      }
+      const isAgent = (system === 'agent');
+      let html = '<div class="table-responsive"><table class="table table-dark table-sm table-striped table-hover mb-0"><thead><tr>';
+      html += '<th class="px-2">Data/Hora</th><th>Ativo</th><th>Lado</th><th>Entrada</th><th>Saida</th><th>P&L %</th><th>P&L $</th><th>Motivo</th>';
+      if (isAgent) html += '<th>Confianca</th>';
+      html += '</tr></thead><tbody>';
+      data.trades.forEach(t => {
+        const pp = parseFloat(t.pnl_pct || 0);
+        const pu = parseFloat(t.pnl_usd || 0);
+        const ppCls = pp > 0 ? 'ret-positive' : (pp < 0 ? 'ret-negative' : 'ret-zero');
+        const puCls = pu > 0 ? 'ret-positive' : (pu < 0 ? 'ret-negative' : 'ret-zero');
+        const sideHtml = t.type === 'LONG' ? '<span class="side-long">LONG</span>' : (t.type === 'SHORT' ? '<span class="side-short">SHORT</span>' : (t.type || '--'));
+        html += '<tr>';
+        html += '<td class="px-2" style="font-size:0.75rem;white-space:nowrap;">' + (t.timestamp || t.exit_time || '--') + '</td>';
+        html += '<td><strong>' + (t.symbol || '--') + '</strong></td>';
+        html += '<td>' + sideHtml + '</td>';
+        html += '<td class="text-mono" style="font-size:0.78rem;">' + (t.entry_price ? parseFloat(t.entry_price).toFixed(4) : '--') + '</td>';
+        html += '<td class="text-mono" style="font-size:0.78rem;">' + (t.exit_price ? parseFloat(t.exit_price).toFixed(4) : '--') + '</td>';
+        html += '<td><span class="' + ppCls + ' text-mono">' + (pp >= 0 ? '+' : '') + pp.toFixed(2) + '%</span></td>';
+        html += '<td><span class="' + puCls + ' text-mono">$' + (pu >= 0 ? '+' : '') + pu.toFixed(2) + '</span></td>';
+        html += '<td style="font-size:0.75rem;">' + (t.exit_reason || '--') + '</td>';
+        if (isAgent) {
+          let confHtml = '--';
+          if (t.analyst_confidence != null) {
+            const ac = parseFloat(t.analyst_confidence);
+            const cls = ac >= 70 ? 'conf-high' : (ac >= 50 ? 'conf-med' : 'conf-low');
+            confHtml = '<span class="' + cls + '">' + ac.toFixed(0) + '%</span>';
+          }
+          html += '<td>' + confHtml + '</td>';
+        }
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+    })
+    .catch(err => {
+      // AJAX failed - keep the server-rendered content or show fallback
+      console.warn('Falha ao carregar trades via AJAX:', err.message);
+      if (container.querySelector('.ajax-loading')) {
+        container.innerHTML = '<p style="color:var(--text-muted);padding:0.8rem 1rem;margin:0;font-size:0.82rem;">Falha ao carregar trades. Endpoint /api/trades pode nao estar disponivel.</p>';
+      }
+    });
+}
+
+// When switching trade history tabs, reload with current period
+document.querySelectorAll('#historyTabs .nav-link').forEach(tab => {
+  tab.addEventListener('shown.bs.tab', function() {
+    if (currentPeriod > 0) {
+      loadTrades(this.dataset.system, currentPeriod);
+    }
+  });
+});
+
+// ── Logs: AJAX loading ───────────────────────────────────────────
+function loadLogs(source) {
+  const containerId = 'log' + source.charAt(0).toUpperCase() + source.slice(1) + 'Content';
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  fetch('/api/logs?source=' + encodeURIComponent(source) + '&lines=40')
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(data => {
+      if (data && data.logs && data.logs.length > 0) {
+        container.textContent = data.logs.join('\n');
+      } else {
+        container.textContent = 'Sem logs disponíveis.';
+      }
+      // Scroll to bottom
+      container.scrollTop = container.scrollHeight;
+    })
+    .catch(err => {
+      console.warn('Falha ao carregar logs:', err.message);
+      if (container.textContent === 'Carregando...') {
+        container.textContent = 'Falha ao carregar logs. Endpoint /api/logs pode nao estar disponivel.';
+      }
+    });
+}
+
+// Scroll main logs to bottom on load
+(function() {
+  const mainLog = document.getElementById('logMainContent');
+  if (mainLog) mainLog.scrollTop = mainLog.scrollHeight;
+})();
+
+// ── Sortable table: Performance by Symbol ────────────────────────
+(function() {
+  const table = document.getElementById('symbolTable');
+  if (!table) return;
+  const headers = table.querySelectorAll('th.sortable');
+  let sortDir = {};
+
+  headers.forEach(th => {
+    th.addEventListener('click', function() {
+      const col = parseInt(this.dataset.col);
+      const tbody = table.querySelector('tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      const dir = sortDir[col] === 'asc' ? 'desc' : 'asc';
+      sortDir[col] = dir;
+
+      rows.sort((a, b) => {
+        let aVal = a.cells[col].textContent.trim().replace(/[$%+,]/g, '');
+        let bVal = b.cells[col].textContent.trim().replace(/[$%+,]/g, '');
+        const aNum = parseFloat(aVal);
+        const bNum = parseFloat(bVal);
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          return dir === 'asc' ? aNum - bNum : bNum - aNum;
+        }
+        return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      });
+
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+})();
+
+// ── Auto-refresh every 30 seconds ────────────────────────────────
+setTimeout(function() { location.reload(); }, 30000);
 </script>
 </body>
 </html>

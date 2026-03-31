@@ -7,20 +7,146 @@ Rotas:
   GET  /api/status  — JSON com todos os dados (auto-refresh AJAX)
   POST /pause       — pausa o bot
   POST /resume      — retoma o bot
+  GET  /api/trades  — historico de trades com filtro de periodo
+  GET  /api/logs    — logs recentes de qualquer subsistema
 """
 import os
 import json
+import shutil
 import requests
-from datetime import datetime
-from flask import Flask, render_template, redirect, url_for, jsonify
+from datetime import datetime, date, timedelta
+from flask import Flask, render_template, redirect, url_for, jsonify, request
 import database as db
+from database import get_all_time_stats, get_stats_by_symbol, get_trades_range
 from telegram_commands import is_paused, _set_paused
 from daily_report import calc_daily_stats, get_capital_status
 from config import PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL
+from signal_types import ScalpingConfig
 
+SCALPING_INITIAL_CAPITAL = 10000
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, template_folder=os.path.join(BOT_DIR, "templates"))
 
+
+# ── SYSTEM HEALTH ────────────────────────────────────────────────────────────
+
+def _get_system_health():
+    """Coleta metricas de saude do sistema sem dependencia do psutil.
+    Le /proc/ diretamente (Raspberry Pi / Linux), com fallback para Windows.
+    """
+    health = {}
+
+    # --- CPU usage ---
+    try:
+        with open("/proc/stat", "r") as f:
+            lines = f.readlines()
+        # Primeira linha: cpu  user nice system idle iowait irq softirq ...
+        parts = lines[0].split()
+        idle = int(parts[4])
+        total = sum(int(p) for p in parts[1:])
+        # Sem snapshot anterior, reportamos cores disponiveis e idle %
+        health["cpu_cores"] = os.cpu_count() or 1
+        health["cpu_idle_ticks"] = idle
+        health["cpu_total_ticks"] = total
+        health["cpu_usage_pct"] = round((1 - idle / total) * 100, 1) if total > 0 else 0
+    except Exception:
+        health["cpu_cores"] = os.cpu_count() or 1
+        health["cpu_usage_pct"] = "N/A"
+
+    # --- RAM ---
+    try:
+        meminfo = {}
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                parts = line.split()
+                key = parts[0].rstrip(":")
+                meminfo[key] = int(parts[1])  # em kB
+        total_mb = meminfo.get("MemTotal", 0) / 1024
+        avail_mb = meminfo.get("MemAvailable", meminfo.get("MemFree", 0)) / 1024
+        used_mb = total_mb - avail_mb
+        health["ram_total_mb"] = round(total_mb, 1)
+        health["ram_used_mb"] = round(used_mb, 1)
+        health["ram_usage_pct"] = round((used_mb / total_mb) * 100, 1) if total_mb > 0 else 0
+    except Exception:
+        health["ram_total_mb"] = "N/A"
+        health["ram_used_mb"] = "N/A"
+        health["ram_usage_pct"] = "N/A"
+
+    # --- Disk ---
+    try:
+        usage = shutil.disk_usage("/")
+        total_gb = usage.total / (1024 ** 3)
+        used_gb = usage.used / (1024 ** 3)
+        free_gb = usage.free / (1024 ** 3)
+        health["disk_total_gb"] = round(total_gb, 1)
+        health["disk_used_gb"] = round(used_gb, 1)
+        health["disk_free_gb"] = round(free_gb, 1)
+        health["disk_usage_pct"] = round((used_gb / total_gb) * 100, 1) if total_gb > 0 else 0
+    except Exception:
+        health["disk_total_gb"] = "N/A"
+        health["disk_used_gb"] = "N/A"
+        health["disk_free_gb"] = "N/A"
+        health["disk_usage_pct"] = "N/A"
+
+    # --- Temperature (Raspberry Pi) ---
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+            raw = f.read().strip()
+        health["temperature_c"] = round(int(raw) / 1000, 1)
+    except Exception:
+        health["temperature_c"] = "N/A"
+
+    # --- Uptime ---
+    try:
+        with open("/proc/uptime", "r") as f:
+            raw = f.read().strip()
+        uptime_secs = float(raw.split()[0])
+        days = int(uptime_secs // 86400)
+        hours = int((uptime_secs % 86400) // 3600)
+        mins = int((uptime_secs % 3600) // 60)
+        health["uptime"] = f"{days}d {hours}h {mins}m"
+        health["uptime_seconds"] = round(uptime_secs, 0)
+    except Exception:
+        health["uptime"] = "N/A"
+        health["uptime_seconds"] = "N/A"
+
+    return health
+
+
+# ── RECENT LOGS ──────────────────────────────────────────────────────────────
+
+def _get_recent_logs(source="main", lines=30):
+    """Le as ultimas N linhas de um arquivo de log.
+
+    source="main"     → logs/main_bot_YYYY-MM-DD.log
+    source="scalping"  → logs/scalping.log
+    source="pump"      → logs/pump_scanner_YYYY-MM-DD.log
+    """
+    logs_dir = os.path.join(BOT_DIR, "logs")
+    today = date.today().isoformat()
+
+    if source == "main":
+        log_file = os.path.join(logs_dir, f"main_bot_{today}.log")
+    elif source == "scalping":
+        log_file = os.path.join(logs_dir, "scalping.log")
+    elif source == "pump":
+        log_file = os.path.join(logs_dir, f"pump_scanner_{today}.log")
+    else:
+        log_file = os.path.join(logs_dir, f"{source}.log")
+
+    if not os.path.isfile(log_file):
+        return []
+
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+        # Retorna as ultimas N linhas, stripped
+        return [line.rstrip("\n\r") for line in all_lines[-lines:]]
+    except Exception:
+        return []
+
+
+# ── LIVE POSITIONS ───────────────────────────────────────────────────────────
 
 def _get_live_positions():
     """Le posicoes abertas dos arquivos de estado e adiciona P&L ao vivo via Binance."""
@@ -33,6 +159,7 @@ def _get_live_positions():
     raw = []
     symbols_needed = set()
 
+    # --- Paper, Agent, Pump positions ---
     for fname, system in state_files:
         path = os.path.join(BOT_DIR, fname)
         if not os.path.isfile(path):
@@ -41,16 +168,45 @@ def _get_live_positions():
             state = json.load(open(path))
             for sym, pos in state.get("positions", {}).items():
                 symbols_needed.add(sym)
-                raw.append({
+                entry = {
                     "system":      system,
                     "symbol":      sym,
                     "type":        pos.get("type", ""),
                     "entry_price": float(pos.get("entry_price", 0)),
                     "sl_price":    pos.get("sl_price"),
                     "tp_price":    pos.get("tp_price"),
-                })
+                }
+                # Agent confidence (stored in agent_state.json positions)
+                if system == "Agent" and "analyst_confidence" in pos:
+                    entry["analyst_confidence"] = pos["analyst_confidence"]
+                raw.append(entry)
         except Exception:
             continue
+
+    # --- Scalping positions (different field names) ---
+    scalping_path = os.path.join(BOT_DIR, "scalping_state.json")
+    if os.path.isfile(scalping_path):
+        try:
+            scalping_state = json.load(open(scalping_path))
+            for sym, pos in scalping_state.get("positions", {}).items():
+                symbols_needed.add(sym)
+                raw.append({
+                    "system":           "Scalping",
+                    "symbol":           sym,
+                    "type":             pos.get("direction", ""),
+                    "entry_price":      float(pos.get("entry_price", 0)),
+                    "sl_price":         pos.get("sl_price"),
+                    "tp1_price":        pos.get("tp1_price"),
+                    "tp2_price":        pos.get("tp2_price"),
+                    "tp_price":         pos.get("tp1_price"),  # compat: use tp1 as primary
+                    "leverage":         pos.get("leverage", 1),
+                    "confluence_score": pos.get("confluence_score", 0),
+                    "tp1_hit":          pos.get("tp1_hit", False),
+                    "position_size_usd": pos.get("position_size_usd", 0),
+                    "source":           pos.get("source", ""),
+                })
+        except Exception:
+            pass
 
     if not raw:
         return []
@@ -73,7 +229,8 @@ def _get_live_positions():
         entry   = pos["entry_price"]
         current = prices.get(pos["symbol"])
         if current and entry:
-            if pos["type"] == "LONG":
+            direction = pos["type"].upper()
+            if direction in ("LONG", "BUY"):
                 pos["pnl_pct"] = round((current - entry) / entry * 100, 2)
             else:
                 pos["pnl_pct"] = round((entry - current) / entry * 100, 2)
@@ -85,7 +242,7 @@ def _get_live_positions():
     return raw
 
 
-# ── HELPERS ───────────────────────────────────────────────────────────────────
+# ── HELPERS ──────────────────────────────────────────────────────────────────
 
 def _build_status():
     """Coleta todos os dados necessarios para o dashboard."""
@@ -97,8 +254,24 @@ def _build_status():
     agent_cap = caps.get("Agent", AGENT_INITIAL_CAPITAL)
     pump_cap  = caps.get("Pump",  PUMP_INITIAL_CAPITAL)
 
+    # Scalping capital (from scalping_state.json)
+    scalping_cap = SCALPING_INITIAL_CAPITAL
+    scalping_total_trades = 0
+    scalping_wins = 0
+    scalping_losses = 0
+    scalping_path = os.path.join(BOT_DIR, "scalping_state.json")
+    if os.path.isfile(scalping_path):
+        try:
+            sc_state = json.load(open(scalping_path))
+            scalping_cap = float(sc_state.get("capital", SCALPING_INITIAL_CAPITAL))
+            scalping_total_trades = int(sc_state.get("total_trades", 0))
+            scalping_wins = int(sc_state.get("wins", 0))
+            scalping_losses = int(sc_state.get("losses", 0))
+        except Exception:
+            pass
+
     def _ret(current, initial):
-        return round((current - initial) / initial * 100, 2)
+        return round((current - initial) / initial * 100, 2) if initial else 0
 
     # Trades de hoje
     paper_today = db.get_trades_today("paper_trades")
@@ -109,13 +282,21 @@ def _build_status():
     agent_stats = calc_daily_stats(agent_today)
     pump_stats  = calc_daily_stats(pump_today)
 
+    # Scalping stats hoje (from scalping_state.json history)
+    scalping_stats_today = {
+        "total_trades": scalping_total_trades,
+        "wins": scalping_wins,
+        "losses": scalping_losses,
+        "win_rate": round((scalping_wins / scalping_total_trades * 100), 1) if scalping_total_trades > 0 else 0,
+    }
+
     # Posicoes abertas com P&L ao vivo
     positions = _get_live_positions()
 
-    # Trades de hoje por sistema (corrigido: era get_recent_trades)
-    paper_recent = db.get_trades_today("paper_trades")
-    agent_recent = db.get_trades_today("agent_trades")
-    pump_recent  = db.get_trades_today("pump_trades")
+    # Trades de hoje por sistema
+    paper_recent = paper_today
+    agent_recent = agent_today
+    pump_recent  = pump_today
 
     # Dados do grafico P&L acumulado (30 dias)
     def _cumulative(daily_rows):
@@ -131,24 +312,71 @@ def _build_status():
     agent_chart = _cumulative(db.get_cumulative_pnl("agent_trades", 30))
     pump_chart  = _cumulative(db.get_cumulative_pnl("pump_trades",  30))
 
+    # Scalping chart (from scalping_state.json history)
+    scalping_chart = []
+    if os.path.isfile(scalping_path):
+        try:
+            sc_state = json.load(open(scalping_path))
+            history = sc_state.get("history", [])
+            daily_pnl = {}
+            for trade in history:
+                ts = trade.get("exit_time", trade.get("entry_time", ""))
+                if ts:
+                    day = ts[:10]
+                    daily_pnl[day] = daily_pnl.get(day, 0) + float(trade.get("pnl_usd", 0))
+            acc = 0.0
+            for day in sorted(daily_pnl.keys()):
+                acc += daily_pnl[day]
+                scalping_chart.append({"day": day, "pnl": round(acc, 2)})
+        except Exception:
+            pass
+
     # Circuit breaker status
     from daily_report import is_circuit_broken
     cb_paper = is_circuit_broken("paper")
     cb_agent = is_circuit_broken("agent")
     cb_pump  = is_circuit_broken("pump")
 
+    # Advanced metrics (30 days, all 4 systems)
+    metrics = {
+        "paper":    get_all_time_stats("paper_trades", 30),
+        "agent":    get_all_time_stats("agent_trades", 30),
+        "pump":     get_all_time_stats("pump_trades",  30),
+        "scalping": {
+            "total_trades": scalping_total_trades,
+            "wins": scalping_wins,
+            "losses": scalping_losses,
+            "win_rate": round((scalping_wins / scalping_total_trades * 100), 1) if scalping_total_trades > 0 else 0,
+        },
+    }
+
+    # Per-symbol performance (30 days)
+    by_symbol = {
+        "paper": get_stats_by_symbol("paper_trades", 30),
+        "agent": get_stats_by_symbol("agent_trades", 30),
+        "pump":  get_stats_by_symbol("pump_trades",  30),
+    }
+
+    # System health
+    health = _get_system_health()
+
+    # Recent logs (last 20 lines of main log)
+    logs = _get_recent_logs(source="main", lines=20)
+
     return {
         "paused": paused,
         "last_update": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "capital": {
-            "paper": {"value": round(paper_cap, 2), "ret": _ret(paper_cap, PAPER_INITIAL_CAPITAL), "cb": cb_paper},
-            "agent": {"value": round(agent_cap, 2), "ret": _ret(agent_cap, AGENT_INITIAL_CAPITAL), "cb": cb_agent},
-            "pump":  {"value": round(pump_cap,  2), "ret": _ret(pump_cap,  PUMP_INITIAL_CAPITAL),  "cb": cb_pump},
+            "paper":    {"value": round(paper_cap, 2),    "ret": _ret(paper_cap, PAPER_INITIAL_CAPITAL),    "cb": cb_paper},
+            "agent":    {"value": round(agent_cap, 2),    "ret": _ret(agent_cap, AGENT_INITIAL_CAPITAL),    "cb": cb_agent},
+            "pump":     {"value": round(pump_cap,  2),    "ret": _ret(pump_cap,  PUMP_INITIAL_CAPITAL),     "cb": cb_pump},
+            "scalping": {"value": round(scalping_cap, 2), "ret": _ret(scalping_cap, SCALPING_INITIAL_CAPITAL), "cb": False},
         },
         "stats_today": {
-            "paper": paper_stats,
-            "agent": agent_stats,
-            "pump":  pump_stats,
+            "paper":    paper_stats,
+            "agent":    agent_stats,
+            "pump":     pump_stats,
+            "scalping": scalping_stats_today,
         },
         "positions": positions,
         "trades": {
@@ -157,14 +385,19 @@ def _build_status():
             "pump":  pump_recent,
         },
         "chart": {
-            "paper": paper_chart,
-            "agent": agent_chart,
-            "pump":  pump_chart,
+            "paper":    paper_chart,
+            "agent":    agent_chart,
+            "pump":     pump_chart,
+            "scalping": scalping_chart,
         },
+        "metrics":   metrics,
+        "by_symbol": by_symbol,
+        "health":    health,
+        "logs":      logs,
     }
 
 
-# ── ROTAS ─────────────────────────────────────────────────────────────────────
+# ── ROTAS ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -189,7 +422,60 @@ def resume():
     return redirect(url_for("index"))
 
 
-# ── MAIN ──────────────────────────────────────────────────────────────────────
+@app.route("/api/trades")
+def api_trades():
+    """Historico de trades com filtro de periodo.
+
+    Query params:
+      system — paper, agent, pump (default: paper)
+      days   — quantidade de dias para trás (default: 7)
+    """
+    system = request.args.get("system", "paper").lower()
+    days = request.args.get("days", "7")
+
+    try:
+        days = int(days)
+    except ValueError:
+        days = 7
+
+    table_map = {
+        "paper": "paper_trades",
+        "agent": "agent_trades",
+        "pump":  "pump_trades",
+    }
+
+    table = table_map.get(system)
+    if not table:
+        return jsonify({"error": f"unknown system: {system}"}), 400
+
+    trades = get_trades_range(table, days=days)
+    return jsonify(trades)
+
+
+@app.route("/api/logs")
+def api_logs():
+    """Logs recentes de um subsistema.
+
+    Query params:
+      source — main, scalping, pump (default: main)
+      lines  — quantidade de linhas (default: 50)
+    """
+    source = request.args.get("source", "main")
+    lines = request.args.get("lines", "50")
+
+    try:
+        lines = int(lines)
+    except ValueError:
+        lines = 50
+
+    # Limita a 500 linhas para nao sobrecarregar
+    lines = min(lines, 500)
+
+    log_lines = _get_recent_logs(source=source, lines=lines)
+    return jsonify(log_lines)
+
+
+# ── MAIN ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     db.init_db()
