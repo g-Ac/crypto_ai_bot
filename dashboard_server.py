@@ -13,6 +13,7 @@ Rotas:
 import os
 import json
 import shutil
+import time
 import requests
 from datetime import datetime, date, timedelta
 from flask import Flask, render_template, redirect, url_for, jsonify, request
@@ -26,6 +27,218 @@ from signal_types import ScalpingConfig
 SCALPING_INITIAL_CAPITAL = 10000
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, template_folder=os.path.join(BOT_DIR, "templates"))
+_PRICE_CACHE = {"fetched_at": 0.0, "prices": {}}
+
+
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_json(path, default=None):
+    if default is None:
+        default = {}
+    if not os.path.isfile(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _extract_trade_timestamp(trade):
+    return trade.get("timestamp") or trade.get("exit_time") or trade.get("entry_time") or ""
+
+
+def _parse_trade_datetime(raw_ts):
+    if not raw_ts:
+        return None
+    try:
+        normalized = str(raw_ts).replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _normalize_scalping_trade(trade):
+    ts = _extract_trade_timestamp(trade)
+    direction = trade.get("direction") or trade.get("type") or ""
+    pnl_pct = trade.get("pnl_pct")
+    if pnl_pct is None:
+        entry = _safe_float(trade.get("entry_price"))
+        exit_price = _safe_float(trade.get("exit_price"))
+        if entry and exit_price:
+            if str(direction).upper() in ("SHORT", "SELL"):
+                pnl_pct = (entry - exit_price) / entry * 100
+            else:
+                pnl_pct = (exit_price - entry) / entry * 100
+        else:
+            pnl_pct = 0
+
+    return {
+        "timestamp": ts,
+        "entry_time": trade.get("entry_time"),
+        "exit_time": trade.get("exit_time"),
+        "symbol": trade.get("symbol", "--"),
+        "type": direction,
+        "entry_price": _safe_float(trade.get("entry_price")),
+        "exit_price": _safe_float(trade.get("exit_price")),
+        "pnl_pct": round(_safe_float(pnl_pct), 4),
+        "pnl_usd": round(_safe_float(trade.get("pnl_usd")), 2),
+        "exit_reason": trade.get("exit_reason") or trade.get("reason") or "signal",
+        "analyst_confidence": trade.get("analyst_confidence"),
+        "capital_after": trade.get("capital_after"),
+    }
+
+
+def _get_scalping_history(days=None, limit=100):
+    scalping_state = _read_json(os.path.join(BOT_DIR, "scalping_state.json"), {})
+    history = scalping_state.get("history", [])
+    if not history:
+        return []
+
+    cutoff = None
+    today_only = False
+    if days is not None and days > 0:
+        cutoff = datetime.now() - timedelta(days=days)
+    elif days == 0:
+        today_only = True
+
+    rows = []
+    for trade in history:
+        row = _normalize_scalping_trade(trade)
+        row_dt = _parse_trade_datetime(row["timestamp"])
+        if cutoff and row_dt and row_dt < cutoff:
+            continue
+        if today_only and (row.get("timestamp") or "")[:10] != date.today().isoformat():
+            continue
+        row["_sort_dt"] = row_dt or datetime.min
+        rows.append(row)
+
+    rows.sort(key=lambda item: item["_sort_dt"], reverse=True)
+    if limit:
+        rows = rows[:limit]
+
+    for row in rows:
+        row.pop("_sort_dt", None)
+    return rows
+
+
+def _compute_trade_metrics(trades):
+    if not trades:
+        return {
+            "total_trades": 0,
+            "win_rate": 0,
+            "avg_pnl_pct": 0,
+            "largest_win": 0,
+            "largest_loss": 0,
+            "profit_factor": 0,
+            "max_drawdown_pct": 0,
+        }
+
+    wins = [t for t in trades if _safe_float(t.get("pnl_pct")) > 0]
+    losses = [t for t in trades if _safe_float(t.get("pnl_pct")) < 0]
+    pnl_pct_values = [_safe_float(t.get("pnl_pct")) for t in trades]
+    pnl_usd_values = [_safe_float(t.get("pnl_usd")) for t in trades]
+
+    sum_wins = sum(value for value in pnl_usd_values if value > 0)
+    sum_losses = abs(sum(value for value in pnl_usd_values if value < 0))
+    capitals = [
+        _safe_float(t.get("capital_after"))
+        for t in trades
+        if t.get("capital_after") not in (None, "")
+    ]
+
+    max_drawdown_pct = 0
+    if capitals:
+        peak = capitals[0]
+        for capital in capitals:
+            if capital > peak:
+                peak = capital
+            if peak > 0:
+                dd = (peak - capital) / peak * 100
+                if dd > max_drawdown_pct:
+                    max_drawdown_pct = dd
+
+    return {
+        "total_trades": len(trades),
+        "win_rate": round(len(wins) / len(trades) * 100, 1) if trades else 0,
+        "avg_pnl_pct": round(sum(pnl_pct_values) / len(pnl_pct_values), 2) if pnl_pct_values else 0,
+        "largest_win": round(max(pnl_pct_values), 2) if pnl_pct_values else 0,
+        "largest_loss": round(min(pnl_pct_values), 2) if pnl_pct_values else 0,
+        "profit_factor": round(sum_wins / sum_losses, 2) if sum_losses > 0 else (99.0 if sum_wins > 0 else 0),
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
+    }
+
+
+def _merge_cumulative_charts(charts_by_system):
+    all_days = sorted({
+        row["day"]
+        for rows in charts_by_system.values()
+        for row in rows
+    })
+    if not all_days:
+        return []
+
+    series_maps = {
+        key: {row["day"]: _safe_float(row.get("pnl")) for row in rows}
+        for key, rows in charts_by_system.items()
+    }
+    running = {key: 0.0 for key in charts_by_system.keys()}
+    merged = []
+
+    for day in all_days:
+        total = 0.0
+        for key, series_map in series_maps.items():
+            if day in series_map:
+                running[key] = series_map[day]
+            total += running[key]
+        merged.append({"day": day, "pnl": round(total, 2)})
+
+    return merged
+
+
+def _get_market_prices(symbols_needed):
+    if not symbols_needed:
+        return {}
+
+    now = time.time()
+    cache_age = now - _PRICE_CACHE["fetched_at"]
+    if _PRICE_CACHE["prices"] and cache_age < 15:
+        return {
+            symbol: _PRICE_CACHE["prices"].get(symbol)
+            for symbol in symbols_needed
+            if symbol in _PRICE_CACHE["prices"]
+        }
+
+    try:
+        resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=5)
+        if resp.status_code == 200:
+            prices = {
+                item["symbol"]: _safe_float(item["price"])
+                for item in resp.json()
+                if item.get("symbol")
+            }
+            _PRICE_CACHE["prices"] = prices
+            _PRICE_CACHE["fetched_at"] = now
+    except Exception:
+        pass
+
+    return {
+        symbol: _PRICE_CACHE["prices"].get(symbol)
+        for symbol in symbols_needed
+        if symbol in _PRICE_CACHE["prices"]
+    }
 
 
 # ── SYSTEM HEALTH ────────────────────────────────────────────────────────────
@@ -242,71 +455,50 @@ def _get_live_positions():
     # --- Paper, Agent, Pump positions ---
     for fname, system in state_files:
         path = os.path.join(BOT_DIR, fname)
-        if not os.path.isfile(path):
-            continue
-        try:
-            state = json.load(open(path))
-            for sym, pos in state.get("positions", {}).items():
-                symbols_needed.add(sym)
-                entry = {
-                    "system":      system,
-                    "symbol":      sym,
-                    "type":        pos.get("type", ""),
-                    "entry_price": float(pos.get("entry_price", 0)),
-                    "sl_price":    pos.get("sl_price"),
-                    "tp_price":    pos.get("tp_price"),
-                }
-                # Agent confidence (stored in agent_state.json positions)
-                if system == "Agent" and "analyst_confidence" in pos:
-                    entry["analyst_confidence"] = pos["analyst_confidence"]
-                raw.append(entry)
-        except Exception:
-            continue
+        state = _read_json(path, {})
+        for sym, pos in state.get("positions", {}).items():
+            symbols_needed.add(sym)
+            entry = {
+                "system":      system,
+                "symbol":      sym,
+                "type":        pos.get("type", ""),
+                "entry_price": _safe_float(pos.get("entry_price")),
+                "sl_price":    pos.get("sl_price"),
+                "tp_price":    pos.get("tp_price"),
+            }
+            if system == "Agent" and "analyst_confidence" in pos:
+                entry["analyst_confidence"] = pos["analyst_confidence"]
+            raw.append(entry)
 
     # --- Scalping positions (different field names) ---
     scalping_path = os.path.join(BOT_DIR, "scalping_state.json")
-    if os.path.isfile(scalping_path):
-        try:
-            scalping_state = json.load(open(scalping_path))
-            for sym, pos in scalping_state.get("positions", {}).items():
-                symbols_needed.add(sym)
-                raw.append({
-                    "system":           "Scalping",
-                    "symbol":           sym,
-                    "type":             pos.get("direction", ""),
-                    "entry_price":      float(pos.get("entry_price", 0)),
-                    "sl_price":         pos.get("sl_price"),
-                    "tp1_price":        pos.get("tp1_price"),
-                    "tp2_price":        pos.get("tp2_price"),
-                    "tp_price":         pos.get("tp1_price"),  # compat: use tp1 as primary
-                    "leverage":         pos.get("leverage", 1),
-                    "confluence_score": pos.get("confluence_score", 0),
-                    "tp1_hit":          pos.get("tp1_hit", False),
-                    "position_size_usd": pos.get("position_size_usd", 0),
-                    "source":           pos.get("source", ""),
-                })
-        except Exception:
-            pass
+    scalping_state = _read_json(scalping_path, {})
+    for sym, pos in scalping_state.get("positions", {}).items():
+        symbols_needed.add(sym)
+        raw.append({
+            "system":           "Scalping",
+            "symbol":           sym,
+            "type":             pos.get("direction", ""),
+            "entry_price":      _safe_float(pos.get("entry_price")),
+            "sl_price":         pos.get("sl_price"),
+            "tp1_price":        pos.get("tp1_price"),
+            "tp2_price":        pos.get("tp2_price"),
+            "tp_price":         pos.get("tp1_price"),
+            "leverage":         pos.get("leverage", 1),
+            "confluence_score": pos.get("confluence_score", 0),
+            "tp1_hit":          pos.get("tp1_hit", False),
+            "position_size_usd": _safe_float(pos.get("position_size_usd")),
+            "source":           pos.get("source", ""),
+        })
 
     if not raw:
         return []
 
-    # Busca todos os precos de uma vez (1 request)
-    prices = {}
-    try:
-        resp = requests.get(
-            "https://api.binance.com/api/v3/ticker/price", timeout=5
-        )
-        if resp.status_code == 200:
-            for item in resp.json():
-                if item["symbol"] in symbols_needed:
-                    prices[item["symbol"]] = float(item["price"])
-    except Exception:
-        pass
+    prices = _get_market_prices(symbols_needed)
 
     # Calcula P&L ao vivo para cada posicao
     for pos in raw:
-        entry   = pos["entry_price"]
+        entry = pos["entry_price"]
         current = prices.get(pos["symbol"])
         if current and entry:
             direction = pos["type"].upper()
@@ -324,7 +516,7 @@ def _get_live_positions():
 
 # ── HELPERS ──────────────────────────────────────────────────────────────────
 
-def _build_status():
+def _build_status(include_logs=True, include_trades=True):
     """Coleta todos os dados necessarios para o dashboard."""
     paused = is_paused()
 
@@ -336,19 +528,20 @@ def _build_status():
 
     # Scalping capital (from scalping_state.json)
     scalping_cap = SCALPING_INITIAL_CAPITAL
-    scalping_total_trades = 0
-    scalping_wins = 0
-    scalping_losses = 0
     scalping_path = os.path.join(BOT_DIR, "scalping_state.json")
-    if os.path.isfile(scalping_path):
-        try:
-            sc_state = json.load(open(scalping_path))
-            scalping_cap = float(sc_state.get("capital", SCALPING_INITIAL_CAPITAL))
-            scalping_total_trades = int(sc_state.get("total_trades", 0))
-            scalping_wins = int(sc_state.get("wins", 0))
-            scalping_losses = int(sc_state.get("losses", 0))
-        except Exception:
-            pass
+    scalping_state = _read_json(scalping_path, {})
+    scalping_cap = _safe_float(
+        scalping_state.get("capital", SCALPING_INITIAL_CAPITAL),
+        SCALPING_INITIAL_CAPITAL,
+    )
+    scalping_trades_30d = _get_scalping_history(days=30, limit=500)
+    scalping_recent = _get_scalping_history(days=1, limit=100)
+    today_str = date.today().isoformat()
+    scalping_today = [
+        trade for trade in scalping_recent
+        if (trade.get("timestamp") or "")[:10] == today_str
+    ]
+    scalping_total_trades = _safe_int(scalping_state.get("total_trades"), len(scalping_trades_30d))
 
     def _ret(current, initial):
         return round((current - initial) / initial * 100, 2) if initial else 0
@@ -362,13 +555,7 @@ def _build_status():
     agent_stats = calc_daily_stats(agent_today)
     pump_stats  = calc_daily_stats(pump_today)
 
-    # Scalping stats hoje (from scalping_state.json history)
-    scalping_stats_today = {
-        "total_trades": scalping_total_trades,
-        "wins": scalping_wins,
-        "losses": scalping_losses,
-        "win_rate": round((scalping_wins / scalping_total_trades * 100), 1) if scalping_total_trades > 0 else 0,
-    }
+    scalping_stats_today = calc_daily_stats(scalping_today)
 
     # Posicoes abertas com P&L ao vivo
     positions = _get_live_positions()
@@ -376,7 +563,7 @@ def _build_status():
     # Trades de hoje por sistema
     paper_recent = paper_today
     agent_recent = agent_today
-    pump_recent  = pump_today
+    pump_recent = pump_today
 
     # Dados do grafico P&L acumulado (30 dias)
     def _cumulative(daily_rows):
@@ -394,22 +581,16 @@ def _build_status():
 
     # Scalping chart (from scalping_state.json history)
     scalping_chart = []
-    if os.path.isfile(scalping_path):
-        try:
-            sc_state = json.load(open(scalping_path))
-            history = sc_state.get("history", [])
-            daily_pnl = {}
-            for trade in history:
-                ts = trade.get("exit_time", trade.get("entry_time", ""))
-                if ts:
-                    day = ts[:10]
-                    daily_pnl[day] = daily_pnl.get(day, 0) + float(trade.get("pnl_usd", 0))
-            acc = 0.0
-            for day in sorted(daily_pnl.keys()):
-                acc += daily_pnl[day]
-                scalping_chart.append({"day": day, "pnl": round(acc, 2)})
-        except Exception:
-            pass
+    daily_pnl = {}
+    for trade in scalping_trades_30d:
+        ts = trade.get("timestamp", "")
+        if ts:
+            day = ts[:10]
+            daily_pnl[day] = daily_pnl.get(day, 0) + _safe_float(trade.get("pnl_usd"))
+    acc = 0.0
+    for day in sorted(daily_pnl.keys()):
+        acc += daily_pnl[day]
+        scalping_chart.append({"day": day, "pnl": round(acc, 2)})
 
     # Circuit breaker status
     from daily_report import is_circuit_broken
@@ -422,15 +603,18 @@ def _build_status():
         "paper":    get_all_time_stats("paper_trades", 30),
         "agent":    get_all_time_stats("agent_trades", 30),
         "pump":     get_all_time_stats("pump_trades",  30),
+        "scalping": _compute_trade_metrics(scalping_trades_30d),
     }
 
-    # Combined metrics across all systems
-    all_totals = sum(m["total_trades"] for m in metrics_per_system.values()) + scalping_total_trades
-    all_wins = sum(m.get("win_rate", 0) * m["total_trades"] / 100 for m in metrics_per_system.values() if m["total_trades"]) + scalping_wins
+    all_totals = sum(m["total_trades"] for m in metrics_per_system.values())
+    all_wins = sum(
+        m.get("win_rate", 0) * m["total_trades"] / 100
+        for m in metrics_per_system.values()
+        if m["total_trades"]
+    )
     all_wins = int(all_wins)
     combined_win_rate = (all_wins / all_totals * 100) if all_totals > 0 else 0
 
-    # Best/worst trade and profit factor across all systems
     all_largest_win = max((m.get("largest_win", 0) for m in metrics_per_system.values()), default=0)
     all_largest_loss = min((m.get("largest_loss", 0) for m in metrics_per_system.values()), default=0)
     all_max_dd = max((m.get("max_drawdown_pct", 0) for m in metrics_per_system.values()), default=0)
@@ -462,11 +646,76 @@ def _build_status():
             by_symbol_raw[sym]["trades"] += row["trades"]
             by_symbol_raw[sym]["wins"] += row["wins"]
             by_symbol_raw[sym]["losses"] += row["losses"]
-            by_symbol_raw[sym]["total_pnl"] += float(row["total_pnl"] or 0)
+            by_symbol_raw[sym]["total_pnl"] += _safe_float(row["total_pnl"])
+
+    for trade in scalping_trades_30d:
+        sym = trade.get("symbol", "--")
+        if sym not in by_symbol_raw:
+            by_symbol_raw[sym] = {"symbol": sym, "trades": 0, "wins": 0, "losses": 0, "total_pnl": 0.0}
+        by_symbol_raw[sym]["trades"] += 1
+        pnl_pct = _safe_float(trade.get("pnl_pct"))
+        if pnl_pct > 0:
+            by_symbol_raw[sym]["wins"] += 1
+        elif pnl_pct < 0:
+            by_symbol_raw[sym]["losses"] += 1
+        by_symbol_raw[sym]["total_pnl"] += _safe_float(trade.get("pnl_usd"))
+
     by_symbol = sorted(by_symbol_raw.values(), key=lambda x: x["total_pnl"], reverse=True)
     for s in by_symbol:
         s["total_pnl"] = round(s["total_pnl"], 2)
         s["avg_pnl_pct"] = round(s["total_pnl"] / s["trades"], 2) if s["trades"] else 0
+
+    charts = {
+        "paper": paper_chart,
+        "agent": agent_chart,
+        "pump": pump_chart,
+        "scalping": scalping_chart,
+    }
+    charts["total"] = _merge_cumulative_charts({
+        "paper": paper_chart,
+        "agent": agent_chart,
+        "pump": pump_chart,
+        "scalping": scalping_chart,
+    })
+
+    capital = {
+        "paper": {"value": round(paper_cap, 2), "ret": _ret(paper_cap, PAPER_INITIAL_CAPITAL), "cb": cb_paper},
+        "agent": {"value": round(agent_cap, 2), "ret": _ret(agent_cap, AGENT_INITIAL_CAPITAL), "cb": cb_agent},
+        "pump": {"value": round(pump_cap, 2), "ret": _ret(pump_cap, PUMP_INITIAL_CAPITAL), "cb": cb_pump},
+        "scalping": {"value": round(scalping_cap, 2), "ret": _ret(scalping_cap, SCALPING_INITIAL_CAPITAL), "cb": False},
+    }
+    stats_today = {
+        "paper": paper_stats,
+        "agent": agent_stats,
+        "pump": pump_stats,
+        "scalping": scalping_stats_today,
+    }
+    total_initial_capital = (
+        PAPER_INITIAL_CAPITAL
+        + AGENT_INITIAL_CAPITAL
+        + PUMP_INITIAL_CAPITAL
+        + SCALPING_INITIAL_CAPITAL
+    )
+    portfolio_value = sum(system["value"] for system in capital.values())
+    total_chart = charts["total"]
+    total_curve_current = total_chart[-1]["pnl"] if total_chart else 0
+    total_curve_peak = max((point["pnl"] for point in total_chart), default=0)
+    best_system_key = max(capital.keys(), key=lambda key: capital[key]["ret"])
+
+    summary = {
+        "portfolio_value": round(portfolio_value, 2),
+        "portfolio_ret": _ret(portfolio_value, total_initial_capital),
+        "today_pnl_usd": round(sum(_safe_float(item.get("pnl_usd")) for item in stats_today.values()), 2),
+        "curve_current": round(total_curve_current, 2),
+        "curve_peak": round(total_curve_peak, 2),
+        "curve_drawdown": round(total_curve_peak - total_curve_current, 2),
+        "best_system": {
+            "key": best_system_key,
+            "ret": capital[best_system_key]["ret"],
+            "value": capital[best_system_key]["value"],
+        },
+        "open_positions": len(positions),
+    }
 
     # System health
     health = _get_system_health()
@@ -474,55 +723,47 @@ def _build_status():
     # Bot operational status -- checks if processes are alive and last cycle was recent
     bot_status = _get_bot_status()
 
-    # Recent logs (last 20 lines of main log)
-    logs = _get_recent_logs(source="main", lines=20)
+    logs = _get_recent_logs(source="main", lines=20) if include_logs else []
 
-    return {
+    status = {
         "paused": paused,
         "last_update": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "capital": {
-            "paper":    {"value": round(paper_cap, 2),    "ret": _ret(paper_cap, PAPER_INITIAL_CAPITAL),    "cb": cb_paper},
-            "agent":    {"value": round(agent_cap, 2),    "ret": _ret(agent_cap, AGENT_INITIAL_CAPITAL),    "cb": cb_agent},
-            "pump":     {"value": round(pump_cap,  2),    "ret": _ret(pump_cap,  PUMP_INITIAL_CAPITAL),     "cb": cb_pump},
-            "scalping": {"value": round(scalping_cap, 2), "ret": _ret(scalping_cap, SCALPING_INITIAL_CAPITAL), "cb": False},
-        },
-        "stats_today": {
-            "paper":    paper_stats,
-            "agent":    agent_stats,
-            "pump":     pump_stats,
-            "scalping": scalping_stats_today,
-        },
+        "capital": capital,
+        "stats_today": stats_today,
+        "summary": summary,
         "positions": positions,
-        "trades": {
+        "chart": charts,
+        "metrics": metrics,
+        "by_symbol": by_symbol,
+        "health": health,
+        "bot_status": bot_status,
+        "logs": logs,
+    }
+
+    if include_trades:
+        status["trades"] = {
             "paper": paper_recent,
             "agent": agent_recent,
-            "pump":  pump_recent,
-        },
-        "chart": {
-            "paper":    paper_chart,
-            "agent":    agent_chart,
-            "pump":     pump_chart,
-            "scalping": scalping_chart,
-        },
-        "metrics":   metrics,
-        "by_symbol": by_symbol,
-        "health":    health,
-        "bot_status": bot_status,
-        "logs":      logs,
-    }
+            "pump": pump_recent,
+            "scalping": scalping_today,
+        }
+    else:
+        status["trades"] = {}
+
+    return status
 
 
 # ── ROTAS ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
-    status = _build_status()
-    return render_template("index.html", **status)
+    status = _build_status(include_logs=True, include_trades=True)
+    return render_template("index.html", dashboard=status)
 
 
 @app.route("/api/status")
 def api_status():
-    return jsonify(_build_status())
+    return jsonify(_build_status(include_logs=False, include_trades=False))
 
 
 @app.route("/pause", methods=["POST"])
@@ -559,12 +800,15 @@ def api_trades():
         "pump":  "pump_trades",
     }
 
-    table = table_map.get(system)
-    if not table:
-        return jsonify({"error": f"unknown system: {system}"}), 400
+    if system == "scalping":
+        trades = _get_scalping_history(days=days, limit=150)
+    else:
+        table = table_map.get(system)
+        if not table:
+            return jsonify({"error": f"unknown system: {system}"}), 400
+        trades = get_trades_range(table, days=days)
 
-    trades = get_trades_range(table, days=days)
-    return jsonify(trades)
+    return jsonify({"trades": trades})
 
 
 @app.route("/api/logs")
@@ -587,7 +831,7 @@ def api_logs():
     lines = min(lines, 500)
 
     log_lines = _get_recent_logs(source=source, lines=lines)
-    return jsonify(log_lines)
+    return jsonify({"logs": log_lines})
 
 
 # ── MAIN ─────────────────────────────────────────────────────────────────────

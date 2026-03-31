@@ -1,873 +1,1711 @@
+{% set health = dashboard.health or {} %}
+{% set bot_status = dashboard.bot_status or {} %}
+{% set summary = dashboard.summary or {} %}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Crypto AI Bot -- Dashboard</title>
+  <title>Crypto AI Bot | Control Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --bg-primary: #0d1117;
-      --bg-card: #161b22;
-      --bg-header: #21262d;
-      --border: #30363d;
-      --text-primary: #e6edf3;
-      --text-muted: #8b949e;
-      --green: #3fb950;
-      --red: #f85149;
-      --yellow: #d29922;
-      --blue: #58a6ff;
-      --orange: #f78166;
-      --purple: #bc8cff;
+      --bg-primary: #07111f;
+      --bg-secondary: rgba(7, 17, 31, 0.82);
+      --panel: rgba(10, 22, 39, 0.88);
+      --panel-strong: rgba(13, 27, 47, 0.96);
+      --panel-soft: rgba(17, 34, 57, 0.78);
+      --border: rgba(130, 168, 214, 0.18);
+      --border-strong: rgba(130, 168, 214, 0.3);
+      --text-primary: #edf5ff;
+      --text-secondary: #a6bdd8;
+      --text-dim: #6f87a3;
+      --green: #35d08f;
+      --red: #ff6b7f;
+      --yellow: #ffca6a;
+      --blue: #5fb7ff;
+      --orange: #ff9f66;
+      --purple: #b592ff;
+      --cyan: #69f0ff;
+      --shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
     }
+
     * { box-sizing: border-box; }
-    body { background: var(--bg-primary); color: var(--text-primary); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
 
-    /* Header / Navbar */
+    html, body {
+      min-height: 100%;
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(95, 183, 255, 0.18), transparent 30%),
+        radial-gradient(circle at top right, rgba(181, 146, 255, 0.12), transparent 25%),
+        linear-gradient(180deg, #07111f 0%, #040b14 100%);
+      color: var(--text-primary);
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.024) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.024) 1px, transparent 1px);
+      background-size: 34px 34px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 90%);
+    }
+
     .top-navbar {
-      background: var(--bg-card);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      background: rgba(4, 10, 18, 0.88);
+      backdrop-filter: blur(18px);
       border-bottom: 1px solid var(--border);
-      padding: 0.5rem 1.25rem;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.24);
     }
-    .brand-title { font-size: 1.15rem; font-weight: 700; color: #fff; letter-spacing: 0.3px; }
 
-    /* Health badges */
-    .health-badge {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 3px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 600;
-      background: #1c2128; border: 1px solid var(--border); color: var(--text-muted);
+    .brand-block {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      min-width: 220px;
     }
-    .health-badge .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-    .health-ok .dot   { background: var(--green); }
-    .health-warn .dot  { background: var(--yellow); }
-    .health-crit .dot  { background: var(--red); }
-    .health-ok   { color: var(--green); }
-    .health-warn { color: var(--yellow); }
-    .health-crit { color: var(--red); }
 
-    /* Status badges */
-    .badge-running { background: #238636; color: #fff; }
-    .badge-paused  { background: #da3633; color: #fff; }
-
-    /* Cards */
-    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; }
-    .card-header {
-      background: var(--bg-header); border-bottom: 1px solid var(--border);
-      font-weight: 600; font-size: 0.85rem; padding: 0.6rem 1rem;
+    .brand-kicker,
+    .section-eyebrow {
+      margin: 0;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 0.67rem;
+      font-weight: 600;
     }
-    .card-body { padding: 1rem; }
 
-    /* Capital cards */
-    .capital-value { font-size: 1.5rem; font-weight: 700; font-family: 'Courier New', monospace; }
-    .ret-positive { color: var(--green); }
-    .ret-negative { color: var(--red); }
-    .ret-zero     { color: var(--text-muted); }
-    .cb-warning   { color: var(--red); font-size: 0.72rem; font-weight: 600; }
+    .brand-title {
+      margin: 0;
+      font-size: clamp(1.35rem, 2vw, 1.9rem);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
 
-    /* Metric mini-cards */
+    .brand-subtitle {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 0.84rem;
+    }
+
+    .status-ribbon,
+    .control-ribbon {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+    }
+
+    .status-pill,
+    .chip,
+    .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.5rem 0.8rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(15, 29, 47, 0.78);
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .status-pill strong,
+    .chip strong,
+    .mode-badge strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .status-pill .dot,
+    .mode-badge .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      display: inline-block;
+      background: var(--text-dim);
+      box-shadow: 0 0 14px currentColor;
+    }
+
+    .tone-good { color: var(--green); }
+    .tone-good .dot { background: var(--green); }
+    .tone-warn { color: var(--yellow); }
+    .tone-warn .dot { background: var(--yellow); }
+    .tone-bad { color: var(--red); }
+    .tone-bad .dot { background: var(--red); }
+    .tone-neutral { color: var(--text-secondary); }
+    .tone-positive { color: var(--green); }
+    .tone-negative { color: var(--red); }
+
+    .control-button {
+      border: none;
+      border-radius: 999px;
+      padding: 0.55rem 1rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #fff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .control-button.pause { background: linear-gradient(135deg, #ef5350, #d32f2f); }
+    .control-button.resume { background: linear-gradient(135deg, #2e9b5d, #1f7a46); }
+
+    .dashboard-shell {
+      width: min(1600px, calc(100% - 2rem));
+      margin: 1.5rem auto 2rem;
+      display: grid;
+      gap: 1.2rem;
+    }
+
+    .hero-grid,
+    .split-grid {
+      display: grid;
+      gap: 1.2rem;
+    }
+
+    .hero-grid {
+      grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.92fr);
+      align-items: stretch;
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 1.2rem;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(12, 24, 42, 0.96), rgba(8, 17, 31, 0.94));
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .hero-panel {
+      position: relative;
+      padding: 1.5rem;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 15% 10%, rgba(95, 183, 255, 0.12), transparent 25%),
+        radial-gradient(circle at 85% 18%, rgba(181, 146, 255, 0.1), transparent 25%),
+        linear-gradient(180deg, rgba(12, 24, 42, 0.98), rgba(7, 16, 28, 0.98));
+    }
+
+    .hero-panel::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent);
+    }
+
+    .hero-header,
+    .section-heading,
+    .panel-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .hero-title {
+      margin: 0.35rem 0 0.5rem;
+      font-size: clamp(1.8rem, 3vw, 2.7rem);
+      line-height: 1.05;
+      max-width: 12ch;
+    }
+
+    .hero-subtitle {
+      margin: 0;
+      max-width: 64ch;
+      color: var(--text-secondary);
+      font-size: 0.97rem;
+      line-height: 1.6;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      min-width: 220px;
+    }
+
+    .large-chip {
+      justify-content: space-between;
+      min-width: 220px;
+      padding: 0.85rem 1rem;
+      background: rgba(15, 29, 47, 0.92);
+      border-color: var(--border-strong);
+    }
+
+    .hero-kpi-grid,
+    .capital-grid,
+    .metric-grid,
+    .spotlight-grid,
+    .resource-grid,
+    .position-grid {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .hero-kpi-grid {
+      margin-top: 1.4rem;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .hero-kpi-card,
+    .capital-card,
+    .metric-card,
+    .spotlight-card,
+    .resource-card,
+    .position-card {
+      border-radius: 22px;
+      border: 1px solid var(--border);
+      background: rgba(13, 25, 42, 0.82);
+      padding: 1rem;
+      min-width: 0;
+    }
+
+    .hero-kpi-card {
+      background: linear-gradient(180deg, rgba(13, 27, 47, 0.96), rgba(11, 20, 35, 0.92));
+    }
+
+    .hero-kpi-label,
+    .metric-label,
+    .capital-label,
+    .spotlight-label,
+    .resource-label {
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.68rem;
+      margin-bottom: 0.45rem;
+    }
+
+    .hero-kpi-value,
+    .capital-value,
+    .metric-value {
+      font-family: "IBM Plex Mono", monospace;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+    }
+
+    .hero-kpi-value {
+      font-size: clamp(1.15rem, 2vw, 1.55rem);
+    }
+
+    .capital-value {
+      font-size: 1.42rem;
+    }
+
+    .capital-grid {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .capital-card {
+      padding: 1.2rem;
+      background:
+        linear-gradient(180deg, rgba(14, 28, 47, 0.96), rgba(9, 19, 34, 0.94)),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.02), transparent);
+    }
+
+    .capital-card-header,
+    .spotlight-card-top,
+    .position-card-top,
+    .symbol-row-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .system-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+    }
+
+    .system-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      box-shadow: 0 0 18px currentColor;
+    }
+
+    .capital-subline,
+    .resource-subline,
+    .spotlight-subline {
+      margin-top: 0.35rem;
+      color: var(--text-secondary);
+      font-size: 0.82rem;
+    }
+
+    .capital-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .capital-stat strong,
+    .spotlight-value,
+    .resource-value {
+      display: block;
+      margin-top: 0.2rem;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.95rem;
+    }
+
+    .metric-grid {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
     .metric-card {
-      background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
-      padding: 0.75rem 1rem; text-align: center;
-    }
-    .metric-card .metric-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-    .metric-card .metric-value { font-size: 1.25rem; font-weight: 700; font-family: 'Courier New', monospace; }
-
-    /* Tables */
-    .table { color: var(--text-primary); font-size: 0.82rem; }
-    .table-dark {
-      --bs-table-bg: var(--bg-card);
-      --bs-table-striped-bg: #1c2128;
-      --bs-table-hover-bg: #1f2937;
-      border-color: var(--border);
-    }
-    .table thead th {
-      background: var(--bg-header); border-bottom: 2px solid var(--border);
-      font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.4px;
-      color: var(--text-muted); white-space: nowrap;
-    }
-    .table td { vertical-align: middle; border-color: var(--border); }
-    th.sortable { cursor: pointer; user-select: none; }
-    th.sortable:hover { color: var(--text-primary); }
-    th.sortable::after { content: ' \2195'; font-size: 0.65rem; opacity: 0.5; }
-
-    /* Tabs */
-    .nav-tabs { border-bottom: 1px solid var(--border); }
-    .nav-tabs .nav-link {
-      color: var(--text-muted); border: 1px solid transparent;
-      padding: 0.45rem 0.9rem; font-size: 0.82rem; font-weight: 500;
-    }
-    .nav-tabs .nav-link:hover { color: var(--text-primary); border-color: transparent; }
-    .nav-tabs .nav-link.active {
-      color: var(--text-primary); background: var(--bg-card);
-      border-color: var(--border) var(--border) var(--bg-card);
-    }
-    .tab-content {
-      background: var(--bg-card); border: 1px solid var(--border); border-top: none;
-      padding: 0.75rem; border-radius: 0 0 6px 6px;
+      position: relative;
+      overflow: hidden;
+      background: rgba(10, 20, 35, 0.92);
     }
 
-    /* Period selector */
+    .metric-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 5px;
+      border-radius: 6px;
+      background: var(--accent, var(--blue));
+      box-shadow: 0 0 24px var(--accent, var(--blue));
+    }
+
+    .metric-value {
+      font-size: 1.3rem;
+      padding-left: 0.4rem;
+    }
+
+    .hero-chart-note {
+      margin-top: 1rem;
+      color: var(--text-dim);
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .hero-chart-wrap {
+      position: relative;
+      margin-top: 0.9rem;
+      height: 440px;
+      min-height: 320px;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background:
+        radial-gradient(circle at 50% 0%, rgba(95, 183, 255, 0.08), transparent 40%),
+        linear-gradient(180deg, rgba(4, 11, 20, 0.86), rgba(6, 14, 25, 0.96));
+      padding: 1rem 1rem 0.8rem;
+    }
+
+    .resource-grid,
+    .spotlight-grid,
+    .position-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .resource-card strong,
+    .resource-value {
+      font-size: 1.02rem;
+    }
+
+    .split-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+    }
+
+    .position-grid {
+      padding: 1.2rem;
+    }
+
+    .position-card {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+
+    .position-symbol {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .side-badge {
+      padding: 0.32rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .side-long { background: rgba(53, 208, 143, 0.14); color: var(--green); }
+    .side-short { background: rgba(255, 107, 127, 0.14); color: var(--red); }
+
+    .position-main-value {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.55rem;
+      font-weight: 600;
+    }
+
+    .position-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+    }
+
+    .position-meta,
+    .symbol-meta,
+    .capital-stat {
+      color: var(--text-dim);
+      font-size: 0.78rem;
+    }
+
+    .position-meta strong,
+    .symbol-meta strong {
+      display: block;
+      margin-top: 0.2rem;
+      color: var(--text-primary);
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.88rem;
+    }
+
+    .position-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+
+    .mini-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.28rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-secondary);
+      font-size: 0.72rem;
+    }
+
+    .symbol-list {
+      padding: 0.9rem 1.2rem 1.2rem;
+      display: grid;
+      gap: 0.8rem;
+      max-height: 720px;
+      overflow: auto;
+    }
+
+    .symbol-row {
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(11, 22, 38, 0.88);
+      padding: 1rem;
+    }
+
+    .symbol-row-title {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .symbol-row-pnl {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .symbol-bar {
+      position: relative;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+      margin: 0.8rem 0 0.65rem;
+    }
+
+    .symbol-bar span {
+      position: absolute;
+      inset: 0 auto 0 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(95, 183, 255, 0.88), rgba(53, 208, 143, 0.95));
+      box-shadow: 0 0 20px rgba(95, 183, 255, 0.38);
+    }
+
+    .symbol-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.6rem;
+    }
+
+    .section-block .section-heading,
+    .logs-panel .section-heading,
+    .history-panel .section-heading,
+    .panel .section-heading {
+      padding: 1.1rem 1.2rem 0;
+    }
+
+    .panel h2,
+    .section-heading h2,
+    .panel-title-row h2 {
+      margin: 0.2rem 0 0;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .period-group {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+
     .period-btn {
-      padding: 2px 10px; font-size: 0.72rem; border-radius: 4px;
-      border: 1px solid var(--border); background: transparent;
-      color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-secondary);
+      padding: 0.5rem 0.8rem;
+      font-size: 0.76rem;
+      font-weight: 600;
+      transition: 0.2s ease;
     }
-    .period-btn:hover { border-color: var(--blue); color: var(--blue); }
-    .period-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
 
-    /* Confidence badges */
-    .conf-high   { background: #238636; color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; }
-    .conf-med    { background: #9e6a03; color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; }
-    .conf-low    { background: #da3633; color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; }
+    .period-btn:hover,
+    .period-btn.active {
+      color: #fff;
+      background: linear-gradient(135deg, rgba(95, 183, 255, 0.24), rgba(181, 146, 255, 0.22));
+      border-color: rgba(95, 183, 255, 0.42);
+      box-shadow: 0 0 18px rgba(95, 183, 255, 0.18);
+    }
 
-    /* Chart */
-    .chart-container { position: relative; height: 280px; }
+    .history-tabs,
+    .log-tabs {
+      padding: 0 1.2rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
 
-    /* Logs terminal */
+    .history-tabs .nav-link,
+    .log-tabs .nav-link {
+      color: var(--text-secondary);
+      border: none;
+      background: transparent;
+      font-size: 0.82rem;
+      font-weight: 600;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      padding: 0.95rem 0.7rem 0.75rem;
+    }
+
+    .history-tabs .nav-link.active,
+    .log-tabs .nav-link.active {
+      color: #fff;
+      background: transparent;
+      border-color: var(--cyan);
+    }
+
+    .history-content,
+    .log-content {
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+
+    .history-pane-inner {
+      padding: 1rem 1.2rem 1.2rem;
+    }
+
+    .table-shell {
+      overflow-x: auto;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(8, 17, 31, 0.82);
+    }
+
+    .table-shell table {
+      width: 100%;
+      min-width: 720px;
+      border-collapse: collapse;
+      color: var(--text-primary);
+      font-size: 0.82rem;
+    }
+
+    .table-shell th,
+    .table-shell td {
+      padding: 0.8rem 0.85rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      text-align: left;
+    }
+
+    .table-shell th {
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.68rem;
+      position: sticky;
+      top: 0;
+      background: rgba(10, 20, 35, 0.98);
+      z-index: 1;
+    }
+
+    .table-shell tr:last-child td { border-bottom: none; }
+
+    .text-mono {
+      font-family: "IBM Plex Mono", monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .confidence-badge,
+    .system-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 54px;
+      padding: 0.25rem 0.48rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .confidence-high { color: var(--green); background: rgba(53, 208, 143, 0.12); }
+    .confidence-mid { color: var(--yellow); background: rgba(255, 202, 106, 0.12); }
+    .confidence-low { color: var(--red); background: rgba(255, 107, 127, 0.12); }
+
     .log-terminal {
-      background: #010409; border: 1px solid var(--border); border-radius: 4px;
-      padding: 0.6rem 0.8rem; max-height: 280px; overflow-y: auto;
-      font-family: 'Courier New', Consolas, monospace; font-size: 0.7rem;
-      line-height: 1.5; color: var(--green);
+      margin: 1rem 1.2rem 1.2rem;
+      min-height: 280px;
+      max-height: 360px;
+      overflow: auto;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(2, 8, 15, 0.96);
+      padding: 1rem;
+      color: #8df0b0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.74rem;
+      white-space: pre-wrap;
+      line-height: 1.55;
     }
-    .log-terminal::-webkit-scrollbar { width: 6px; }
-    .log-terminal::-webkit-scrollbar-track { background: #010409; }
-    .log-terminal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-    /* Misc */
-    .refresh-bar { font-size: 0.75rem; color: var(--text-muted); }
-    .text-mono { font-family: 'Courier New', monospace; }
-    .side-long  { color: var(--green); font-weight: 600; }
-    .side-short { color: var(--red); font-weight: 600; }
-    .tp1-ok { background: var(--green); color: #fff; font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+    .empty-state {
+      margin: 1rem 1.2rem 1.2rem;
+      padding: 1rem 1.1rem;
+      border-radius: 18px;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text-secondary);
+      font-size: 0.86rem;
+    }
+
     .collapse-btn {
-      background: transparent; border: 1px solid var(--border); color: var(--text-muted);
-      font-size: 0.72rem; padding: 2px 8px; border-radius: 3px; cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-secondary);
+      padding: 0.5rem 0.85rem;
+      font-size: 0.75rem;
+      font-weight: 600;
     }
-    .collapse-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
 
-    /* Loading spinner for AJAX */
-    .ajax-loading { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.8rem; }
+    .ajax-loading {
+      margin: 1rem 1.2rem 1.2rem;
+      padding: 1.2rem;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-secondary);
+      text-align: center;
+      font-size: 0.84rem;
+    }
+
+    @media (max-width: 1400px) {
+      .hero-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 1180px) {
+      .hero-grid,
+      .split-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .resource-grid,
+      .spotlight-grid,
+      .position-grid {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+    }
+
+    @media (max-width: 820px) {
+      .top-navbar {
+        padding: 1rem;
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .dashboard-shell {
+        width: min(100%, calc(100% - 1rem));
+        margin-top: 1rem;
+      }
+
+      .hero-panel,
+      .panel {
+        border-radius: 24px;
+      }
+
+      .hero-header,
+      .section-heading,
+      .panel-title-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .hero-meta { min-width: 0; }
+      .hero-chart-wrap { height: 340px; }
+      .hero-kpi-grid,
+      .metric-grid,
+      .resource-grid,
+      .spotlight-grid,
+      .position-grid,
+      .capital-grid,
+      .symbol-meta-grid,
+      .capital-stats,
+      .position-meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .log-terminal { min-height: 220px; }
+    }
   </style>
 </head>
 <body>
+  <nav class="top-navbar">
+    <div class="brand-block">
+      <p class="brand-kicker">Crypto AI Bot / Control Room</p>
+      <h1 class="brand-title">Crypto AI Bot</h1>
+      <p class="brand-subtitle">Painel tatico com curva protagonista e refresh incremental.</p>
+    </div>
 
-<!-- ============================================================ -->
-<!-- SECTION 1: HEADER BAR                                        -->
-<!-- ============================================================ -->
-<nav class="top-navbar d-flex align-items-center justify-content-between flex-wrap gap-2">
-  <!-- Left: Brand -->
-  <span class="brand-title">Crypto AI Bot</span>
-
-  <!-- Center: Health indicators -->
-  <div class="d-flex align-items-center gap-2 flex-wrap">
-    {% if health is defined and health %}
-      {% set cpu = health.cpu_pct|default(0)|float %}
-      {% set ram = health.ram_pct|default(0)|float %}
-      {% set disk = health.disk_pct|default(0)|float %}
-      {% set temp = health.temp_c|default(0)|float %}
-
-      <span class="health-badge {% if cpu >= 90 %}health-crit{% elif cpu >= 70 %}health-warn{% else %}health-ok{% endif %}">
-        <span class="dot"></span> CPU {{ "%.0f"|format(cpu) }}%
+    <div class="status-ribbon">
+      <span class="status-pill {% if health.cpu_usage_pct|default(0)|float >= 70 %}tone-warn{% else %}tone-good{% endif %}" id="cpuBadge">
+        <span class="dot"></span>
+        CPU <strong id="cpuValue">{{ "%.0f"|format(health.cpu_usage_pct|default(0)|float) }}%</strong>
       </span>
-      <span class="health-badge {% if ram >= 90 %}health-crit{% elif ram >= 80 %}health-warn{% else %}health-ok{% endif %}">
-        <span class="dot"></span> RAM {{ "%.0f"|format(ram) }}%
+      <span class="status-pill {% if health.ram_usage_pct|default(0)|float >= 80 %}tone-warn{% else %}tone-good{% endif %}" id="ramBadge">
+        <span class="dot"></span>
+        RAM <strong id="ramValue">{{ "%.0f"|format(health.ram_usage_pct|default(0)|float) }}%</strong>
       </span>
-      <span class="health-badge {% if disk >= 90 %}health-crit{% elif disk >= 80 %}health-warn{% else %}health-ok{% endif %}">
-        <span class="dot"></span> Disco {{ "%.0f"|format(disk) }}%
+      <span class="status-pill {% if health.disk_usage_pct|default(0)|float >= 80 %}tone-warn{% else %}tone-good{% endif %}" id="diskBadge">
+        <span class="dot"></span>
+        Disco <strong id="diskValue">{{ "%.0f"|format(health.disk_usage_pct|default(0)|float) }}%</strong>
       </span>
-      <span class="health-badge {% if temp >= 75 %}health-crit{% elif temp >= 65 %}health-warn{% else %}health-ok{% endif %}">
-        <span class="dot"></span> {{ "%.0f"|format(temp) }} C
+      <span class="status-pill {% if health.temperature_c|default(0)|float >= 65 %}tone-warn{% else %}tone-good{% endif %}" id="tempBadge">
+        <span class="dot"></span>
+        Temp <strong id="tempValue">{{ "%.1f"|format(health.temperature_c|default(0)|float) }} C</strong>
       </span>
-      {% if health.uptime is defined and health.uptime %}
-        <span class="health-badge" style="color:var(--text-muted);">Uptime: {{ health.uptime }}</span>
-      {% endif %}
-    {% else %}
-      <span class="health-badge" style="color:var(--text-muted);">Hardware: sem dados</span>
-    {% endif %}
-  </div>
-
-  <!-- Right: Bot status + controls -->
-  <div class="d-flex align-items-center gap-2">
-    {% if bot_status is defined and bot_status %}
-      {% set bs = bot_status %}
-      {% if bs.overall == "healthy" %}
-        <span class="health-badge health-ok" style="border-color:#238636;">
-          <span class="dot"></span> Bot 100% OK
-        </span>
-      {% elif bs.overall == "degraded" %}
-        <span class="health-badge health-warn" style="border-color:#9e6a03;" title="Erros hoje: {{ bs.errors_today }}{% if not bs.pump_scanner %} | Pump scanner offline{% endif %}">
-          <span class="dot"></span> Degradado{% if bs.errors_today > 0 %} ({{ bs.errors_today }} erros){% endif %}
-        </span>
-      {% else %}
-        <span class="health-badge health-crit" style="border-color:#da3633;">
-          <span class="dot"></span> Offline
-        </span>
-      {% endif %}
-      {% if bs.last_cycle_ago != "N/A" %}
-        <span class="refresh-bar" title="Tempo desde o ultimo ciclo">ciclo: {{ bs.last_cycle_ago }}</span>
-      {% endif %}
-    {% endif %}
-    {% if paused %}
-      <span class="badge badge-paused px-2 py-1" style="font-size:0.78rem;">PAUSADO</span>
-      <form method="post" action="/resume" class="mb-0">
-        <button class="btn btn-sm btn-success py-0 px-2" style="font-size:0.78rem;">Retomar</button>
-      </form>
-    {% else %}
-      <span class="badge badge-running px-2 py-1" style="font-size:0.78rem;">RODANDO</span>
-      <form method="post" action="/pause" class="mb-0">
-        <button class="btn btn-sm btn-danger py-0 px-2" style="font-size:0.78rem;">Pausar</button>
-      </form>
-    {% endif %}
-    <span class="refresh-bar">{{ last_update }}</span>
-  </div>
-</nav>
-
-<div class="container-fluid py-3 px-3">
-
-<!-- ============================================================ -->
-<!-- SECTION 2: CAPITAL CARDS                                     -->
-<!-- ============================================================ -->
-<div class="row g-3 mb-3">
-  {% set systems = [
-    ("Paper Trading", capital.paper,   stats_today.paper,   "paper",    "#58a6ff"),
-    ("Multi-Agent",   capital.agent,   stats_today.agent,   "agent",    "#3fb950"),
-    ("Pump Scanner",  capital.pump,    stats_today.pump,    "pump",     "#f78166"),
-    ("Scalping",      capital.scalping, stats_today.scalping, "scalping", "#bc8cff"),
-  ] %}
-  {% for name, cap, stats, key, color in systems %}
-  <div class="col-6 col-md-6 col-lg-3">
-    <div class="card h-100">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span style="color:{{ color }};">{{ name }}</span>
-        {% if cap is defined and cap and cap.cb %}
-          <span class="cb-warning">CB ATIVO</span>
-        {% endif %}
-      </div>
-      <div class="card-body">
-        {% if cap is defined and cap %}
-          <div class="capital-value">${{ "%.2f"|format(cap.value|default(0)) }}</div>
-          {% set ret = cap.ret|default(0)|float %}
-          <div class="{% if ret > 0 %}ret-positive{% elif ret < 0 %}ret-negative{% else %}ret-zero{% endif %}" style="font-size:0.85rem;">
-            {% if ret > 0 %}+{% endif %}{{ "%.2f"|format(ret) }}% retorno
-          </div>
-          <hr style="border-color:var(--border); margin:0.6rem 0;">
-          <div class="row text-center" style="font-size:0.78rem;">
-            <div class="col-4">
-              <div style="color:var(--text-muted);font-size:0.68rem;">Trades</div>
-              <strong>{{ stats.count|default(0) if stats is defined and stats else 0 }}</strong>
-            </div>
-            <div class="col-4">
-              <div style="color:var(--text-muted);font-size:0.68rem;">P&amp;L</div>
-              {% set pnl = stats.pnl_usd|default(0)|float if stats is defined and stats else 0 %}
-              <strong class="{% if pnl > 0 %}ret-positive{% elif pnl < 0 %}ret-negative{% else %}ret-zero{% endif %}">
-                ${{ "%+.2f"|format(pnl) }}
-              </strong>
-            </div>
-            <div class="col-4">
-              <div style="color:var(--text-muted);font-size:0.68rem;">W/L</div>
-              <strong>{{ stats.wins|default(0) if stats is defined and stats else 0 }}/{{ stats.losses|default(0) if stats is defined and stats else 0 }}</strong>
-            </div>
-          </div>
-        {% else %}
-          <div class="capital-value" style="color:var(--text-muted);">--</div>
-          <div style="color:var(--text-muted);font-size:0.82rem;">Sem dados</div>
-        {% endif %}
-      </div>
+      <span class="chip">
+        Uptime <strong id="uptimeValue">{{ health.uptime|default("N/A") }}</strong>
+      </span>
     </div>
-  </div>
-  {% endfor %}
-</div>
 
-<!-- ============================================================ -->
-<!-- SECTION 3: METRICS OVERVIEW                                  -->
-<!-- ============================================================ -->
-{% if metrics is defined and metrics %}
-<div class="row g-2 mb-3">
-  {% set mlist = [
-    ("Win Rate",      "%.1f%%"|format(metrics.win_rate|default(0)|float),          "blue"),
-    ("Profit Factor", "%.2f"|format(metrics.profit_factor|default(0)|float),       "green"),
-    ("Max Drawdown",  "%.1f%%"|format(metrics.max_drawdown_pct|default(0)|float),  "red"),
-    ("Trades (30d)",  metrics.total_trades|default(0),                              "blue"),
-    ("Melhor Trade",  "%+.2f%%"|format(metrics.largest_win|default(0)|float),      "green"),
-    ("Pior Trade",    "%+.2f%%"|format(metrics.largest_loss|default(0)|float),     "red"),
-  ] %}
-  {% for label, value, clr in mlist %}
-  <div class="col-4 col-md-2">
-    <div class="metric-card">
-      <div class="metric-label">{{ label }}</div>
-      <div class="metric-value" style="color:var(--{{ clr }});">{{ value }}</div>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-
-<!-- Performance by Symbol -->
-{% if by_symbol is defined and by_symbol and by_symbol|length > 0 %}
-<div class="card mb-3">
-  <div class="card-header">Performance por Ativo</div>
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-dark table-sm table-striped table-hover mb-0" id="symbolTable">
-        <thead>
-          <tr>
-            <th class="px-3 sortable" data-col="0">Ativo</th>
-            <th class="sortable" data-col="1">Trades</th>
-            <th class="sortable" data-col="2">Wins</th>
-            <th class="sortable" data-col="3">Losses</th>
-            <th class="sortable" data-col="4">P&amp;L Total ($)</th>
-            <th class="sortable" data-col="5">P&amp;L Medio (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for s in by_symbol %}
-          <tr>
-            <td class="px-3"><strong>{{ s.symbol }}</strong></td>
-            <td>{{ s.trades }}</td>
-            <td style="color:var(--green);">{{ s.wins }}</td>
-            <td style="color:var(--red);">{{ s.losses }}</td>
-            <td>
-              {% set tpnl = s.total_pnl|default(0)|float %}
-              <span class="{% if tpnl > 0 %}ret-positive{% elif tpnl < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
-                ${{ "%+.2f"|format(tpnl) }}
-              </span>
-            </td>
-            <td>
-              {% set apnl = s.avg_pnl_pct|default(0)|float %}
-              <span class="{% if apnl > 0 %}ret-positive{% elif apnl < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
-                {{ "%+.2f"|format(apnl) }}%
-              </span>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-{% endif %}
-
-<!-- ============================================================ -->
-<!-- SECTION 4: OPEN POSITIONS                                    -->
-<!-- ============================================================ -->
-<div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span>Posicoes Abertas</span>
-    {% if positions %}
-      <span style="font-weight:400;font-size:0.78rem;color:var(--text-muted);">{{ positions|length }} posicao(oes)</span>
-    {% endif %}
-  </div>
-  <div class="card-body p-0">
-    {% if positions %}
-    <div class="table-responsive">
-      <table class="table table-dark table-sm table-striped table-hover mb-0">
-        <thead>
-          <tr>
-            <th class="px-3">Sistema</th>
-            <th>Ativo</th>
-            <th>Lado</th>
-            <th>Entrada</th>
-            <th>Atual</th>
-            <th>P&amp;L</th>
-            <th>SL</th>
-            <th>TP</th>
-            <th>Extras</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for p in positions %}
-          <tr>
-            <td class="px-3">
-              <span class="badge" style="background:var(--bg-header);border:1px solid var(--border);font-size:0.7rem;">{{ p.system }}</span>
-            </td>
-            <td><strong>{{ p.symbol }}</strong></td>
-            <td>
-              {% if p.type == 'LONG' %}
-                <span class="side-long">LONG</span>
-              {% else %}
-                <span class="side-short">SHORT</span>
-              {% endif %}
-            </td>
-            <td class="text-mono" style="font-size:0.78rem;">{{ "%.4f"|format(p.entry_price|float) }}</td>
-            <td class="text-mono" style="font-size:0.78rem;">{{ "%.4f"|format(p.current_price|float) if p.current_price else "--" }}</td>
-            <td>
-              {% if p.pnl_pct is not none %}
-                {% set pnl = p.pnl_pct|float %}
-                <strong class="{% if pnl > 0 %}ret-positive{% elif pnl < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
-                  {{ "%+.2f"|format(pnl) }}%
-                </strong>
-              {% else %}--{% endif %}
-            </td>
-            <td class="text-mono" style="font-size:0.75rem;color:var(--text-muted);">{{ "%.4f"|format(p.sl_price|float) if p.sl_price else "--" }}</td>
-            <td class="text-mono" style="font-size:0.75rem;color:var(--text-muted);">{{ "%.4f"|format(p.tp_price|float) if p.tp_price else "--" }}</td>
-            <td style="font-size:0.75rem;">
-              {% if p.system == 'Agent' and p.analyst_confidence is defined and p.analyst_confidence is not none %}
-                {% set conf = p.analyst_confidence|float %}
-                <span class="{% if conf >= 70 %}conf-high{% elif conf >= 50 %}conf-med{% else %}conf-low{% endif %}">
-                  Conf: {{ "%.0f"|format(conf) }}%
-                </span>
-              {% endif %}
-              {% if p.system == 'Scalping' %}
-                {% if p.leverage is defined and p.leverage %}
-                  <span class="badge" style="background:var(--border);font-size:0.65rem;">{{ p.leverage }}x</span>
-                {% endif %}
-                {% if p.confluence_score is defined and p.confluence_score is not none %}
-                  <span class="badge" style="background:#1f6feb;font-size:0.65rem;">CS: {{ "%.0f"|format(p.confluence_score|float) }}</span>
-                {% endif %}
-                {% if p.tp1_price is defined and p.tp1_price %}
-                  <span style="color:var(--text-muted);font-size:0.68rem;">TP1: {{ "%.4f"|format(p.tp1_price|float) }}</span>
-                {% endif %}
-                {% if p.tp2_price is defined and p.tp2_price %}
-                  <span style="color:var(--text-muted);font-size:0.68rem;">TP2: {{ "%.4f"|format(p.tp2_price|float) }}</span>
-                {% endif %}
-                {% if p.tp1_hit is defined and p.tp1_hit %}
-                  <span class="tp1-ok">TP1 OK</span>
-                {% endif %}
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <p style="color:var(--text-muted);padding:0.8rem 1rem;margin:0;font-size:0.82rem;">Nenhuma posicao aberta no momento.</p>
-    {% endif %}
-  </div>
-</div>
-
-<!-- ============================================================ -->
-<!-- SECTION 5: TRADE HISTORY                                     -->
-<!-- ============================================================ -->
-<div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <span>Historico de Trades</span>
-    <div class="d-flex gap-1" id="periodBtns">
-      <button class="period-btn active" data-days="0" onclick="setPeriod(0)">Hoje</button>
-      <button class="period-btn" data-days="7" onclick="setPeriod(7)">7d</button>
-      <button class="period-btn" data-days="30" onclick="setPeriod(30)">30d</button>
-    </div>
-  </div>
-  <div>
-    <ul class="nav nav-tabs px-2 pt-1" id="historyTabs">
-      <li class="nav-item">
-        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#histPaper" data-system="paper">Paper</button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#histAgent" data-system="agent">Agent</button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#histPump" data-system="pump">Pump</button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#histScalping" data-system="scalping">Scalping</button>
-      </li>
-    </ul>
-    <div class="tab-content">
-      {% for tab_id, tab_key, tab_trades in [
-        ("histPaper",    "paper",    trades.paper    if trades is defined and trades and trades.paper    else []),
-        ("histAgent",    "agent",    trades.agent    if trades is defined and trades and trades.agent    else []),
-        ("histPump",     "pump",     trades.pump     if trades is defined and trades and trades.pump     else []),
-        ("histScalping", "scalping", trades.scalping if trades is defined and trades and trades.scalping else []),
-      ] %}
-      <div class="tab-pane fade {% if tab_id == 'histPaper' %}show active{% endif %}" id="{{ tab_id }}">
-        <div id="{{ tab_id }}_content">
-          {% if tab_trades %}
-          <div class="table-responsive">
-            <table class="table table-dark table-sm table-striped table-hover mb-0">
-              <thead>
-                <tr>
-                  <th class="px-2">Data/Hora</th>
-                  <th>Ativo</th>
-                  <th>Lado</th>
-                  <th>Entrada</th>
-                  <th>Saida</th>
-                  <th>P&amp;L %</th>
-                  <th>P&amp;L $</th>
-                  <th>Motivo</th>
-                  {% if tab_key == 'agent' %}<th>Confianca</th>{% endif %}
-                </tr>
-              </thead>
-              <tbody>
-                {% for t in tab_trades %}
-                <tr>
-                  <td class="px-2" style="font-size:0.75rem;white-space:nowrap;">{{ t.timestamp|default(t.exit_time|default("--")) }}</td>
-                  <td><strong>{{ t.symbol|default("--") }}</strong></td>
-                  <td>
-                    {% if t.type|default("") == "LONG" %}
-                      <span class="side-long">LONG</span>
-                    {% elif t.type|default("") == "SHORT" %}
-                      <span class="side-short">SHORT</span>
-                    {% else %}
-                      {{ t.type|default("--") }}
-                    {% endif %}
-                  </td>
-                  <td class="text-mono" style="font-size:0.78rem;">{{ "%.4f"|format(t.entry_price|default(0)|float) }}</td>
-                  <td class="text-mono" style="font-size:0.78rem;">{{ "%.4f"|format(t.exit_price|default(0)|float) if t.exit_price else "--" }}</td>
-                  <td>
-                    {% set pp = t.pnl_pct|default(0)|float %}
-                    <span class="{% if pp > 0 %}ret-positive{% elif pp < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
-                      {{ "%+.2f"|format(pp) }}%
-                    </span>
-                  </td>
-                  <td>
-                    {% set pu = t.pnl_usd|default(0)|float %}
-                    <span class="{% if pu > 0 %}ret-positive{% elif pu < 0 %}ret-negative{% else %}ret-zero{% endif %} text-mono">
-                      ${{ "%+.2f"|format(pu) }}
-                    </span>
-                  </td>
-                  <td style="font-size:0.75rem;">{{ t.exit_reason|default("--") }}</td>
-                  {% if tab_key == 'agent' %}
-                  <td>
-                    {% if t.analyst_confidence is defined and t.analyst_confidence is not none %}
-                      {% set ac = t.analyst_confidence|float %}
-                      <span class="{% if ac >= 70 %}conf-high{% elif ac >= 50 %}conf-med{% else %}conf-low{% endif %}">
-                        {{ "%.0f"|format(ac) }}%
-                      </span>
-                    {% else %}--{% endif %}
-                  </td>
-                  {% endif %}
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+    <div class="control-ribbon">
+      <span class="mode-badge {% if bot_status.overall == 'healthy' %}tone-good{% elif bot_status.overall == 'degraded' %}tone-warn{% else %}tone-bad{% endif %}" id="overallBadge">
+        <span class="dot"></span>
+        <strong id="overallLabel">
+          {% if bot_status.overall == "healthy" %}
+            Bot 100% OK
+          {% elif bot_status.overall == "degraded" %}
+            Degradado
           {% else %}
-          <p style="color:var(--text-muted);padding:0.8rem 1rem;margin:0;font-size:0.82rem;">Nenhum trade registrado.</p>
+            Offline
           {% endif %}
-        </div>
-      </div>
-      {% endfor %}
+        </strong>
+      </span>
+      <span class="chip">
+        Ciclo <strong id="cycleValue">{{ bot_status.last_cycle_ago|default("N/A") }}</strong>
+      </span>
+      {% if dashboard.paused %}
+      <span class="mode-badge tone-bad"><span class="dot"></span><strong>PAUSADO</strong></span>
+      <form method="post" action="/resume" class="mb-0">
+        <button class="control-button resume">Retomar</button>
+      </form>
+      {% else %}
+      <span class="mode-badge tone-good"><span class="dot"></span><strong>RODANDO</strong></span>
+      <form method="post" action="/pause" class="mb-0">
+        <button class="control-button pause">Pausar</button>
+      </form>
+      {% endif %}
+      <span class="chip">
+        Atualizado <strong id="refreshStamp">{{ dashboard.last_update }}</strong>
+      </span>
     </div>
-  </div>
-</div>
+  </nav>
 
-<!-- ============================================================ -->
-<!-- SECTION 6: CHART + LOGS                                      -->
-<!-- ============================================================ -->
-<div class="row g-3 mb-3">
-  <!-- Left: P&L Chart -->
-  <div class="col-lg-7 col-md-12">
-    <div class="card h-100">
-      <div class="card-header">P&amp;L Acumulado -- Ultimos 30 dias</div>
-      <div class="card-body">
-        <div class="chart-container">
+  <main class="dashboard-shell">
+    <section class="hero-grid">
+      <article class="panel hero-panel">
+        <div class="hero-header">
+          <div>
+            <p class="section-eyebrow">Equity Command Center</p>
+            <h2 class="hero-title">Crescimento em destaque, motores orbitando ao redor da curva total.</h2>
+            <p class="hero-subtitle">
+              O dashboard agora prioriza leitura rapida, espaco para a curva respirar e atualizacoes mais suaves,
+              sem travar a navegacao com reload completo.
+            </p>
+          </div>
+          <div class="hero-meta">
+            <span class="chip large-chip" id="heroBestSystemChip">
+              Lider <strong>{{ summary.best_system.key|default("paper")|upper if summary.best_system is defined else "PAPER" }}</strong>
+            </span>
+            <span class="chip large-chip" id="heroOpenPositionsChip">
+              Posicoes <strong>{{ summary.open_positions|default(0) }}</strong>
+            </span>
+          </div>
+        </div>
+        <div class="hero-kpi-grid" id="heroKpiGrid"></div>
+        <div class="hero-chart-note">Curva total com preenchimento; linhas secundarias para cada estrategia.</div>
+        <div class="hero-chart-wrap">
           <canvas id="pnlChart"></canvas>
         </div>
-      </div>
-    </div>
-  </div>
+      </article>
 
-  <!-- Right: Logs -->
-  <div class="col-lg-5 col-md-12">
-    <div class="card h-100">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span>Logs</span>
+      <div class="hero-side">
+        <section class="panel">
+          <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+            <div>
+              <p class="section-eyebrow">Mission Control</p>
+              <h2>Radar operacional</h2>
+            </div>
+            <span class="chip">Polling 25s</span>
+          </div>
+          <div id="statusSummary" style="padding:1rem 1.2rem 1.2rem;"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+            <div>
+              <p class="section-eyebrow">Strategy Spotlight</p>
+              <h2>Quem esta puxando a curva</h2>
+            </div>
+          </div>
+          <div class="spotlight-grid" id="strategySpotlights" style="padding:1rem 1.2rem 1.2rem;"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="section-block">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">Strategies</p>
+          <h2>Capital por motor</h2>
+        </div>
+        <span class="chip">Atualiza sem recarregar tudo</span>
+      </div>
+      <div class="capital-grid" id="capitalGrid" style="padding:1rem 0 0;"></div>
+    </section>
+
+    <section class="section-block">
+      <div class="metric-grid" id="metricsGrid"></div>
+    </section>
+
+    <section class="split-grid">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="section-eyebrow">Live Exposure</p>
+            <h2>Posicoes abertas</h2>
+          </div>
+          <span class="chip" id="positionsCountChip">0 abertas</span>
+        </div>
+        <div id="positionsContent"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="section-eyebrow">Market Coverage</p>
+            <h2>Performance por ativo</h2>
+          </div>
+          <span class="chip">Top 30 dias</span>
+        </div>
+        <div id="symbolContent"></div>
+      </section>
+    </section>
+
+    <section class="panel history-panel">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">Execution Archive</p>
+          <h2>Historico de trades</h2>
+        </div>
+        <div class="period-group" id="periodBtns">
+          <button class="period-btn active" data-days="0">Hoje</button>
+          <button class="period-btn" data-days="7">7d</button>
+          <button class="period-btn" data-days="30">30d</button>
+        </div>
+      </div>
+      <ul class="nav nav-tabs history-tabs" id="historyTabs">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#histPaper" data-system="paper">Paper</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#histAgent" data-system="agent">Agent</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#histPump" data-system="pump">Pump</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#histScalping" data-system="scalping">Scalping</button></li>
+      </ul>
+      <div class="tab-content history-content">
+        <div class="tab-pane fade show active" id="histPaper"><div id="histPaper_content" class="history-pane-inner"></div></div>
+        <div class="tab-pane fade" id="histAgent"><div id="histAgent_content" class="history-pane-inner"></div></div>
+        <div class="tab-pane fade" id="histPump"><div id="histPump_content" class="history-pane-inner"></div></div>
+        <div class="tab-pane fade" id="histScalping"><div id="histScalping_content" class="history-pane-inner"></div></div>
+      </div>
+    </section>
+
+    <section class="panel logs-panel">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">Telemetry</p>
+          <h2>Logs recentes</h2>
+        </div>
         <button class="collapse-btn" type="button" data-bs-toggle="collapse" data-bs-target="#logsCollapse" aria-expanded="true">
           Ocultar/Mostrar
         </button>
       </div>
       <div class="collapse show" id="logsCollapse">
-        <div class="card-body py-2 px-2">
-          <ul class="nav nav-tabs mb-2" id="logTabs" style="font-size:0.75rem;">
-            <li class="nav-item">
-              <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#logMain" onclick="loadLogs('main')">Main</button>
-            </li>
-            <li class="nav-item">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#logScalping" onclick="loadLogs('scalping')">Scalping</button>
-            </li>
-            <li class="nav-item">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#logPump" onclick="loadLogs('pump')">Pump</button>
-            </li>
-          </ul>
-          <div class="tab-content">
-            <div class="tab-pane fade show active" id="logMain">
-              <div class="log-terminal" id="logMainContent">
-                {% if logs is defined and logs %}
-                  {% for line in logs %}{{ line }}
-{% endfor %}
-                {% else %}
-                  Sem logs disponíveis.
-                {% endif %}
-              </div>
-            </div>
-            <div class="tab-pane fade" id="logScalping">
-              <div class="log-terminal" id="logScalpingContent">Carregando...</div>
-            </div>
-            <div class="tab-pane fade" id="logPump">
-              <div class="log-terminal" id="logPumpContent">Carregando...</div>
-            </div>
+        <ul class="nav nav-tabs log-tabs" id="logTabs">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#logMain" data-source="main">Main</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#logScalping" data-source="scalping">Scalping</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#logPump" data-source="pump">Pump</button></li>
+        </ul>
+        <div class="tab-content log-content">
+          <div class="tab-pane fade show active" id="logMain">
+            <div class="log-terminal" id="logMainContent"></div>
+          </div>
+          <div class="tab-pane fade" id="logScalping">
+            <div class="log-terminal" id="logScalpingContent">Carregando...</div>
+          </div>
+          <div class="tab-pane fade" id="logPump">
+            <div class="log-terminal" id="logPumpContent">Carregando...</div>
           </div>
         </div>
       </div>
-    </div>
-  </div>
-</div>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const initialStatus = {{ dashboard | tojson }};
+    const systemMeta = {
+      paper: { label: "Paper Trading", color: "#5fb7ff" },
+      agent: { label: "Multi-Agent", color: "#35d08f" },
+      pump: { label: "Pump Scanner", color: "#ff9f66" },
+      scalping: { label: "Scalping", color: "#b592ff" }
+    };
 
-</div><!-- /container-fluid -->
+    const currencyFormatter = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
 
-<!-- ============================================================ -->
-<!-- SCRIPTS                                                      -->
-<!-- ============================================================ -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-// ── P&L Chart ────────────────────────────────────────────────────
-const paperChart   = {{ (chart.paper    if chart is defined and chart and chart.paper    else []) | tojson }};
-const agentChart   = {{ (chart.agent    if chart is defined and chart and chart.agent    else []) | tojson }};
-const pumpChart    = {{ (chart.pump     if chart is defined and chart and chart.pump     else []) | tojson }};
-const scalpingChart = {{ (chart.scalping if chart is defined and chart and chart.scalping else []) | tojson }};
+    let dashboardState = initialStatus;
+    let pnlChartInstance = null;
+    let currentPeriod = 0;
+    let activeLogSource = "main";
 
-const allDays = [...new Set([
-  ...paperChart.map(d => d.day),
-  ...agentChart.map(d => d.day),
-  ...pumpChart.map(d => d.day),
-  ...scalpingChart.map(d => d.day),
-])].sort();
+    function safeNumber(value, fallback = 0) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
 
-function getValues(chartData, days) {
-  const map = Object.fromEntries(chartData.map(d => [d.day, d.pnl]));
-  return days.map(d => map[d] ?? null);
-}
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
 
-const ctx = document.getElementById('pnlChart').getContext('2d');
-new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels: allDays,
-    datasets: [
-      {
-        label: 'Paper',
-        data: getValues(paperChart, allDays),
-        borderColor: '#58a6ff',
-        backgroundColor: 'rgba(88,166,255,0.08)',
-        tension: 0.3,
-        spanGaps: true,
-        borderWidth: 2,
-        pointRadius: 1,
-        fill: false
-      },
-      {
-        label: 'Agent',
-        data: getValues(agentChart, allDays),
-        borderColor: '#3fb950',
-        backgroundColor: 'rgba(63,185,80,0.08)',
-        tension: 0.3,
-        spanGaps: true,
-        borderWidth: 2,
-        pointRadius: 1,
-        fill: false
-      },
-      {
-        label: 'Pump',
-        data: getValues(pumpChart, allDays),
-        borderColor: '#f78166',
-        backgroundColor: 'rgba(247,129,102,0.08)',
-        tension: 0.3,
-        spanGaps: true,
-        borderWidth: 2,
-        pointRadius: 1,
-        fill: false
-      },
-      {
-        label: 'Scalping',
-        data: getValues(scalpingChart, allDays),
-        borderColor: '#bc8cff',
-        backgroundColor: 'rgba(188,140,255,0.08)',
-        tension: 0.3,
-        spanGaps: true,
-        borderWidth: 2,
-        pointRadius: 1,
-        fill: false
-      }
-    ]
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: {
-        labels: { color: '#e6edf3', usePointStyle: true, pointStyle: 'circle', padding: 16, font: { size: 11 } }
-      },
-      tooltip: {
-        backgroundColor: '#21262d',
-        titleColor: '#e6edf3',
-        bodyColor: '#e6edf3',
-        borderColor: '#30363d',
-        borderWidth: 1,
-        callbacks: {
-          label: function(ctx) { return ' ' + ctx.dataset.label + ': $' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(2) : '--'); }
-        }
-      }
-    },
-    scales: {
-      x: {
-        ticks: { color: '#8b949e', font: { size: 10 }, maxRotation: 45 },
-        grid: { color: '#21262d', drawBorder: false }
-      },
-      y: {
-        ticks: { color: '#8b949e', font: { size: 10 }, callback: function(v) { return '$' + v.toFixed(0); } },
-        grid: { color: '#21262d', drawBorder: false }
+    function formatMoney(value) {
+      return currencyFormatter.format(safeNumber(value));
+    }
+
+    function formatPct(value, digits = 2) {
+      const num = safeNumber(value);
+      return `${num >= 0 ? "+" : ""}${num.toFixed(digits)}%`;
+    }
+
+    function toneClass(value) {
+      const num = safeNumber(value);
+      if (num > 0) return "tone-positive";
+      if (num < 0) return "tone-negative";
+      return "tone-neutral";
+    }
+
+    function levelClass(value, warn, crit) {
+      const num = safeNumber(value);
+      if (num >= crit) return "tone-bad";
+      if (num >= warn) return "tone-warn";
+      return "tone-good";
+    }
+
+    function setBadgeState(id, value, suffix, warn, crit, digits = 0) {
+      const badge = document.getElementById(id);
+      if (!badge) return;
+      const numeric = safeNumber(value);
+      const cls = levelClass(numeric, warn, crit);
+      badge.classList.remove("tone-good", "tone-warn", "tone-bad");
+      badge.classList.add(cls);
+      const strong = badge.querySelector("strong");
+      if (strong) {
+        strong.textContent = `${numeric.toFixed(digits)}${suffix}`;
       }
     }
-  }
-});
 
-// ── Trade History: Period selector + AJAX ─────────────────────────
-let currentPeriod = 0;
+    function renderHeader(status) {
+      const health = status.health || {};
+      const bot = status.bot_status || {};
 
-function setPeriod(days) {
-  currentPeriod = days;
-  document.querySelectorAll('#periodBtns .period-btn').forEach(b => {
-    b.classList.toggle('active', parseInt(b.dataset.days) === days);
-  });
-  // Reload trades for active tab
-  const activeTab = document.querySelector('#historyTabs .nav-link.active');
-  if (activeTab) {
-    loadTrades(activeTab.dataset.system, days);
-  }
-}
+      setBadgeState("cpuBadge", health.cpu_usage_pct, "%", 70, 90, 0);
+      setBadgeState("ramBadge", health.ram_usage_pct, "%", 80, 90, 0);
+      setBadgeState("diskBadge", health.disk_usage_pct, "%", 80, 90, 0);
+      setBadgeState("tempBadge", health.temperature_c, " C", 65, 75, 1);
 
-function loadTrades(system, days) {
-  const containerId = 'hist' + system.charAt(0).toUpperCase() + system.slice(1) + '_content';
-  const container = document.getElementById(containerId);
-  if (!container) return;
+      document.getElementById("uptimeValue").textContent = health.uptime || "N/A";
+      document.getElementById("cycleValue").textContent = bot.last_cycle_ago || "N/A";
+      document.getElementById("refreshStamp").textContent = status.last_update || "";
 
-  // Show loading
-  container.innerHTML = '<div class="ajax-loading">Carregando trades...</div>';
+      const overallBadge = document.getElementById("overallBadge");
+      const overallLabel = document.getElementById("overallLabel");
+      if (overallBadge && overallLabel) {
+        overallBadge.classList.remove("tone-good", "tone-warn", "tone-bad");
+        let label = "Offline";
+        let cls = "tone-bad";
+        if (bot.overall === "healthy") {
+          label = "Bot 100% OK";
+          cls = "tone-good";
+        } else if (bot.overall === "degraded") {
+          label = bot.errors_today > 0 ? `Degradado (${bot.errors_today} erros)` : "Degradado";
+          cls = "tone-warn";
+        }
+        overallBadge.classList.add(cls);
+        overallLabel.textContent = label;
+      }
+    }
 
-  const url = '/api/trades?system=' + encodeURIComponent(system) + '&days=' + days;
-  fetch(url)
-    .then(r => {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(data => {
-      if (!data || !data.trades || data.trades.length === 0) {
-        container.innerHTML = '<p style="color:var(--text-muted);padding:0.8rem 1rem;margin:0;font-size:0.82rem;">Nenhum trade registrado neste periodo.</p>';
+    function renderHero(status) {
+      const summary = status.summary || {};
+      const best = summary.best_system || {};
+      const bestMeta = systemMeta[best.key] || systemMeta.paper;
+      const heroKpiGrid = document.getElementById("heroKpiGrid");
+      heroKpiGrid.innerHTML = `
+        <div class="hero-kpi-card">
+          <div class="hero-kpi-label">Capital Total</div>
+          <div class="hero-kpi-value">${formatMoney(summary.portfolio_value)}</div>
+          <div class="capital-subline ${toneClass(summary.portfolio_ret)}">${formatPct(summary.portfolio_ret)}</div>
+        </div>
+        <div class="hero-kpi-card">
+          <div class="hero-kpi-label">P&amp;L Hoje</div>
+          <div class="hero-kpi-value ${toneClass(summary.today_pnl_usd)}">${formatMoney(summary.today_pnl_usd)}</div>
+          <div class="capital-subline">Somando todos os motores</div>
+        </div>
+        <div class="hero-kpi-card">
+          <div class="hero-kpi-label">Pico Curva 30d</div>
+          <div class="hero-kpi-value">${formatMoney(summary.curve_peak)}</div>
+          <div class="capital-subline">Valor maximo da curva acumulada</div>
+        </div>
+        <div class="hero-kpi-card">
+          <div class="hero-kpi-label">Drawdown do Pico</div>
+          <div class="hero-kpi-value ${summary.curve_drawdown > 0 ? "tone-negative" : "tone-neutral"}">${formatMoney(summary.curve_drawdown)}</div>
+          <div class="capital-subline">Diferenca para o topo recente</div>
+        </div>
+      `;
+
+      document.getElementById("heroBestSystemChip").innerHTML = `Lider <strong style="color:${bestMeta.color};">${escapeHtml(bestMeta.label)}</strong>`;
+      document.getElementById("heroOpenPositionsChip").innerHTML = `Posicoes <strong>${safeNumber(summary.open_positions)}</strong>`;
+    }
+
+    function renderStatusSummary(status) {
+      const health = status.health || {};
+      const bot = status.bot_status || {};
+      const summary = status.summary || {};
+      const best = summary.best_system || {};
+      const bestMeta = systemMeta[best.key] || systemMeta.paper;
+      const resources = [
+        { label: "CPU", value: safeNumber(health.cpu_usage_pct), suffix: "%" },
+        { label: "RAM", value: safeNumber(health.ram_usage_pct), suffix: "%" },
+        { label: "Disco", value: safeNumber(health.disk_usage_pct), suffix: "%" },
+        { label: "Temp", value: safeNumber(health.temperature_c), suffix: " C" }
+      ];
+
+      document.getElementById("statusSummary").innerHTML = `
+        <div class="resource-card" style="margin-bottom:1rem;">
+          <div class="resource-label">Status geral</div>
+          <div class="resource-value ${bot.overall === "healthy" ? "tone-positive" : bot.overall === "degraded" ? "tone-warn" : "tone-negative"}">
+            ${bot.overall === "healthy" ? "Tudo sincronizado" : bot.overall === "degraded" ? "Operando com alerta" : "Intervencao necessaria"}
+          </div>
+          <div class="resource-subline">
+            Ultimo ciclo ${escapeHtml(bot.last_cycle_ago || "N/A")} · Erros hoje ${safeNumber(bot.errors_today)}
+          </div>
+        </div>
+        <div class="resource-grid">
+          ${resources.map(resource => `
+            <div class="resource-card">
+              <div class="resource-label">${resource.label}</div>
+              <strong>${resource.value.toFixed(resource.label === "Temp" ? 1 : 0)}${resource.suffix}</strong>
+              <div class="resource-subline">${resource.label === "Temp" ? "Temperatura atual" : "Uso atual do sistema"}</div>
+            </div>
+          `).join("")}
+          <div class="resource-card">
+            <div class="resource-label">Curva lider</div>
+            <strong style="color:${bestMeta.color};">${escapeHtml(bestMeta.label)}</strong>
+            <div class="resource-subline">${formatPct(best.ret)} retorno · ${formatMoney(best.value)}</div>
+          </div>
+          <div class="resource-card">
+            <div class="resource-label">Uptime</div>
+            <strong>${escapeHtml(health.uptime || "N/A")}</strong>
+            <div class="resource-subline">Bot supervisor + motores ativos</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderStrategySpotlights(status) {
+      const container = document.getElementById("strategySpotlights");
+      const capital = status.capital || {};
+      const statsToday = status.stats_today || {};
+      const ordered = Object.entries(capital)
+        .map(([key, value]) => ({ key, ...value }))
+        .sort((a, b) => safeNumber(b.ret) - safeNumber(a.ret));
+
+      container.innerHTML = ordered.map(system => {
+        const meta = systemMeta[system.key];
+        const day = statsToday[system.key] || {};
+        return `
+          <div class="spotlight-card">
+            <div class="spotlight-card-top">
+              <span class="system-badge">
+                <span class="system-dot" style="color:${meta.color};background:${meta.color};"></span>
+                ${escapeHtml(meta.label)}
+              </span>
+              <span class="${toneClass(system.ret)}">${formatPct(system.ret)}</span>
+            </div>
+            <div class="spotlight-value" style="margin-top:0.85rem;">${formatMoney(system.value)}</div>
+            <div class="spotlight-subline">${safeNumber(day.count)} trades hoje · ${formatMoney(day.pnl_usd)}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderCapitalGrid(status) {
+      const container = document.getElementById("capitalGrid");
+      const capital = status.capital || {};
+      const statsToday = status.stats_today || {};
+
+      container.innerHTML = Object.entries(systemMeta).map(([key, meta]) => {
+        const system = capital[key] || {};
+        const day = statsToday[key] || {};
+        return `
+          <div class="capital-card">
+            <div class="capital-card-header">
+              <span class="system-badge">
+                <span class="system-dot" style="color:${meta.color};background:${meta.color};"></span>
+                ${escapeHtml(meta.label)}
+              </span>
+              ${system.cb ? '<span class="chip tone-bad">CB ativo</span>' : '<span class="chip">Estavel</span>'}
+            </div>
+            <div class="capital-label" style="margin-top:1rem;">Capital atual</div>
+            <div class="capital-value">${formatMoney(system.value)}</div>
+            <div class="capital-subline ${toneClass(system.ret)}">${formatPct(system.ret)}</div>
+            <div class="capital-stats">
+              <div class="capital-stat">Trades<strong>${safeNumber(day.count)}</strong></div>
+              <div class="capital-stat">P&amp;L<strong class="${toneClass(day.pnl_usd)}">${formatMoney(day.pnl_usd)}</strong></div>
+              <div class="capital-stat">W/L<strong>${safeNumber(day.wins)}/${safeNumber(day.losses)}</strong></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderMetrics(status) {
+      const container = document.getElementById("metricsGrid");
+      const metrics = status.metrics || {};
+      const cards = [
+        { label: "Win Rate", value: `${safeNumber(metrics.win_rate).toFixed(1)}%`, accent: "#5fb7ff" },
+        { label: "Profit Factor", value: safeNumber(metrics.profit_factor).toFixed(2), accent: "#35d08f" },
+        { label: "Max Drawdown", value: `${safeNumber(metrics.max_drawdown_pct).toFixed(2)}%`, accent: "#ff6b7f" },
+        { label: "Trades 30d", value: safeNumber(metrics.total_trades), accent: "#69f0ff" },
+        { label: "Melhor Trade", value: formatPct(metrics.largest_win), accent: "#35d08f", tone: toneClass(metrics.largest_win) },
+        { label: "Pior Trade", value: formatPct(metrics.largest_loss), accent: "#ff9f66", tone: toneClass(metrics.largest_loss) }
+      ];
+
+      container.innerHTML = cards.map(card => `
+        <div class="metric-card" style="--accent:${card.accent};">
+          <div class="metric-label">${card.label}</div>
+          <div class="metric-value ${card.tone || ""}">${card.value}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderPositions(status) {
+      const container = document.getElementById("positionsContent");
+      const positions = status.positions || [];
+      document.getElementById("positionsCountChip").textContent = `${positions.length} abertas`;
+
+      if (!positions.length) {
+        container.innerHTML = '<div class="empty-state">Nenhuma posicao aberta no momento. Quando houver exposicao, este bloco vira um mural de cards com P&amp;L ao vivo.</div>';
         return;
       }
-      const isAgent = (system === 'agent');
-      let html = '<div class="table-responsive"><table class="table table-dark table-sm table-striped table-hover mb-0"><thead><tr>';
-      html += '<th class="px-2">Data/Hora</th><th>Ativo</th><th>Lado</th><th>Entrada</th><th>Saida</th><th>P&L %</th><th>P&L $</th><th>Motivo</th>';
-      if (isAgent) html += '<th>Confianca</th>';
-      html += '</tr></thead><tbody>';
-      data.trades.forEach(t => {
-        const pp = parseFloat(t.pnl_pct || 0);
-        const pu = parseFloat(t.pnl_usd || 0);
-        const ppCls = pp > 0 ? 'ret-positive' : (pp < 0 ? 'ret-negative' : 'ret-zero');
-        const puCls = pu > 0 ? 'ret-positive' : (pu < 0 ? 'ret-negative' : 'ret-zero');
-        const sideHtml = t.type === 'LONG' ? '<span class="side-long">LONG</span>' : (t.type === 'SHORT' ? '<span class="side-short">SHORT</span>' : (t.type || '--'));
-        html += '<tr>';
-        html += '<td class="px-2" style="font-size:0.75rem;white-space:nowrap;">' + (t.timestamp || t.exit_time || '--') + '</td>';
-        html += '<td><strong>' + (t.symbol || '--') + '</strong></td>';
-        html += '<td>' + sideHtml + '</td>';
-        html += '<td class="text-mono" style="font-size:0.78rem;">' + (t.entry_price ? parseFloat(t.entry_price).toFixed(4) : '--') + '</td>';
-        html += '<td class="text-mono" style="font-size:0.78rem;">' + (t.exit_price ? parseFloat(t.exit_price).toFixed(4) : '--') + '</td>';
-        html += '<td><span class="' + ppCls + ' text-mono">' + (pp >= 0 ? '+' : '') + pp.toFixed(2) + '%</span></td>';
-        html += '<td><span class="' + puCls + ' text-mono">$' + (pu >= 0 ? '+' : '') + pu.toFixed(2) + '</span></td>';
-        html += '<td style="font-size:0.75rem;">' + (t.exit_reason || '--') + '</td>';
-        if (isAgent) {
-          let confHtml = '--';
-          if (t.analyst_confidence != null) {
-            const ac = parseFloat(t.analyst_confidence);
-            const cls = ac >= 70 ? 'conf-high' : (ac >= 50 ? 'conf-med' : 'conf-low');
-            confHtml = '<span class="' + cls + '">' + ac.toFixed(0) + '%</span>';
-          }
-          html += '<td>' + confHtml + '</td>';
-        }
-        html += '</tr>';
-      });
-      html += '</tbody></table></div>';
-      container.innerHTML = html;
-    })
-    .catch(err => {
-      // AJAX failed - keep the server-rendered content or show fallback
-      console.warn('Falha ao carregar trades via AJAX:', err.message);
-      if (container.querySelector('.ajax-loading')) {
-        container.innerHTML = '<p style="color:var(--text-muted);padding:0.8rem 1rem;margin:0;font-size:0.82rem;">Falha ao carregar trades. Endpoint /api/trades pode nao estar disponivel.</p>';
-      }
-    });
-}
 
-// When switching trade history tabs, reload with current period
-document.querySelectorAll('#historyTabs .nav-link').forEach(tab => {
-  tab.addEventListener('shown.bs.tab', function() {
-    if (currentPeriod > 0) {
-      loadTrades(this.dataset.system, currentPeriod);
+      container.innerHTML = `
+        <div class="position-grid">
+          ${positions.map(position => {
+            const key = String(position.system || "").toLowerCase();
+            const meta = systemMeta[key] || { label: position.system || "Sistema", color: "#69f0ff" };
+            const sideClass = String(position.type || "").toUpperCase() === "SHORT" ? "side-short" : "side-long";
+            const pnl = position.pnl_pct;
+            return `
+              <article class="position-card">
+                <div class="position-card-top">
+                  <span class="system-badge">
+                    <span class="system-dot" style="color:${meta.color};background:${meta.color};"></span>
+                    ${escapeHtml(position.system || meta.label)}
+                  </span>
+                  <span class="side-badge ${sideClass}">${escapeHtml(position.type || "--")}</span>
+                </div>
+                <div>
+                  <div class="position-symbol">${escapeHtml(position.symbol || "--")}</div>
+                  <div class="position-main-value ${toneClass(pnl)}">${pnl == null ? "--" : formatPct(pnl)}</div>
+                </div>
+                <div class="position-meta-grid">
+                  <div class="position-meta">Entrada<strong>${position.entry_price ? safeNumber(position.entry_price).toFixed(4) : "--"}</strong></div>
+                  <div class="position-meta">Atual<strong>${position.current_price ? safeNumber(position.current_price).toFixed(4) : "--"}</strong></div>
+                  <div class="position-meta">Stop<strong>${position.sl_price ? safeNumber(position.sl_price).toFixed(4) : "--"}</strong></div>
+                  <div class="position-meta">Take<strong>${position.tp_price ? safeNumber(position.tp_price).toFixed(4) : "--"}</strong></div>
+                </div>
+                <div class="position-tags">
+                  ${position.leverage ? `<span class="mini-tag">${escapeHtml(position.leverage)}x</span>` : ""}
+                  ${position.confluence_score ? `<span class="mini-tag">CS ${safeNumber(position.confluence_score).toFixed(0)}</span>` : ""}
+                  ${position.position_size_usd ? `<span class="mini-tag">${formatMoney(position.position_size_usd)}</span>` : ""}
+                  ${position.analyst_confidence != null ? `<span class="mini-tag">Conf ${safeNumber(position.analyst_confidence).toFixed(0)}%</span>` : ""}
+                  ${position.tp1_hit ? '<span class="mini-tag">TP1 OK</span>' : ""}
+                </div>
+              </article>
+            `;
+          }).join("")}
+        </div>
+      `;
     }
-  });
-});
 
-// ── Logs: AJAX loading ───────────────────────────────────────────
-function loadLogs(source) {
-  const containerId = 'log' + source.charAt(0).toUpperCase() + source.slice(1) + 'Content';
-  const container = document.getElementById(containerId);
-  if (!container) return;
+    function renderSymbolPerformance(status) {
+      const container = document.getElementById("symbolContent");
+      const symbols = status.by_symbol || [];
 
-  fetch('/api/logs?source=' + encodeURIComponent(source) + '&lines=40')
-    .then(r => {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(data => {
-      if (data && data.logs && data.logs.length > 0) {
-        container.textContent = data.logs.join('\n');
-      } else {
-        container.textContent = 'Sem logs disponíveis.';
+      if (!symbols.length) {
+        container.innerHTML = '<div class="empty-state">Ainda nao ha trades suficientes para montar o ranking por ativo.</div>';
+        return;
       }
-      // Scroll to bottom
-      container.scrollTop = container.scrollHeight;
-    })
-    .catch(err => {
-      console.warn('Falha ao carregar logs:', err.message);
-      if (container.textContent === 'Carregando...') {
-        container.textContent = 'Falha ao carregar logs. Endpoint /api/logs pode nao estar disponivel.';
+
+      container.innerHTML = `
+        <div class="symbol-list">
+          ${symbols.map(item => {
+            const trades = safeNumber(item.trades);
+            const wins = safeNumber(item.wins);
+            const losses = safeNumber(item.losses);
+            const winRate = trades ? (wins / trades) * 100 : 0;
+            const width = Math.min(100, Math.max(winRate, 6));
+            return `
+              <article class="symbol-row">
+                <div class="symbol-row-top">
+                  <div>
+                    <div class="symbol-row-title">${escapeHtml(item.symbol)}</div>
+                    <div class="symbol-meta">${trades} trades nos ultimos 30 dias</div>
+                  </div>
+                  <div class="symbol-row-pnl ${toneClass(item.total_pnl)}">${formatMoney(item.total_pnl)}</div>
+                </div>
+                <div class="symbol-bar"><span style="width:${width}%;"></span></div>
+                <div class="symbol-meta-grid">
+                  <div class="symbol-meta">Wins<strong>${wins}</strong></div>
+                  <div class="symbol-meta">Losses<strong>${losses}</strong></div>
+                  <div class="symbol-meta">Media<strong class="${toneClass(item.avg_pnl_pct)}">${formatPct(item.avg_pnl_pct)}</strong></div>
+                </div>
+              </article>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    function renderConfidenceBadge(value) {
+      if (value == null) return "--";
+      const numeric = safeNumber(value);
+      const cls = numeric >= 70 ? "confidence-high" : numeric >= 50 ? "confidence-mid" : "confidence-low";
+      return `<span class="confidence-badge ${cls}">${numeric.toFixed(0)}%</span>`;
+    }
+
+    function renderTradeTable(trades, system) {
+      if (!trades || !trades.length) {
+        return '<div class="empty-state" style="margin:0;">Nenhum trade registrado neste periodo.</div>';
       }
-    });
-}
 
-// Scroll main logs to bottom on load
-(function() {
-  const mainLog = document.getElementById('logMainContent');
-  if (mainLog) mainLog.scrollTop = mainLog.scrollHeight;
-})();
+      const isAgent = system === "agent";
+      return `
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Data/Hora</th>
+                <th>Ativo</th>
+                <th>Lado</th>
+                <th>Entrada</th>
+                <th>Saida</th>
+                <th>P&amp;L %</th>
+                <th>P&amp;L $</th>
+                <th>Motivo</th>
+                ${isAgent ? "<th>Confianca</th>" : ""}
+              </tr>
+            </thead>
+            <tbody>
+              ${trades.map(trade => {
+                const side = String(trade.type || "").toUpperCase();
+                const sideClass = side === "SHORT" ? "side-short" : "side-long";
+                return `
+                  <tr>
+                    <td class="text-mono">${escapeHtml(trade.timestamp || trade.exit_time || "--")}</td>
+                    <td><strong>${escapeHtml(trade.symbol || "--")}</strong></td>
+                    <td><span class="side-badge ${sideClass}">${escapeHtml(side || "--")}</span></td>
+                    <td class="text-mono">${trade.entry_price ? safeNumber(trade.entry_price).toFixed(4) : "--"}</td>
+                    <td class="text-mono">${trade.exit_price ? safeNumber(trade.exit_price).toFixed(4) : "--"}</td>
+                    <td class="text-mono ${toneClass(trade.pnl_pct)}">${formatPct(trade.pnl_pct)}</td>
+                    <td class="text-mono ${toneClass(trade.pnl_usd)}">${formatMoney(trade.pnl_usd)}</td>
+                    <td>${escapeHtml(trade.exit_reason || "--")}</td>
+                    ${isAgent ? `<td>${renderConfidenceBadge(trade.analyst_confidence)}</td>` : ""}
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
 
-// ── Sortable table: Performance by Symbol ────────────────────────
-(function() {
-  const table = document.getElementById('symbolTable');
-  if (!table) return;
-  const headers = table.querySelectorAll('th.sortable');
-  let sortDir = {};
+    function renderTradesFromState(status) {
+      const trades = status.trades || {};
+      const targets = {
+        paper: "histPaper_content",
+        agent: "histAgent_content",
+        pump: "histPump_content",
+        scalping: "histScalping_content"
+      };
 
-  headers.forEach(th => {
-    th.addEventListener('click', function() {
-      const col = parseInt(this.dataset.col);
-      const tbody = table.querySelector('tbody');
-      const rows = Array.from(tbody.querySelectorAll('tr'));
-      const dir = sortDir[col] === 'asc' ? 'desc' : 'asc';
-      sortDir[col] = dir;
-
-      rows.sort((a, b) => {
-        let aVal = a.cells[col].textContent.trim().replace(/[$%+,]/g, '');
-        let bVal = b.cells[col].textContent.trim().replace(/[$%+,]/g, '');
-        const aNum = parseFloat(aVal);
-        const bNum = parseFloat(bVal);
-        if (!isNaN(aNum) && !isNaN(bNum)) {
-          return dir === 'asc' ? aNum - bNum : bNum - aNum;
+      Object.entries(targets).forEach(([system, targetId]) => {
+        const container = document.getElementById(targetId);
+        if (container) {
+          container.innerHTML = renderTradeTable(trades[system] || [], system);
         }
-        return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      });
+    }
+
+    function renderLogLines(containerId, lines) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.textContent = (lines && lines.length) ? lines.join("\n") : "Sem logs disponiveis.";
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function getFilledSeries(chartData, labels) {
+      const mapped = new Map((chartData || []).map(item => [item.day, safeNumber(item.pnl)]));
+      let last = 0;
+      return labels.map(label => {
+        if (mapped.has(label)) {
+          last = mapped.get(label);
+        }
+        return Number(last.toFixed(2));
+      });
+    }
+
+    function buildChartPayload(status) {
+      const chart = status.chart || {};
+      const labels = [...new Set([
+        ...(chart.total || []).map(item => item.day),
+        ...(chart.paper || []).map(item => item.day),
+        ...(chart.agent || []).map(item => item.day),
+        ...(chart.pump || []).map(item => item.day),
+        ...(chart.scalping || []).map(item => item.day)
+      ])].sort();
+
+      return {
+        labels,
+        total: getFilledSeries(chart.total || [], labels),
+        paper: getFilledSeries(chart.paper || [], labels),
+        agent: getFilledSeries(chart.agent || [], labels),
+        pump: getFilledSeries(chart.pump || [], labels),
+        scalping: getFilledSeries(chart.scalping || [], labels)
+      };
+    }
+
+    function buildGradient(ctx, area) {
+      const gradient = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+      gradient.addColorStop(0, "rgba(105, 240, 255, 0.34)");
+      gradient.addColorStop(0.45, "rgba(95, 183, 255, 0.18)");
+      gradient.addColorStop(1, "rgba(95, 183, 255, 0.02)");
+      return gradient;
+    }
+
+    function createOrUpdateChart(status) {
+      const payload = buildChartPayload(status);
+      const canvas = document.getElementById("pnlChart");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+
+      const datasets = [
+        {
+          label: "Portfolio Total",
+          data: payload.total,
+          borderColor: "#69f0ff",
+          borderWidth: 3.5,
+          fill: true,
+          tension: 0.34,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          backgroundColor: ({ chart }) => {
+            const area = chart.chartArea;
+            if (!area) return "rgba(105, 240, 255, 0.12)";
+            return buildGradient(chart.ctx, area);
+          }
+        },
+        {
+          label: "Paper",
+          data: payload.paper,
+          borderColor: "#5fb7ff",
+          borderWidth: 1.8,
+          tension: 0.28,
+          pointRadius: 0
+        },
+        {
+          label: "Multi-Agent",
+          data: payload.agent,
+          borderColor: "#35d08f",
+          borderWidth: 1.8,
+          tension: 0.28,
+          pointRadius: 0
+        },
+        {
+          label: "Pump",
+          data: payload.pump,
+          borderColor: "#ff9f66",
+          borderWidth: 1.8,
+          tension: 0.28,
+          pointRadius: 0
+        },
+        {
+          label: "Scalping",
+          data: payload.scalping,
+          borderColor: "#b592ff",
+          borderWidth: 1.8,
+          tension: 0.28,
+          pointRadius: 0
+        }
+      ];
+
+      if (!pnlChartInstance) {
+        pnlChartInstance = new Chart(ctx, {
+          type: "line",
+          data: { labels: payload.labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            animation: { duration: 500 },
+            plugins: {
+              legend: {
+                position: "top",
+                labels: {
+                  color: "#edf5ff",
+                  usePointStyle: true,
+                  pointStyle: "circle",
+                  padding: 18,
+                  font: { family: "IBM Plex Sans", size: 11, weight: "600" }
+                }
+              },
+              tooltip: {
+                backgroundColor: "rgba(9, 19, 34, 0.95)",
+                titleColor: "#edf5ff",
+                bodyColor: "#edf5ff",
+                borderColor: "rgba(130, 168, 214, 0.24)",
+                borderWidth: 1,
+                callbacks: {
+                  label: (context) => ` ${context.dataset.label}: ${formatMoney(context.parsed.y)}`
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { color: "rgba(255,255,255,0.04)", drawBorder: false },
+                ticks: {
+                  color: "#7f98b5",
+                  maxRotation: 0,
+                  callback: (value) => {
+                    const raw = payload.labels[value] || "";
+                    if (!raw) return "";
+                    const [year, month, day] = raw.split("-");
+                    return `${day}/${month}`;
+                  }
+                }
+              },
+              y: {
+                grid: { color: "rgba(255,255,255,0.05)", drawBorder: false },
+                ticks: {
+                  color: "#7f98b5",
+                  callback: (value) => formatMoney(value)
+                }
+              }
+            }
+          }
+        });
+        return;
+      }
+
+      pnlChartInstance.data.labels = payload.labels;
+      datasets.forEach((dataset, index) => {
+        pnlChartInstance.data.datasets[index].data = dataset.data;
+      });
+      pnlChartInstance.update();
+    }
+
+    function applyStatus(status) {
+      dashboardState = status;
+      renderHeader(status);
+      renderHero(status);
+      renderStatusSummary(status);
+      renderStrategySpotlights(status);
+      renderCapitalGrid(status);
+      renderMetrics(status);
+      renderPositions(status);
+      renderSymbolPerformance(status);
+      createOrUpdateChart(status);
+    }
+
+    function setPeriod(days) {
+      currentPeriod = days;
+      document.querySelectorAll("#periodBtns .period-btn").forEach(button => {
+        button.classList.toggle("active", safeNumber(button.dataset.days) === days);
+      });
+      const activeTab = document.querySelector("#historyTabs .nav-link.active");
+      if (activeTab) {
+        loadTrades(activeTab.dataset.system, days);
+      }
+    }
+
+    async function loadTrades(system, days, quiet = false) {
+      const containerId = `hist${system.charAt(0).toUpperCase()}${system.slice(1)}_content`;
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      if (!quiet) {
+        container.innerHTML = '<div class="ajax-loading">Carregando trades...</div>';
+      }
+
+      try {
+        const response = await fetch(`/api/trades?system=${encodeURIComponent(system)}&days=${days}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        container.innerHTML = renderTradeTable(data.trades || [], system);
+      } catch (error) {
+        container.innerHTML = '<div class="empty-state" style="margin:0;">Falha ao carregar trades deste periodo.</div>';
+        console.warn("Falha ao carregar trades:", error.message);
+      }
+    }
+
+    async function loadLogs(source, quiet = false) {
+      const containerId = `log${source.charAt(0).toUpperCase()}${source.slice(1)}Content`;
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      if (!quiet) {
+        container.textContent = "Carregando...";
+      }
+
+      try {
+        const response = await fetch(`/api/logs?source=${encodeURIComponent(source)}&lines=40`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        renderLogLines(containerId, data.logs || []);
+      } catch (error) {
+        container.textContent = "Falha ao carregar logs.";
+        console.warn("Falha ao carregar logs:", error.message);
+      }
+    }
+
+    async function refreshDashboard() {
+      if (document.hidden) return;
+      try {
+        const response = await fetch("/api/status", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const status = await response.json();
+        applyStatus(status);
+
+        const activeTab = document.querySelector("#historyTabs .nav-link.active");
+        if (activeTab && currentPeriod === 0) {
+          loadTrades(activeTab.dataset.system, 0, true);
+        }
+        if (activeLogSource) {
+          loadLogs(activeLogSource, true);
+        }
+      } catch (error) {
+        console.warn("Falha no refresh incremental:", error.message);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      applyStatus(initialStatus);
+      renderTradesFromState(initialStatus);
+      renderLogLines("logMainContent", initialStatus.logs || []);
+
+      document.querySelectorAll("#periodBtns .period-btn").forEach(button => {
+        button.addEventListener("click", () => setPeriod(safeNumber(button.dataset.days)));
       });
 
-      rows.forEach(r => tbody.appendChild(r));
-    });
-  });
-})();
+      document.querySelectorAll("#historyTabs .nav-link").forEach(tab => {
+        tab.addEventListener("shown.bs.tab", event => {
+          const system = event.target.dataset.system;
+          loadTrades(system, currentPeriod, currentPeriod === 0);
+        });
+      });
 
-// ── Auto-refresh every 30 seconds ────────────────────────────────
-setTimeout(function() { location.reload(); }, 30000);
-</script>
+      document.querySelectorAll("#logTabs .nav-link").forEach(tab => {
+        tab.addEventListener("shown.bs.tab", event => {
+          activeLogSource = event.target.dataset.source;
+          loadLogs(activeLogSource);
+        });
+      });
+
+      setInterval(refreshDashboard, 25000);
+    });
+  </script>
 </body>
 </html>
