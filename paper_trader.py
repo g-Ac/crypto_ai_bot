@@ -41,27 +41,34 @@ def save_state(state):
 
 def get_atr_1h(symbol, period=14):
     """Calcula ATR no timeframe 1h para SL/TP dinamico."""
-    try:
-        resp = requests.get(
-            f"https://api.binance.com/api/v3/klines"
-            f"?symbol={symbol}&interval=1h&limit={period + 5}",
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        df = pd.DataFrame(data, columns=[
-            "time", "open", "high", "low", "close", "volume",
-            "close_time", "qav", "trades", "tbbav", "tbqav", "ignore",
-        ])
-        for col in ["high", "low", "close"]:
-            df[col] = df[col].astype(float)
-        atr = ta.volatility.AverageTrueRange(
-            high=df["high"], low=df["low"], close=df["close"], window=period
-        ).average_true_range()
-        return atr.iloc[-1]
-    except Exception:
-        return None
+    import time as _time
+    url = (
+        f"https://api.binance.com/api/v3/klines"
+        f"?symbol={symbol}&interval=1h&limit={period + 5}"
+    )
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
+                _time.sleep(min(retry_after, 30))
+                continue
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            df = pd.DataFrame(data, columns=[
+                "time", "open", "high", "low", "close", "volume",
+                "close_time", "qav", "trades", "tbbav", "tbqav", "ignore",
+            ])
+            for col in ["high", "low", "close"]:
+                df[col] = df[col].astype(float)
+            atr = ta.volatility.AverageTrueRange(
+                high=df["high"], low=df["low"], close=df["close"], window=period
+            ).average_true_range()
+            return atr.iloc[-1]
+        except Exception:
+            _time.sleep(min(2 ** attempt, 10))
+    return None
 
 
 def log_trade(trade):
@@ -158,8 +165,7 @@ def process_signals(results):
                 sl_price = price * (1 + sl_pct / 100)
                 tp_price = price * (1 - tp_pct / 100)
 
-            n_open = len(state["positions"]) + 1
-            allocation = state["capital"] / n_open
+            allocation = state["capital"] / PAPER_MAX_POSITIONS
             state["positions"][symbol] = {
                 "type": pos_type,
                 "entry_price": price,

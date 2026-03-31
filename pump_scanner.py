@@ -56,32 +56,39 @@ def set_cooldown(symbol):
 
 def get_top_symbols():
     """Get top USDT pairs by 24h volume from Binance."""
-    try:
-        resp = requests.get(
-            "https://api.binance.com/api/v3/ticker/24hr", timeout=10
-        )
-        if resp.status_code != 200:
-            print(f"Erro ao buscar tickers: {resp.status_code}")
-            return []
+    for attempt in range(3):
+        try:
+            resp = requests.get(
+                "https://api.binance.com/api/v3/ticker/24hr", timeout=10
+            )
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
+                print(f"Rate limit (429) ao buscar tickers, aguardando {retry_after}s...")
+                time.sleep(min(retry_after, 30))
+                continue
+            if resp.status_code != 200:
+                print(f"Erro ao buscar tickers: {resp.status_code}")
+                return []
 
-        tickers = resp.json()
+            tickers = resp.json()
 
-        usdt_pairs = [
-            t for t in tickers
-            if t["symbol"].endswith("USDT")
-            and float(t["quoteVolume"]) > 0
-            and "UP" not in t["symbol"]
-            and "DOWN" not in t["symbol"]
-            and "BEAR" not in t["symbol"]
-            and "BULL" not in t["symbol"]
-        ]
+            usdt_pairs = [
+                t for t in tickers
+                if t["symbol"].endswith("USDT")
+                and float(t["quoteVolume"]) > 0
+                and "UP" not in t["symbol"]
+                and "DOWN" not in t["symbol"]
+                and "BEAR" not in t["symbol"]
+                and "BULL" not in t["symbol"]
+            ]
 
-        usdt_pairs.sort(key=lambda x: float(x["quoteVolume"]), reverse=True)
-        return [t["symbol"] for t in usdt_pairs[:PUMP_TOP_COINS]]
+            usdt_pairs.sort(key=lambda x: float(x["quoteVolume"]), reverse=True)
+            return [t["symbol"] for t in usdt_pairs[:PUMP_TOP_COINS]]
 
-    except Exception as e:
-        print(f"Erro: {e}")
-        return []
+        except Exception as e:
+            print(f"Tentativa {attempt + 1} falhou ao buscar tickers: {e}")
+            time.sleep(min(2 ** attempt, 10))
+    return []
 
 
 def analyze_symbol(symbol):
@@ -198,25 +205,28 @@ def scan():
         print(f"  {len(alerts)} alertas detectados!")
 
         for a in alerts:
-            direction = "LONG" if a["direction"] == "PUMP" else "SHORT"
+            try:
+                direction = "LONG" if a["direction"] == "PUMP" else "SHORT"
 
-            # Open trade
-            trade_msg = open_position(a["symbol"], direction, a["price"], a["volume_ratio"])
+                # Open trade
+                trade_msg = open_position(a["symbol"], direction, a["price"], a["volume_ratio"])
 
-            alert_msg = (
-                f"[PUMP SCANNER] {a['direction']} detectado\n\n"
-                f"Ativo: {a['symbol']}\n"
-                f"Preco: {a['price']:.6f}\n"
-                f"Volume: {a['volume_ratio']}x a media\n"
-                f"Variacao 1 candle: {a['price_change_1']:+.2f}%\n"
-                f"Variacao 3 candles: {a['price_change_3']:+.2f}%"
-            )
-            print(f"  {a['symbol']}: {a['direction']} | Vol: {a['volume_ratio']}x | {a['price_change_1']:+.2f}%")
-            send_telegram_message(alert_msg)
+                alert_msg = (
+                    f"[PUMP SCANNER] {a['direction']} detectado\n\n"
+                    f"Ativo: {a['symbol']}\n"
+                    f"Preco: {a['price']:.6f}\n"
+                    f"Volume: {a['volume_ratio']}x a media\n"
+                    f"Variacao 1 candle: {a['price_change_1']:+.2f}%\n"
+                    f"Variacao 3 candles: {a['price_change_3']:+.2f}%"
+                )
+                print(f"  {a['symbol']}: {a['direction']} | Vol: {a['volume_ratio']}x | {a['price_change_1']:+.2f}%")
+                send_telegram_message(alert_msg)
 
-            if trade_msg:
-                print(f"  {trade_msg}")
-                send_telegram_message(trade_msg)
+                if trade_msg:
+                    print(f"  {trade_msg}")
+                    send_telegram_message(trade_msg)
+            except Exception as e:
+                print(f"  [ERRO] Falha ao processar alerta {a['symbol']}: {e}")
     else:
         print("  Nenhuma anomalia detectada.")
 

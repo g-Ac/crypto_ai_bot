@@ -3,6 +3,19 @@ import pandas as pd
 import time
 
 
+def _backoff_delay(attempt, response=None):
+    """Calculate retry delay: respect Retry-After header or use exponential backoff."""
+    if response is not None and response.status_code == 429:
+        retry_after = response.headers.get("Retry-After")
+        if retry_after:
+            try:
+                return min(int(retry_after), 60)
+            except ValueError:
+                pass
+        return min(2 ** (attempt + 1), 30)
+    return min(2 ** attempt, 10)
+
+
 def get_candles(symbol: str, interval: str, limit: int) -> pd.DataFrame:
     url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
 
@@ -27,11 +40,13 @@ def get_candles(symbol: str, interval: str, limit: int) -> pd.DataFrame:
                 return df
 
             else:
-                print(f"Erro HTTP {response.status_code} para {symbol}")
-                time.sleep(2)
+                delay = _backoff_delay(attempt, response)
+                print(f"Erro HTTP {response.status_code} para {symbol} (retry em {delay}s)")
+                time.sleep(delay)
 
         except Exception as e:
-            print(f"Tentativa {attempt + 1} falhou para {symbol}: {e}")
-            time.sleep(2)
+            delay = _backoff_delay(attempt)
+            print(f"Tentativa {attempt + 1} falhou para {symbol}: {e} (retry em {delay}s)")
+            time.sleep(delay)
 
     raise Exception(f"Falha ao buscar dados para {symbol} após 3 tentativas.")

@@ -7,7 +7,6 @@ from indicators import add_indicators
 from strategy import generate_signal
 from htf import get_htf_trend
 from logger import save_log
-from alert_logger import save_alert
 from exporter import export_analysis
 from opportunity_exporter import export_relevant_opportunities
 from telegram_notifier import send_telegram_message
@@ -16,6 +15,8 @@ from context_agent import interpret_signal
 from paper_trader import process_signals, get_status
 from trade_agents import orchestrate, get_agent_status
 from daily_report import check_daily_report, is_circuit_broken
+from scalping_logger import setup_scalping_logging
+from scalping_trader import process_scalping, get_scalping_status
 
 def run_bot():
     results = []
@@ -179,12 +180,27 @@ def run_bot():
 
     print(f"\n  {get_agent_status()}")
 
+    # Scalping Strategy
+    print("\n========================================")
+    print("SCALPING STRATEGY\n")
+
+    if is_circuit_broken("scalping") or is_paused():
+        print("  Circuit breaker ativo ou bot pausado - scalping suspenso")
+    else:
+        scalping_msgs = process_scalping(SYMBOLS)
+        for msg in scalping_msgs:
+            print(f"  {msg}")
+            send_telegram_message(msg)
+
+    print(f"\n  {get_scalping_status()}")
+
     # Daily Report (envia 1x por dia apos meia-noite)
     check_daily_report()
 
 
 if __name__ == "__main__":
     db.init_db()
+    setup_scalping_logging()
     start_command_listener()
     while True:
         try:
