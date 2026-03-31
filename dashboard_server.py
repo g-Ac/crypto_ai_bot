@@ -30,6 +30,86 @@ app = Flask(__name__, template_folder=os.path.join(BOT_DIR, "templates"))
 
 # ── SYSTEM HEALTH ────────────────────────────────────────────────────────────
 
+def _get_bot_status():
+    """Verifica se o bot esta operacional: processos vivos, ultimo ciclo recente, sem erros."""
+    import subprocess
+    status = {
+        "main_bot": False,
+        "pump_scanner": False,
+        "dashboard": True,  # se estamos aqui, dashboard esta vivo
+        "last_cycle_ok": False,
+        "last_cycle_ago": "N/A",
+        "errors_today": 0,
+        "overall": "offline",  # offline, degraded, healthy
+    }
+
+    # Check processes via supervisor (Linux) or log file timestamps
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "main.py"], capture_output=True, timeout=3
+        )
+        status["main_bot"] = result.returncode == 0
+    except Exception:
+        # Windows fallback: check log file modification time
+        pass
+
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "pump_scanner.py"], capture_output=True, timeout=3
+        )
+        status["pump_scanner"] = result.returncode == 0
+    except Exception:
+        pass
+
+    # Check last cycle timestamp from main log
+    log_dir = os.path.join(BOT_DIR, "logs")
+    today = datetime.now().strftime("%Y-%m-%d")
+    main_log = os.path.join(log_dir, f"main_bot_{today}.log")
+    if os.path.isfile(main_log):
+        try:
+            mtime = os.path.getmtime(main_log)
+            age_seconds = (datetime.now() - datetime.fromtimestamp(mtime)).total_seconds()
+            status["last_cycle_ago"] = f"{int(age_seconds)}s"
+            status["last_cycle_ok"] = age_seconds < 600  # less than 10 min = healthy
+            # Also mark main_bot alive if log was updated recently
+            if age_seconds < 600:
+                status["main_bot"] = True
+        except Exception:
+            pass
+
+        # Count errors in today's log
+        try:
+            with open(main_log, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            status["errors_today"] = content.lower().count("[erro]") + content.lower().count("traceback")
+        except Exception:
+            pass
+
+    # Also check pump scanner log
+    pump_log = os.path.join(log_dir, f"pump_scanner_{today}.log")
+    if os.path.isfile(pump_log):
+        try:
+            mtime = os.path.getmtime(pump_log)
+            age_seconds = (datetime.now() - datetime.fromtimestamp(mtime)).total_seconds()
+            if age_seconds < 120:  # pump runs every 60s
+                status["pump_scanner"] = True
+        except Exception:
+            pass
+
+    # Overall status
+    all_up = status["main_bot"] and status["pump_scanner"] and status["dashboard"]
+    if all_up and status["last_cycle_ok"] and status["errors_today"] == 0:
+        status["overall"] = "healthy"
+    elif all_up and status["last_cycle_ok"]:
+        status["overall"] = "degraded"  # running but has errors
+    elif status["main_bot"]:
+        status["overall"] = "degraded"
+    else:
+        status["overall"] = "offline"
+
+    return status
+
+
 def _get_system_health():
     """Coleta metricas de saude do sistema sem dependencia do psutil.
     Le /proc/ diretamente (Raspberry Pi / Linux), com fallback para Windows.
@@ -337,28 +417,62 @@ def _build_status():
     cb_agent = is_circuit_broken("agent")
     cb_pump  = is_circuit_broken("pump")
 
-    # Advanced metrics (30 days, all 4 systems)
-    metrics = {
+    # Advanced metrics (30 days) -- per system
+    metrics_per_system = {
         "paper":    get_all_time_stats("paper_trades", 30),
         "agent":    get_all_time_stats("agent_trades", 30),
         "pump":     get_all_time_stats("pump_trades",  30),
-        "scalping": {
-            "total_trades": scalping_total_trades,
-            "wins": scalping_wins,
-            "losses": scalping_losses,
-            "win_rate": round((scalping_wins / scalping_total_trades * 100), 1) if scalping_total_trades > 0 else 0,
-        },
     }
 
-    # Per-symbol performance (30 days)
-    by_symbol = {
-        "paper": get_stats_by_symbol("paper_trades", 30),
-        "agent": get_stats_by_symbol("agent_trades", 30),
-        "pump":  get_stats_by_symbol("pump_trades",  30),
+    # Combined metrics across all systems
+    all_totals = sum(m["total_trades"] for m in metrics_per_system.values()) + scalping_total_trades
+    all_wins = sum(m.get("win_rate", 0) * m["total_trades"] / 100 for m in metrics_per_system.values() if m["total_trades"]) + scalping_wins
+    all_wins = int(all_wins)
+    combined_win_rate = (all_wins / all_totals * 100) if all_totals > 0 else 0
+
+    # Best/worst trade and profit factor across all systems
+    all_largest_win = max((m.get("largest_win", 0) for m in metrics_per_system.values()), default=0)
+    all_largest_loss = min((m.get("largest_loss", 0) for m in metrics_per_system.values()), default=0)
+    all_max_dd = max((m.get("max_drawdown_pct", 0) for m in metrics_per_system.values()), default=0)
+
+    sum_pf_num = sum(m.get("profit_factor", 0) * m["total_trades"] for m in metrics_per_system.values() if m["total_trades"])
+    sum_pf_den = sum(m["total_trades"] for m in metrics_per_system.values() if m["total_trades"])
+    combined_pf = (sum_pf_num / sum_pf_den) if sum_pf_den > 0 else 0
+    combined_avg = sum(m.get("avg_pnl_pct", 0) * m["total_trades"] for m in metrics_per_system.values() if m["total_trades"])
+    combined_avg = (combined_avg / sum_pf_den) if sum_pf_den > 0 else 0
+
+    metrics = {
+        "total_trades": all_totals,
+        "win_rate": round(combined_win_rate, 1),
+        "profit_factor": round(combined_pf, 2),
+        "max_drawdown_pct": round(all_max_dd, 2),
+        "largest_win": round(all_largest_win, 2),
+        "largest_loss": round(all_largest_loss, 2),
+        "avg_pnl_pct": round(combined_avg, 2),
+        "per_system": metrics_per_system,
     }
+
+    # Per-symbol performance (30 days) -- merge all systems
+    by_symbol_raw = {}
+    for table in ["paper_trades", "agent_trades", "pump_trades"]:
+        for row in get_stats_by_symbol(table, 30):
+            sym = row["symbol"]
+            if sym not in by_symbol_raw:
+                by_symbol_raw[sym] = {"symbol": sym, "trades": 0, "wins": 0, "losses": 0, "total_pnl": 0.0}
+            by_symbol_raw[sym]["trades"] += row["trades"]
+            by_symbol_raw[sym]["wins"] += row["wins"]
+            by_symbol_raw[sym]["losses"] += row["losses"]
+            by_symbol_raw[sym]["total_pnl"] += float(row["total_pnl"] or 0)
+    by_symbol = sorted(by_symbol_raw.values(), key=lambda x: x["total_pnl"], reverse=True)
+    for s in by_symbol:
+        s["total_pnl"] = round(s["total_pnl"], 2)
+        s["avg_pnl_pct"] = round(s["total_pnl"] / s["trades"], 2) if s["trades"] else 0
 
     # System health
     health = _get_system_health()
+
+    # Bot operational status -- checks if processes are alive and last cycle was recent
+    bot_status = _get_bot_status()
 
     # Recent logs (last 20 lines of main log)
     logs = _get_recent_logs(source="main", lines=20)
@@ -393,6 +507,7 @@ def _build_status():
         "metrics":   metrics,
         "by_symbol": by_symbol,
         "health":    health,
+        "bot_status": bot_status,
         "logs":      logs,
     }
 

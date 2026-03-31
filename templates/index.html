@@ -188,8 +188,27 @@
     {% endif %}
   </div>
 
-  <!-- Right: Status + controls -->
+  <!-- Right: Bot status + controls -->
   <div class="d-flex align-items-center gap-2">
+    {% if bot_status is defined and bot_status %}
+      {% set bs = bot_status %}
+      {% if bs.overall == "healthy" %}
+        <span class="health-badge health-ok" style="border-color:#238636;">
+          <span class="dot"></span> Bot 100% OK
+        </span>
+      {% elif bs.overall == "degraded" %}
+        <span class="health-badge health-warn" style="border-color:#9e6a03;" title="Erros hoje: {{ bs.errors_today }}{% if not bs.pump_scanner %} | Pump scanner offline{% endif %}">
+          <span class="dot"></span> Degradado{% if bs.errors_today > 0 %} ({{ bs.errors_today }} erros){% endif %}
+        </span>
+      {% else %}
+        <span class="health-badge health-crit" style="border-color:#da3633;">
+          <span class="dot"></span> Offline
+        </span>
+      {% endif %}
+      {% if bs.last_cycle_ago != "N/A" %}
+        <span class="refresh-bar" title="Tempo desde o ultimo ciclo">ciclo: {{ bs.last_cycle_ago }}</span>
+      {% endif %}
+    {% endif %}
     {% if paused %}
       <span class="badge badge-paused px-2 py-1" style="font-size:0.78rem;">PAUSADO</span>
       <form method="post" action="/resume" class="mb-0">
