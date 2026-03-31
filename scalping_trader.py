@@ -363,6 +363,25 @@ def process_scalping(symbols: list) -> List[str]:
                 )
                 continue
 
+            # ---- PASSO 5.5: Claude validation para confluencia borderline (2/3) ----
+            if confluence.score == 2:
+                try:
+                    from trade_agents import validate_scalping_signal
+                    approved, val_reason = validate_scalping_signal(
+                        symbol,
+                        confluence.direction.value,
+                        confluence.score,
+                        confluence.reason,
+                        confluence.best_signal.source if confluence.best_signal else "unknown",
+                    )
+                    if not approved:
+                        logger.info("SCALPING %s: Claude rejeitou (2/3) - %s", symbol, val_reason)
+                        messages.append(f"[SCALPING] {symbol} rejeitado por Claude: {val_reason}")
+                        continue
+                    logger.info("SCALPING %s: Claude aprovou (2/3) - %s", symbol, val_reason)
+                except Exception as val_err:
+                    logger.warning("SCALPING %s: erro na validacao Claude, prosseguindo: %s", symbol, val_err)
+
             # ---- PASSO 6: Risk Manager ----
             risk = evaluate_risk(confluence, symbol, CONFIG, df_15m=df_15m)
 

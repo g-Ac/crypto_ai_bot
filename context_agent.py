@@ -25,9 +25,53 @@ Regras:
 """
 
 
+def _rule_based_interpretation(result: dict) -> str:
+    """Fallback interpretation when Claude is unavailable."""
+    decision = result["decision"]
+    symbol = result["symbol"]
+    confidence = result["confidence_score"]
+    rsi = result["rsi"]
+    rsi_status = result["rsi_status"]
+    htf_aligned = result["htf_aligned"]
+    htf_trend = result["htf_trend"]
+    volume = result["volume_above_avg"]
+    buy_score = result["buy_score"]
+    sell_score = result["sell_score"]
+
+    lines = []
+
+    score = buy_score if decision == "BUY" else sell_score
+    if decision in ("BUY", "SELL"):
+        lado = "compra" if decision == "BUY" else "venda"
+        lines.append(f"{symbol}: sinal de {lado} com score {score} e confianca {confidence}/100.")
+    else:
+        lines.append(f"{symbol}: sem sinal claro (HOLD), confianca {confidence}/100.")
+
+    indicators = []
+    if htf_aligned:
+        indicators.append("tendencia 1h confirma")
+    else:
+        indicators.append(f"tendencia 1h ({htf_trend}) NAO confirma")
+    if volume:
+        indicators.append("volume acima da media")
+    if rsi_status != "neutro":
+        indicators.append(f"RSI {rsi:.0f} ({rsi_status})")
+    if indicators:
+        lines.append("Indicadores: " + ", ".join(indicators) + ".")
+
+    if confidence >= 80:
+        lines.append(f"Confianca alta ({confidence}/100).")
+    elif confidence >= 60:
+        lines.append(f"Confianca moderada ({confidence}/100).")
+    else:
+        lines.append(f"Confianca baixa ({confidence}/100) - cautela.")
+
+    return "\n".join(lines)
+
+
 def interpret_signal(result: dict) -> str:
     if not client:
-        return None
+        return _rule_based_interpretation(result)
 
     data_text = (
         f"Ativo: {result['symbol']}\n"
@@ -59,4 +103,4 @@ def interpret_signal(result: dict) -> str:
         return response.content[0].text.strip()
     except Exception as e:
         print(f"Erro no Context Agent: {e}")
-        return None
+        return _rule_based_interpretation(result)

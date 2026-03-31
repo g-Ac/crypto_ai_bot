@@ -8,6 +8,7 @@ Fluxo:
 """
 import os
 import json
+import time
 import tempfile
 import requests
 import pandas as pd
@@ -75,7 +76,9 @@ def log_trade(trade):
 #  AGENTE 1: ANALISTA (Claude)
 # ============================================================
 
-ANALYST_PROMPT = """Voce e um analista de trading de criptomoedas responsavel por validar oportunidades.
+def _build_analyst_prompt(state):
+    """Build dynamic analyst prompt with current performance context."""
+    base = """Voce e um analista de trading de criptomoedas responsavel por validar oportunidades.
 
 Voce recebe dados de uma analise tecnica automatizada. Sua funcao e decidir se o trade deve ser executado.
 
@@ -85,6 +88,35 @@ Considere:
 - Tendencia do 1h deve confirmar a direcao
 - Volume acima da media e um bom sinal
 - Body ratio forte na direcao do trade confirma momentum
+"""
+
+    total = state.get("total_trades", 0)
+    wins = state.get("wins", 0)
+    losses = state.get("losses", 0)
+    win_rate = (wins / total * 100) if total > 0 else 0
+
+    consecutive_losses = 0
+    for h in reversed(state.get("history", [])):
+        if h.get("pnl_pct", 0) < 0:
+            consecutive_losses += 1
+        else:
+            break
+
+    if total > 0:
+        base += f"\nContexto de performance atual:"
+        base += f"\n- Win rate: {win_rate:.0f}% ({wins}W/{losses}L de {total} trades)"
+        base += f"\n- Perdas consecutivas recentes: {consecutive_losses}"
+
+        if consecutive_losses >= 3:
+            base += f"\n\nATENCAO: {consecutive_losses} perdas consecutivas."
+            base += "\nSeja MAIS CONSERVADOR. So aprove sinais com alta confluencia."
+            base += "\nExija confidence minima de 75 para aprovar."
+        elif consecutive_losses >= 2:
+            base += "\n\nUltimos 2 trades foram perdas. Seja moderadamente cauteloso."
+        elif win_rate > 60 and total >= 5:
+            base += "\n\nBoa performance recente. Mantenha o padrao de qualidade."
+
+    base += """
 
 Responda SOMENTE com um JSON valido, sem markdown, neste formato:
 {"approved": true/false, "confidence": 0-100, "reasoning": "explicacao curta"}
@@ -92,6 +124,8 @@ Responda SOMENTE com um JSON valido, sem markdown, neste formato:
 Se os indicadores estao bem alinhados e o contexto confirma, aprove.
 Se ha conflitos significativos, rejeite.
 Seja objetivo e pratico."""
+
+    return base
 
 
 def agent_analyst(signal_data):
@@ -138,7 +172,7 @@ def agent_analyst(signal_data):
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=150,
-            system=ANALYST_PROMPT,
+            system=_build_analyst_prompt(state),
             messages=[{"role": "user", "content": data_text}],
         )
         text = response.content[0].text.strip()
@@ -163,29 +197,39 @@ def agent_analyst(signal_data):
 # ============================================================
 
 def get_atr(symbol, period=14):
-    """Calculate ATR for dynamic SL/TP."""
-    try:
-        resp = requests.get(
-            f"https://api.binance.com/api/v3/klines"
-            f"?symbol={symbol}&interval=1h&limit={period + 5}",
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        df = pd.DataFrame(data, columns=[
-            "time", "open", "high", "low", "close", "volume",
-            "close_time", "qav", "trades", "tbbav", "tbqav", "ignore",
-        ])
-        for col in ["high", "low", "close"]:
-            df[col] = df[col].astype(float)
+    """Calculate ATR for dynamic SL/TP with retry logic."""
+    for attempt in range(3):
+        try:
+            resp = requests.get(
+                f"https://api.binance.com/api/v3/klines"
+                f"?symbol={symbol}&interval=1h&limit={period + 5}",
+                timeout=10,
+            )
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("Retry-After", 5))
+                time.sleep(retry_after)
+                continue
+            if resp.status_code != 200:
+                time.sleep(2 ** attempt)
+                continue
 
-        atr = ta.volatility.AverageTrueRange(
-            high=df["high"], low=df["low"], close=df["close"], window=period
-        ).average_true_range()
-        return atr.iloc[-1]
-    except Exception:
-        return None
+            data = resp.json()
+            df = pd.DataFrame(data, columns=[
+                "time", "open", "high", "low", "close", "volume",
+                "close_time", "qav", "trades", "tbbav", "tbqav", "ignore",
+            ])
+            for col in ["high", "low", "close"]:
+                df[col] = df[col].astype(float)
+
+            atr = ta.volatility.AverageTrueRange(
+                high=df["high"], low=df["low"], close=df["close"], window=period
+            ).average_true_range()
+            return atr.iloc[-1]
+        except Exception as e:
+            print(f"  [ATR] Tentativa {attempt + 1}/3 falhou para {symbol}: {e}")
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    return None
 
 
 def agent_risk(signal_data, analyst_result):
@@ -347,11 +391,17 @@ def check_agent_positions(results):
                 hit = "take_profit"
                 pnl_pct = abs(((entry - pos["tp_price"]) / entry) * 100)
 
-        # Also exit on opposite signal
+        # Exit on strong opposite signal only (confidence > 70 or score diff >= 3)
         if hit is None:
-            if (pos["type"] == "LONG" and result["decision"] == "SELL") or \
-               (pos["type"] == "SHORT" and result["decision"] == "BUY"):
-                hit = "opposite_signal"
+            is_opposite = (
+                (pos["type"] == "LONG" and result["decision"] == "SELL") or
+                (pos["type"] == "SHORT" and result["decision"] == "BUY")
+            )
+            if is_opposite:
+                confidence = result.get("confidence_score", 0)
+                score_diff = result.get("score_difference", 0)
+                if confidence > 70 or score_diff >= 3:
+                    hit = "opposite_signal"
 
         if hit:
             pnl_usd = pos["position_size_usd"] * (pnl_pct / 100)
@@ -431,6 +481,19 @@ def orchestrate(results):
         # AGENT 1: Analyst
         print(f"  [AGENTE 1] Analisando {symbol}...")
         analyst = agent_analyst(result)
+
+        # Consistency check: reject if approved with very low confidence
+        analyst_confidence = analyst.get("confidence", 50)
+        if analyst["approved"] and analyst_confidence < 60:
+            analyst["approved"] = False
+            analyst["reasoning"] = (
+                f"Auto-rejeitado: confianca baixa ({analyst_confidence}/100). "
+                f"Original: {analyst.get('reasoning', '')}"
+            )
+            print(f"  [CONSISTENCIA] Rejeitado: aprovado mas confianca {analyst_confidence} < 60")
+        elif not analyst["approved"] and analyst_confidence > 80:
+            print(f"  [INCONSISTENCIA] Rejeitado com confianca alta ({analyst_confidence}). Razao: {analyst.get('reasoning', '')}")
+
         print(f"  [AGENTE 1] Aprovado: {analyst['approved']} | Confianca: {analyst.get('confidence', 0)}")
         print(f"  [AGENTE 1] Razao: {analyst.get('reasoning', '')}")
 
@@ -462,6 +525,48 @@ def orchestrate(results):
         print(f"  [AGENTE 3] Trade executado com sucesso")
 
     return messages
+
+
+# ============================================================
+#  VALIDACAO SCALPING (chamado pelo scalping_trader)
+# ============================================================
+
+SCALPING_VALIDATION_PROMPT = """Voce e um validador rapido de trade de scalping.
+Recebe dados de confluencia de 3 motores de sinal.
+Responda SOMENTE com JSON: {"approved": true/false, "reason": "motivo curto"}
+Aprove se a confluencia faz sentido. Rejeite se ha risco claro."""
+
+
+def validate_scalping_signal(symbol, direction, score, reason, best_signal_source):
+    """Quick Claude validation for borderline scalping signals (score 2/3)."""
+    if not client:
+        return True, "Claude indisponivel, aprovado automaticamente"
+
+    data_text = (
+        f"Ativo: {symbol}\n"
+        f"Direcao: {direction}\n"
+        f"Confluencia: {score}/3\n"
+        f"Motores ativos: {reason}\n"
+        f"Motor principal: {best_signal_source}\n"
+    )
+
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=80,
+            system=SCALPING_VALIDATION_PROMPT,
+            messages=[{"role": "user", "content": data_text}],
+        )
+        text = response.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3].strip()
+        result = json.loads(text)
+        return result.get("approved", True), result.get("reason", "")
+    except Exception as e:
+        print(f"  [SCALPING VALIDATION] Erro: {e}")
+        return True, f"Fallback aprovado: {e}"
 
 
 def get_agent_status():

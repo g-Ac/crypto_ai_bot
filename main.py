@@ -1,4 +1,5 @@
 import time
+import threading
 import database as db
 from config import SYMBOLS, INTERVAL, LIMIT, ALERT_PRIORITY_MIN
 from telegram_commands import start_command_listener, is_paused
@@ -198,13 +199,21 @@ def run_bot():
     check_daily_report()
 
 
+_cycle_lock = threading.Lock()
+
 if __name__ == "__main__":
     db.init_db()
     setup_scalping_logging()
     start_command_listener()
     while True:
         try:
-            run_bot()
+            if _cycle_lock.acquire(blocking=False):
+                try:
+                    run_bot()
+                finally:
+                    _cycle_lock.release()
+            else:
+                print("\n[AVISO] Ciclo anterior ainda em execucao, pulando...\n")
             print("\nAguardando 300 segundos para a próxima análise...\n")
             time.sleep(300)
         except Exception as e:

@@ -256,13 +256,19 @@ def is_circuit_broken(system="agent"):
         print(f"  [CIRCUIT BREAKER] {system}: limite de {DAILY_MAX_TRADES} trades/dia atingido")
         return True
 
-    # Use capital at start of day (current capital minus today's P&L)
+    # Use max(initial, current) as reference for daily loss %
+    initial_capitals = {
+        "paper": PAPER_INITIAL_CAPITAL,
+        "agent": AGENT_INITIAL_CAPITAL,
+        "pump": PUMP_INITIAL_CAPITAL,
+    }
+    baseline = initial_capitals.get(system, 10000)
     current_capital = _get_current_capital(system)
-    day_start_capital = current_capital - stats["pnl_usd"]
-    if day_start_capital <= 0:
-        day_start_capital = 1  # avoid division by zero
+    reference_capital = max(baseline, current_capital)
+    if reference_capital <= 0:
+        reference_capital = baseline
 
-    real_loss_pct = (stats["pnl_usd"] / day_start_capital) * 100
+    real_loss_pct = (stats["pnl_usd"] / reference_capital) * 100
     if real_loss_pct <= -DAILY_LOSS_LIMIT_PCT:
         print(f"  [CIRCUIT BREAKER] {system}: perda diaria de {real_loss_pct:.2f}% excede limite de -{DAILY_LOSS_LIMIT_PCT}%")
         return True
