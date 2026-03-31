@@ -10,7 +10,7 @@ from htf import get_htf_trend
 from logger import save_log
 from exporter import export_analysis
 from opportunity_exporter import export_relevant_opportunities
-from telegram_notifier import send_telegram_message
+from telegram_notifier import send_telegram_message, send_opportunity_alert
 from alert_control import should_send_alert
 from context_agent import interpret_signal
 from paper_trader import process_signals, get_status
@@ -133,23 +133,15 @@ def run_bot():
             if should_send_alert(top_opportunity):
                 interpretation = interpret_signal(top_opportunity)
 
-                header = (
-                    f"Oportunidade detectada - {top_opportunity['symbol']}\n\n"
+                send_opportunity_alert(
+                    symbol=top_opportunity["symbol"],
+                    decision=top_opportunity["decision"],
+                    opportunity_type=top_opportunity["opportunity_type"],
+                    dominant_side=top_opportunity["dominant_side"],
+                    confidence=top_opportunity["confidence_score"],
+                    priority=top_opportunity["priority_score"],
+                    interpretation=interpretation or top_opportunity["reason"],
                 )
-                data_block = (
-                    f"Decisao: {top_opportunity['decision']}\n"
-                    f"Tipo: {top_opportunity['opportunity_type']}\n"
-                    f"Lado: {top_opportunity['dominant_side']}\n"
-                    f"Confianca: {top_opportunity['confidence_score']}/100\n"
-                    f"Priority: {top_opportunity['priority_score']}"
-                )
-
-                if interpretation:
-                    message = f"{header}{interpretation}\n\n{data_block}"
-                else:
-                    message = f"{header}{top_opportunity['reason']}\n\n{data_block}"
-
-                send_telegram_message(message)
     else:
         print("Nenhuma oportunidade relevante neste ciclo.")
 
@@ -163,7 +155,7 @@ def run_bot():
         paper_msgs = process_signals(results)
         for msg in paper_msgs:
             print(f"  {msg}")
-            send_telegram_message(f"[PAPER] {msg}")
+            send_telegram_message(f"\U0001f4c4 <b>[PAPER]</b> {msg}")
 
     print(f"\n  {get_status()}")
 
@@ -177,7 +169,7 @@ def run_bot():
         agent_msgs = orchestrate(results)
         for msg in agent_msgs:
             print(f"  {msg}")
-            send_telegram_message(msg)
+            send_telegram_message(f"\U0001f916 <b>[AGENT]</b> {msg}")
 
     print(f"\n  {get_agent_status()}")
 
@@ -191,7 +183,7 @@ def run_bot():
         scalping_msgs = process_scalping(SYMBOLS)
         for msg in scalping_msgs:
             print(f"  {msg}")
-            send_telegram_message(msg)
+            send_telegram_message(f"\u26a1 <b>[SCALPING]</b> {msg}")
 
     print(f"\n  {get_scalping_status()}")
 

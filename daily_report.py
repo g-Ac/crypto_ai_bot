@@ -10,7 +10,7 @@ from config import (
     DAILY_LOSS_LIMIT_PCT, DAILY_MAX_TRADES,
     PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL,
 )
-from telegram_notifier import send_telegram_message
+from telegram_notifier import send_telegram_message, send_circuit_breaker_alert
 import database as db
 
 LAST_REPORT_FILE = "last_report_date.txt"
@@ -254,6 +254,7 @@ def is_circuit_broken(system="agent"):
     # Check max trades
     if stats["count"] >= DAILY_MAX_TRADES:
         print(f"  [CIRCUIT BREAKER] {system}: limite de {DAILY_MAX_TRADES} trades/dia atingido")
+        send_circuit_breaker_alert(system, f"Limite de {DAILY_MAX_TRADES} trades/dia atingido ({stats['count']} trades)")
         return True
 
     # Use max(initial, current) as reference for daily loss %
@@ -271,6 +272,11 @@ def is_circuit_broken(system="agent"):
     real_loss_pct = (stats["pnl_usd"] / reference_capital) * 100
     if real_loss_pct <= -DAILY_LOSS_LIMIT_PCT:
         print(f"  [CIRCUIT BREAKER] {system}: perda diaria de {real_loss_pct:.2f}% excede limite de -{DAILY_LOSS_LIMIT_PCT}%")
+        send_circuit_breaker_alert(
+            system,
+            f"Perda diaria de {real_loss_pct:.2f}% excede limite de -{DAILY_LOSS_LIMIT_PCT}% "
+            f"(${stats['pnl_usd']:+.2f})"
+        )
         return True
 
     return False

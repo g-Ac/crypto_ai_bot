@@ -14,7 +14,7 @@ from config import (
     PUMP_VOLUME_MULTIPLIER, PUMP_PRICE_CHANGE_MIN,
     PUMP_SCAN_INTERVAL, PUMP_TOP_COINS,
 )
-from telegram_notifier import send_telegram_message
+from telegram_notifier import send_telegram_message, send_pump_alert
 from pump_trader import open_position, check_positions, get_status
 from daily_report import is_circuit_broken
 from telegram_commands import is_paused
@@ -151,7 +151,7 @@ def scan():
         pos_msgs = check_positions()
         for msg in pos_msgs:
             print(f"  {msg}")
-            send_telegram_message(msg)
+            send_telegram_message(f"\U0001f680 <b>[PUMP]</b> {msg}")
         print(f"  {get_status()}")
         return
 
@@ -193,7 +193,7 @@ def scan():
     pos_msgs = check_positions()
     for msg in pos_msgs:
         print(f"  {msg}")
-        send_telegram_message(msg)
+        send_telegram_message(f"\U0001f680 <b>[PUMP]</b> {msg}")
 
     if is_paused():
         print("  Bot pausado - novas posicoes suspensas.")
@@ -211,20 +211,19 @@ def scan():
                 # Open trade
                 trade_msg = open_position(a["symbol"], direction, a["price"], a["volume_ratio"])
 
-                alert_msg = (
-                    f"[PUMP SCANNER] {a['direction']} detectado\n\n"
-                    f"Ativo: {a['symbol']}\n"
-                    f"Preco: {a['price']:.6f}\n"
-                    f"Volume: {a['volume_ratio']}x a media\n"
-                    f"Variacao 1 candle: {a['price_change_1']:+.2f}%\n"
-                    f"Variacao 3 candles: {a['price_change_3']:+.2f}%"
-                )
                 print(f"  {a['symbol']}: {a['direction']} | Vol: {a['volume_ratio']}x | {a['price_change_1']:+.2f}%")
-                send_telegram_message(alert_msg)
+                send_pump_alert(
+                    symbol=a["symbol"],
+                    direction=a["direction"],
+                    price=a["price"],
+                    volume_ratio=a["volume_ratio"],
+                    change_1=a["price_change_1"],
+                    change_3=a["price_change_3"],
+                )
 
                 if trade_msg:
                     print(f"  {trade_msg}")
-                    send_telegram_message(trade_msg)
+                    send_telegram_message(f"\U0001f680 <b>[PUMP]</b> {trade_msg}")
             except Exception as e:
                 print(f"  [ERRO] Falha ao processar alerta {a['symbol']}: {e}")
     else:

@@ -1,7 +1,7 @@
 """
 Supervisor - gerencia main.py e pump_scanner.py.
 Reinicia automaticamente se um dos bots crashar.
-Grava logs em arquivo.
+Grava logs em arquivo. Notifica via Telegram.
 """
 import subprocess
 import sys
@@ -12,6 +12,9 @@ from datetime import datetime
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(BOT_DIR, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
+
+# Adiciona BOT_DIR ao path para imports
+sys.path.insert(0, BOT_DIR)
 
 BOTS = [
     {"name": "main_bot",    "script": "main.py"},
@@ -34,6 +37,15 @@ def log(msg):
     print(line)
     with open(os.path.join(LOG_DIR, "supervisor.log"), "a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+def notify_telegram(title, message, critical=False):
+    """Envia notificacao ao Telegram via telegram_notifier."""
+    try:
+        from telegram_notifier import send_system_alert
+        send_system_alert(title, message, critical=critical)
+    except Exception as e:
+        log(f"Falha ao notificar Telegram: {e}")
 
 
 def run_bot(bot):
@@ -75,6 +87,13 @@ def main():
         restart_counts[bot["name"]] = 0
         log(f"{bot['name']} iniciado (PID: {proc.pid})")
 
+    # Notificar inicio do supervisor
+    bot_names = ", ".join(b["name"] for b in BOTS)
+    notify_telegram(
+        "Supervisor Iniciado",
+        f"Todos os bots iniciados com sucesso.\n<b>Bots:</b> {bot_names}",
+    )
+
     # Loop de monitoramento
     try:
         while True:
@@ -90,9 +109,21 @@ def main():
 
                     if restart_counts[name] > MAX_RESTARTS:
                         log(f"{name} atingiu {MAX_RESTARTS} restarts. Parando.")
+                        notify_telegram(
+                            f"{name} - Limite de Restarts",
+                            f"<b>{name}</b> atingiu <code>{MAX_RESTARTS}</code> restarts e foi parado.\n"
+                            f"Intervencao manual necessaria.",
+                            critical=True,
+                        )
                         continue
 
                     log(f"{name} parou (codigo: {ret}). Reiniciando em {RESTART_DELAY}s... (restart #{restart_counts[name]})")
+                    notify_telegram(
+                        f"{name} Crashou",
+                        f"<b>{name}</b> parou com codigo <code>{ret}</code>.\n"
+                        f"Reiniciando em {RESTART_DELAY}s... (restart #{restart_counts[name]}/{MAX_RESTARTS})",
+                        critical=restart_counts[name] >= 3,
+                    )
                     time.sleep(RESTART_DELAY)
 
                     proc, lf = run_bot(bot)
@@ -104,6 +135,7 @@ def main():
 
     except KeyboardInterrupt:
         log("Parando todos os bots...")
+        notify_telegram("Supervisor Encerrado", "Todos os bots estao sendo parados.")
         for name, proc in processes.items():
             proc.terminate()
             log(f"{name} parado")

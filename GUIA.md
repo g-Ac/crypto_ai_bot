@@ -4,18 +4,19 @@
 
 O Crypto AI Bot e um sistema automatizado de analise e simulacao de trading de criptomoedas.
 Roda 24/7 em um Raspberry Pi 4, monitora 6 ativos na Binance a cada 5 minutos, detecta
-oportunidades usando indicadores tecnicos e inteligencia artificial (Claude Haiku), simula
-trades com capital virtual e notifica em tempo real pelo Telegram.
+oportunidades usando indicadores tecnicos e inteligencia artificial (Claude Haiku), executa
+scalping com 3 motores independentes, simula trades com capital virtual e notifica em tempo
+real pelo Telegram com mensagens HTML formatadas.
 
 **Nao realiza trades reais** — todo o capital e virtual (paper trading).
 
 ### Ativos monitorados
 `BTCUSDT` `ETHUSDT` `SOLUSDT` `BNBUSDT` `XRPUSDT` `DOGEUSDT`
 
-### Hardware atual
+### Hardware
 - **Raspberry Pi 4 Model B Rev 1.5** — 4 GB RAM
-- **SSD externo** — 110 GB (4.4 GB usados)
-- **Python 3.13.5** | **Hostname:** `cryptobot.local`
+- **SSD externo** — 110 GB
+- **Python 3.13** | **Hostname:** `cryptobot.local`
 - **IP local:** `192.168.0.24`
 
 ---
@@ -46,63 +47,84 @@ ssh pi@192.168.0.24
 O bot roda como **4 processos simultaneos** gerenciados pelo `supervisor.py`:
 
 ```
-supervisor.py  ← processo pai (PID principal do servico)
-├── main.py          ← analise de mercado a cada 5 minutos
-├── pump_scanner.py  ← scan de volume anormal a cada 60 segundos
-└── dashboard_server.py ← painel web Flask na porta 5000
+supervisor.py  <- processo pai (PID principal do servico)
+├── main.py          <- analise de mercado a cada 5 minutos
+├── pump_scanner.py  <- scan de volume anormal a cada 60 segundos
+└── dashboard_server.py <- painel web Flask na porta 5000
 ```
+
+O supervisor notifica via Telegram quando:
+- Todos os bots iniciam com sucesso
+- Um bot crashou e esta sendo reiniciado
+- Um bot atingiu o limite maximo de restarts
+- O supervisor e encerrado
 
 ### Mapa de arquivos
 ```
 crypto_ai_bot/
 │
-├── main.py              # Loop principal: analisa mercado, paper e agent trading
-├── pump_scanner.py      # Detecta pumps no top 50 moedas por volume
-├── supervisor.py        # Inicia e reinicia os 3 bots automaticamente
-├── dashboard_server.py  # Painel web (Flask) na porta 5000
+├── main.py               # Loop principal: analisa mercado + 3 sistemas de trading
+├── pump_scanner.py        # Detecta pumps no top 50 moedas por volume
+├── supervisor.py          # Inicia/reinicia bots + alertas Telegram de sistema
+├── dashboard_server.py    # Painel web (Flask) na porta 5000
 │
-├── config.py            # Todas as constantes configuráveis
-├── database.py          # Banco SQLite: init, inserts, queries
+├── config.py              # Todas as constantes configuraveis
+├── database.py            # Banco SQLite: init, inserts, queries (WAL mode)
 │
-├── market.py            # Busca candles da API Binance
-├── indicators.py        # SMA9, SMA21, RSI14, volume, body ratio
-├── strategy.py          # Gera sinais BUY/SELL/HOLD (score 0-7)
-├── htf.py               # Tendencia de 1h para filtrar sinais
-├── context_agent.py     # Envia sinal ao Claude Haiku para interpretacao
+├── market.py              # Busca candles da API Binance
+├── indicators.py          # SMA9, SMA21, RSI14, volume, body ratio
+├── strategy.py            # Gera sinais BUY/SELL/HOLD (score 0-7)
+├── htf.py                 # Tendencia de 1h para filtrar sinais
+├── context_agent.py       # Envia sinal ao Claude Haiku para interpretacao
 │
-├── paper_trader.py      # Paper trading: $10.000 virtual, gerencia stop loss
-├── trade_agents.py      # Multi-agente: analista (Claude) + risco + executor
-├── pump_trader.py       # Pump/dump: LONG no pump, SHORT no dump exausto
+├── paper_trader.py        # Paper trading: $10.000 virtual, stop loss ATR
+├── trade_agents.py        # Multi-agente: analista (Claude) + risco + executor
+├── pump_trader.py         # Pump/dump: LONG no pump, SHORT no dump exausto
 │
-├── daily_report.py      # Relatorio diario Telegram + circuit breaker
-├── alert_control.py     # Cooldown de alertas (evita spam)
-├── telegram_notifier.py # Envia mensagens ao Telegram
-├── telegram_commands.py # Recebe comandos do Telegram e responde
+├── scalping_trader.py     # Orquestrador: 3 motores + confluencia + execucao
+├── volume_breakout.py     # Motor 1: breakout de volume anormal (2.5x media)
+├── rsi_bb_reversal.py     # Motor 2: reversao RSI extremo + Bollinger Bands
+├── ema_crossover.py       # Motor 3: cruzamento EMA9/EMA21 + retest
+├── confluence.py          # Score de confluencia (1/3=nao, 2/3=medio, 3/3=alto)
+├── risk_manager.py        # Position sizing ATR, SL/TP, alavancagem
+├── signal_types.py        # Tipos padronizados de sinal entre motores
+├── scalping_data.py       # Coleta dados multi-timeframe (1m, 3m, 5m, 15m)
+├── scalping_logger.py     # Logging dedicado do scalping
+├── news_filter.py         # Filtro de noticias macro (FOMC, CPI, etc.)
 │
-├── logger.py            # Salva analise no banco (analysis_log)
-├── alert_logger.py      # Salva alertas no banco (alerts)
-├── exporter.py          # Exporta analise para JSON
+├── daily_report.py        # Relatorio diario + circuit breaker + notificacao
+├── alert_control.py       # Deduplicacao de alertas (evita spam)
+├── telegram_notifier.py   # Envio Telegram: HTML, retry, rate limiting, formatado
+├── telegram_commands.py   # 9 comandos bidirecionais com respostas HTML
+│
+├── logger.py              # Salva analise no banco (analysis_log)
+├── alert_logger.py        # Salva alertas no banco (alerts)
+├── exporter.py            # Exporta analise para JSON
 ├── opportunity_exporter.py # Exporta oportunidades relevantes para JSON
 │
-├── backtest.py          # Backtesting historico nos 6 ativos
-├── migrate_csv_to_db.py # Script de migracao: CSVs antigos -> bot.db
+├── backtest.py            # Backtesting historico nos 6 ativos
+├── migrate_csv_to_db.py   # Script de migracao: CSVs antigos -> bot.db
 │
-├── .env                 # Chaves de API (Telegram, Anthropic)
-├── bot.db               # Banco de dados SQLite (criado automaticamente)
-├── bot_control.json     # Estado de pausa (criado pelo /pausar)
-├── paper_state.json     # Estado e capital do paper trader
-├── agent_state.json     # Estado e capital do agent trader
-├── pump_positions.json  # Posicoes abertas do pump trader
-├── pump_cooldown.json   # Cooldown de alertas do pump scanner
+├── .env                   # Chaves de API (Telegram, Anthropic)
+├── bot.db                 # Banco de dados SQLite (criado automaticamente)
+├── bot_control.json       # Estado de pausa (criado pelo /pausar)
+├── paper_state.json       # Estado e capital do paper trader
+├── agent_state.json       # Estado e capital do agent trader
+├── pump_positions.json    # Posicoes abertas do pump trader
+├── pump_cooldown.json     # Cooldown de alertas do pump scanner
 │
-├── logs/                # Logs diarios de cada processo
+├── logs/                  # Logs diarios de cada processo
 │   ├── supervisor.log
 │   ├── main_bot_YYYY-MM-DD.log
 │   ├── pump_scanner_YYYY-MM-DD.log
 │   └── dashboard_YYYY-MM-DD.log
 │
-└── templates/
-    └── index.html       # Template HTML do dashboard
+├── templates/
+│   └── index.html         # Template HTML do dashboard
+│
+├── estrategia.md          # Documentacao detalhada da estrategia de scalping
+├── PROJETO.md             # Documentacao tecnica de todos os modulos
+└── GUIA.md                # Este arquivo
 ```
 
 ---
@@ -117,6 +139,7 @@ crypto_ai_bot/
 5. Se score >= 4: envia alerta ao Telegram com analise do Claude Haiku
 6. Paper trader: simula abertura/fechamento de posicoes
 7. Multi-agent trader: Claude Haiku analisa, calcula risco, executa trade
+8. Scalping: executa os 3 motores, verifica confluencia, opera se score >= 2
 
 ### Pump Scanner (pump_scanner.py — a cada 60 segundos)
 1. Busca os top 50 pares USDT por volume na Binance
@@ -125,6 +148,20 @@ crypto_ai_bot/
 4. Abre LONG automaticamente no pump detectado
 5. Se pump exauriu (RSI > 80 + retrace): abre SHORT
 6. Gerencia posicoes com trailing stop de 3% e timeout de 30 minutos
+
+### Scalping Strategy (3 motores + confluencia)
+1. Coleta dados multi-timeframe (1m, 3m, 5m, 15m) via `scalping_data.py`
+2. Verifica filtro de noticias (news_filter.py) — nao opera perto de FOMC/CPI
+3. Executa os 3 motores em paralelo:
+   - **Volume Breakout**: volume >= 2.5x media + breakout direcional + corpo forte
+   - **RSI/BB Reversal**: RSI extremo + toque Bollinger + pullback confirmado
+   - **EMA Crossover**: cruzamento EMA9/21 + retest na zona + alinhamento 15m
+4. Calcula confluencia: quantos motores apontam na mesma direcao
+   - 1/3 = invalido (nao opera)
+   - 2/3 = medio (50% do size, alavancagem 3x)
+   - 3/3 = alto (100% do size, alavancagem 5x)
+5. Risk manager calcula: position size, SL (ATR-based), TP1 e TP2
+6. Executa trade e gerencia parciais (50% no TP1, SL para breakeven, 50% no TP2)
 
 ### Sistema de Sinais — 7 criterios (score 0-7)
 
@@ -139,8 +176,8 @@ crypto_ai_bot/
 | Volume + candle forte | volume > media + body > 60% | idem |
 
 **Resultado:**
-- Score >= 4: sinal forte → abre trade
-- Score = 3 + diferenca >= 2: pre-sinal → alerta no Telegram
+- Score >= 4: sinal forte -> abre trade
+- Score = 3 + diferenca >= 2: pre-sinal -> alerta no Telegram
 - Score = 2: observacao
 - Abaixo ou empatado: HOLD
 
@@ -161,17 +198,14 @@ crypto_ai_bot/
 | `AGENT_INITIAL_CAPITAL` | $10.000 | Capital inicial agent trader |
 | `PUMP_INITIAL_CAPITAL` | $5.000 | Capital inicial pump trader |
 | `STOP_LOSS_PCT` | 1.5% | Stop loss padrao |
-| `STOP_LOSS_MAP` | por ativo | Stop loss otimizado por backtesting |
 | `DAILY_LOSS_LIMIT_PCT` | 5% | Circuit breaker: limite de perda diaria |
 | `DAILY_MAX_TRADES` | 20 | Circuit breaker: maximo de trades/dia |
 | `PUMP_VOLUME_MULTIPLIER` | 5x | Multiplo de volume para detectar pump |
-| `PUMP_PRICE_CHANGE_MIN` | 2% | Variacao minima de preco para alerta |
-| `PUMP_TRAILING_STOP` | 3% | Trailing stop das posicoes de pump |
-| `PUMP_MAX_POSITION_TIME` | 30 min | Tempo maximo em posicao de pump |
-| `PUMP_RSI_EXHAUSTION` | 80 | RSI acima disso = pump exaurindo |
-| `BODY_RATIO_MIN` | 0.6 | Forca minima do candle para pontuar |
+| `PUMP_PRICE_CHANGE_MIN` | 2% | Variacao minima para alerta |
+| `PUMP_TRAILING_STOP` | 3% | Trailing stop do pump |
+| `PUMP_MAX_POSITION_TIME` | 30 min | Tempo max em posicao pump |
 
-### Stop Loss otimizado por ativo (STOP_LOSS_MAP)
+### Stop Loss por ativo (STOP_LOSS_MAP)
 | Ativo | Stop Loss |
 |---|---|
 | BTCUSDT | 3.0% |
@@ -185,43 +219,34 @@ crypto_ai_bot/
 
 ## Comandos do Telegram
 
-O listener de comandos inicia automaticamente com o bot e responde em tempo real.
-Funciona enquanto o processo `main.py` estiver rodando.
+O listener de comandos inicia automaticamente com o bot e responde em tempo real
+com formatacao HTML e emojis. Funciona enquanto o processo `main.py` estiver rodando.
 
 | Comando | O que faz |
 |---|---|
-| `/status` | Mostra capital, trades e P&L dos 3 sistemas (paper, agent, pump) |
-| `/posicoes` | Lista todas as posicoes abertas agora com preco de entrada |
+| `/status` | Capital e trades dos 4 sistemas (paper, agent, scalping, pump) |
+| `/posicoes` | Lista todas as posicoes abertas de todos os sistemas |
+| `/capital` | Capital detalhado por sistema com % de variacao desde inicio |
+| `/performance` | Win rate, P&L e numero de trades do dia por sistema |
+| `/saude` | CPU, RAM, disco, temperatura do Pi, uptime do sistema e do bot, tamanho do DB |
 | `/pausar` | Para abertura de novos trades (posicoes abertas continuam gerenciadas) |
 | `/retomar` | Retoma operacao normal apos uma pausa |
 | `/relatorio` | Envia o relatorio diario completo agora (nao espera meia-noite) |
 | `/ajuda` | Lista todos os comandos disponiveis |
 
-### Exemplos de resposta
+### Tipos de notificacao
 
-**`/status`**
-```
-Status do Bot
-
---- Paper Trading ---
-Capital: $9.962,64 (-0.37%)
-Trades: 3 | W:1 L:2 | WR: 33.3%
-Posicoes abertas: 2
-  BTCUSDT: LONG @ 70982.88
-  ETHUSDT: LONG @ 2173.13
-
---- Multi-Agent ---
-[AGENTS] Capital: $9988.57 (-0.11%)
-...
-```
-
-**`/pausar`**
-```
-Bot PAUSADO.
-Posicoes abertas continuam gerenciadas (stop/timeout).
-Nenhuma nova posicao sera aberta.
-Use /retomar para voltar.
-```
+| Tipo | Prefixo | Quando |
+|---|---|---|
+| Oportunidade | 📊 | Sinal com priority >= 85 detectado |
+| Paper trade | 📄 [PAPER] | Abertura/fechamento de trade paper |
+| Agent trade | 🤖 [AGENT] | Abertura/fechamento de trade agent |
+| Scalping | ⚡ [SCALPING] | Abertura/fechamento de trade scalping |
+| Pump/Dump | 🚀 | Pump ou dump detectado |
+| Pump trade | 🚀 [PUMP] | Abertura/fechamento de posicao pump |
+| Circuit breaker | 🛑 | Sistema atingiu limite diario |
+| Sistema | ⚠️ / 🚨 | Crash, restart, supervisor inicio/fim |
+| Relatorio | 📈 | Relatorio diario (meia-noite) |
 
 ### Configurar .env
 ```
@@ -245,23 +270,22 @@ Painel responsivo acessivel pelo navegador. Dark mode. Atualiza automaticamente 
 
 | Secao | Descricao |
 |---|---|
-| **Barra de status** | RODANDO / PAUSADO + botoes Pausar/Retomar + horario da ultima atualizacao |
-| **Cards de capital** | Capital atual, retorno total (%), trades hoje e P&L hoje — Paper, Agent e Pump |
-| **Circuit Breaker** | Badge laranja aparece no card quando o limite diario e atingido |
-| **Posicoes abertas** | Todas as posicoes dos 3 sistemas com preco de entrada |
-| **Trades de hoje** | Abas separadas para Paper, Agent e Pump com historico do dia atual |
-| **Grafico P&L** | Linha acumulada dos ultimos 30 dias para cada sistema (Chart.js) |
-
-### Botoes de controle
-- **Pausar** — equivalente ao `/pausar` do Telegram
-- **Retomar** — equivalente ao `/retomar` do Telegram
+| **Barra de status** | RODANDO / PAUSADO + botoes Pausar/Retomar + horario |
+| **Cards de capital** | Capital, retorno %, trades hoje e P&L — Paper, Agent, Pump |
+| **Circuit Breaker** | Badge aparece no card quando limite diario e atingido |
+| **Posicoes abertas** | Todas as posicoes dos sistemas com preco de entrada |
+| **Trades de hoje** | Abas separadas com historico do dia |
+| **Grafico P&L** | Linha acumulada dos ultimos 30 dias (Chart.js) |
+| **Saude do sistema** | CPU, RAM, disco, temperatura, uptime |
 
 ### API JSON
-Para integracoes externas:
 ```
-GET http://192.168.0.24:5000/api/status
+GET http://192.168.0.24:5000/api/status    # Status completo
+GET http://192.168.0.24:5000/api/trades    # Historico de trades
+GET http://192.168.0.24:5000/api/logs      # Logs recentes
+POST http://192.168.0.24:5000/pause        # Pausar bot
+POST http://192.168.0.24:5000/resume       # Retomar bot
 ```
-Retorna JSON com capital, posicoes, trades do dia e dados do grafico.
 
 ---
 
@@ -277,7 +301,8 @@ Protege o capital parando operacoes automaticamente quando os limites diarios sa
 - Posicoes ja abertas continuam sendo gerenciadas (stop loss ativo)
 - Nenhuma nova posicao e aberta
 - Reset automatico a meia-noite
-- Aparece no dashboard com badge vermelho "Circuit Breaker"
+- Aparece no dashboard com badge "Circuit Breaker"
+- **Envia alerta no Telegram** quando ativado (com dedup de 1 hora por sistema)
 - Afeta cada sistema independentemente (paper, agent, pump)
 
 ---
@@ -309,6 +334,7 @@ SQLite com WAL mode — permite escrita simultanea segura de multiplos processos
 | `paper_trades` | Historico do paper trader com P&L |
 | `agent_trades` | Historico do agent trader com SL, TP, confianca do Claude |
 | `pump_trades` | Historico do pump trader com duracao e peak price |
+| `scalping_trades` | Historico do scalping com motor, confluencia, parciais |
 
 ### Consultas uteis no Pi
 ```bash
@@ -318,7 +344,8 @@ cd ~/crypto_ai_bot
 sqlite3 bot.db "SELECT 'analysis_log', COUNT(*) FROM analysis_log
                 UNION SELECT 'paper_trades', COUNT(*) FROM paper_trades
                 UNION SELECT 'agent_trades', COUNT(*) FROM agent_trades
-                UNION SELECT 'pump_trades', COUNT(*) FROM pump_trades;"
+                UNION SELECT 'pump_trades', COUNT(*) FROM pump_trades
+                UNION SELECT 'scalping_trades', COUNT(*) FROM scalping_trades;"
 
 # Ultimos 10 trades do paper trader
 sqlite3 bot.db "SELECT timestamp, symbol, type, pnl_pct, pnl_usd, exit_reason
@@ -329,7 +356,7 @@ sqlite3 bot.db "SELECT 'paper', ROUND(SUM(pnl_usd),2) FROM paper_trades
                 UNION SELECT 'agent', ROUND(SUM(pnl_usd),2) FROM agent_trades
                 UNION SELECT 'pump',  ROUND(SUM(pnl_usd),2) FROM pump_trades;"
 
-# Taxa de acerto
+# Win rate geral
 sqlite3 bot.db "SELECT COUNT(*) as total,
                 SUM(CASE WHEN pnl_usd > 0 THEN 1 ELSE 0 END) as wins
                 FROM paper_trades;"
@@ -341,25 +368,16 @@ sqlite3 bot.db "SELECT COUNT(*) as total,
 
 ### Comandos systemd
 ```bash
-# Ver status (mostra se esta rodando e os 4 PIDs)
-sudo systemctl status cryptobot
-
-# Iniciar
-sudo systemctl start cryptobot
-
-# Parar tudo
-sudo systemctl stop cryptobot
-
-# Reiniciar (apos atualizar codigo)
-sudo systemctl restart cryptobot
-
-# Ver se inicia no boot
-sudo systemctl is-enabled cryptobot
+sudo systemctl status cryptobot    # Ver status (PIDs dos 4 processos)
+sudo systemctl start cryptobot     # Iniciar
+sudo systemctl stop cryptobot      # Parar tudo
+sudo systemctl restart cryptobot   # Reiniciar (apos atualizar codigo)
+sudo systemctl is-enabled cryptobot # Verificar boot automatico
 ```
 
 ### Ver logs em tempo real
 ```bash
-# Log principal (analise de mercado)
+# Log principal (analise de mercado + paper + agent + scalping)
 tail -f ~/crypto_ai_bot/logs/main_bot_$(date +%Y-%m-%d).log
 
 # Log do pump scanner
@@ -368,34 +386,22 @@ tail -f ~/crypto_ai_bot/logs/pump_scanner_$(date +%Y-%m-%d).log
 # Log do dashboard
 tail -f ~/crypto_ai_bot/logs/dashboard_$(date +%Y-%m-%d).log
 
-# Log do supervisor (restarts, erros)
+# Log do supervisor (restarts, crashes)
 tail -f ~/crypto_ai_bot/logs/supervisor.log
 
 # Logs do systemd (ultimas 50 linhas)
 sudo journalctl -u cryptobot -n 50 --no-pager
 ```
 
-### Atualizar o codigo
-```bash
-# No Windows: editar os arquivos, depois transferir para o Pi:
-scp arquivo.py pi@cryptobot.local:~/crypto_ai_bot/
-sudo systemctl restart cryptobot
-```
-
 ### Verificar consumo de recursos
 ```bash
-# CPU e RAM dos processos
-ps aux | grep python
-
-# Uso geral do sistema
-htop
-
-# Espaco em disco
-df -h /
-
-# Tamanho do banco de dados
-du -sh ~/crypto_ai_bot/bot.db
+ps aux | grep python        # CPU e RAM dos processos
+htop                        # Uso geral do sistema
+df -h /                     # Espaco em disco
+du -sh ~/crypto_ai_bot/bot.db  # Tamanho do banco
 ```
+
+Ou use o comando `/saude` no Telegram para ver CPU, RAM, disco, temperatura e uptime.
 
 ### Pausa de emergencia (sem Telegram)
 ```bash
@@ -435,18 +441,37 @@ WantedBy=multi-user.target
 
 ---
 
+## Deploy
+
+### Via script automatico (recomendado)
+```bash
+# No Windows: commita, push, pull no Pi, reinicia servico
+bash deploy.sh
+```
+
+### Manual via SCP
+```bash
+# Copiar arquivo especifico
+scp arquivo.py pi@cryptobot.local:~/crypto_ai_bot/
+
+# Reiniciar no Pi
+ssh pi@cryptobot.local "sudo systemctl restart cryptobot"
+```
+
+---
+
 ## Deploy do Zero (em um Pi novo)
 
 ### Requisitos
 - Raspberry Pi 4 com Raspberry Pi OS Lite 64-bit
-- SSD ou cartao SD (SSD recomendado — mais duravel para escrita continua)
+- SSD ou cartao SD (SSD recomendado)
 - Conexao com internet
 
 ### Passo a passo
 
 **1. Preparar o sistema**
 ```bash
-sudo apt update && sudo apt install -y python3-venv
+sudo apt update && sudo apt install -y python3-venv sqlite3
 ```
 
 **2. Copiar o projeto para o Pi**
@@ -461,7 +486,6 @@ ssh pi@<IP> "mkdir -p ~/crypto_ai_bot && tar xzf ~/cryptobot.tar.gz -C ~/crypto_
 cd ~/crypto_ai_bot
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/pip install pandas ta anthropic
 ```
 
 **4. Configurar o .env**
@@ -478,14 +502,12 @@ ANTHROPIC_API_KEY=...
 ```bash
 cd ~/crypto_ai_bot
 .venv/bin/python database.py
-# Se tiver dados antigos em CSV:
-.venv/bin/python migrate_csv_to_db.py
 ```
 
 **6. Testar manualmente**
 ```bash
 .venv/bin/python main.py
-# Aguardar 1 ciclo (~2 min) e verificar saida
+# Aguardar 1 ciclo e verificar saida
 # CTRL+C para parar
 ```
 
@@ -501,23 +523,29 @@ sudo systemctl status cryptobot
 
 ---
 
-## Referencia dos Modulos
+## Como Rodar (sem Pi)
 
-| Modulo | Funcoes principais |
-|---|---|
-| `database.py` | `init_db()`, `insert_analysis_log()`, `insert_alert()`, `insert_paper_trade()`, `insert_agent_trade()`, `insert_pump_trade()`, `get_trades_today()`, `get_recent_trades()`, `get_cumulative_pnl()` |
-| `market.py` | `get_candles(symbol, interval, limit)` |
-| `indicators.py` | `add_indicators(df)` |
-| `strategy.py` | `generate_signal(df, htf_trend)` |
-| `htf.py` | `get_htf_trend(symbol)` |
-| `paper_trader.py` | `process_signals(results)`, `get_status()` |
-| `trade_agents.py` | `orchestrate(results)`, `get_agent_status()` |
-| `pump_trader.py` | `open_position()`, `check_positions()`, `check_dump_entry()`, `get_status()` |
-| `telegram_notifier.py` | `send_telegram_message(text)` |
-| `telegram_commands.py` | `is_paused()`, `start_command_listener()` |
-| `daily_report.py` | `is_circuit_broken(system)`, `generate_report()`, `calc_daily_stats(trades)`, `get_open_positions()`, `get_capital_status()` |
-| `dashboard_server.py` | Flask app — rotas `/`, `/api/status`, `/pause`, `/resume` |
-| `supervisor.py` | Inicia e monitora main.py, pump_scanner.py, dashboard_server.py |
-| `backtest.py` | Backtesting historico com dados da Binance |
-| `alert_control.py` | `should_send_alert(data)` — controle de cooldown |
-| `context_agent.py` | `interpret_signal(result)` — interpretacao via Claude Haiku |
+```bash
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Configurar .env
+# ANTHROPIC_API_KEY=...
+# TELEGRAM_BOT_TOKEN=...
+# TELEGRAM_CHAT_ID=...
+
+# Rodar via supervisor (recomendado)
+python supervisor.py
+
+# Rodar apenas o bot principal
+python main.py
+
+# Rodar apenas o pump scanner
+python pump_scanner.py
+
+# Rodar backtest
+python backtest.py
+
+# Gerar relatorio diario manualmente
+python daily_report.py
+```

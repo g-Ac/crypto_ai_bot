@@ -1,285 +1,340 @@
-# Crypto AI Bot — Documentação do Projeto
+# Crypto AI Bot — Documentacao do Projeto
 
 ## Ideia Principal
 
-Bot de análise e simulação de trades em criptomoedas que roda de forma autônoma,
-combinando análise técnica clássica com IA (Claude) para validar sinais e gerar
-interpretações em português. Opera em modo paper (sem dinheiro real), registra
-tudo em CSV/JSON e envia alertas pelo Telegram.
+Bot de analise e simulacao de trades em criptomoedas que roda de forma autonoma 24/7
+em Raspberry Pi 4. Combina analise tecnica classica, scalping multi-motor com confluencia,
+e IA (Claude Haiku) para validar sinais e gerar interpretacoes. Opera em modo paper
+(sem dinheiro real), registra tudo em SQLite e notifica em tempo real pelo Telegram
+com mensagens HTML formatadas.
 
 ---
 
 ## Ativos Monitorados
 
-| Ativo     | Stop Loss configurado |
-|-----------|-----------------------|
-| BTCUSDT   | 3.0%                  |
-| ETHUSDT   | 3.0%                  |
-| SOLUSDT   | 1.0%                  |
-| BNBUSDT   | 2.5%                  |
-| XRPUSDT   | 2.5%                  |
-| DOGEUSDT  | 1.0%                  |
+| Ativo    | Stop Loss configurado |
+|----------|-----------------------|
+| BTCUSDT  | 3.0%                  |
+| ETHUSDT  | 3.0%                  |
+| SOLUSDT  | 1.0%                  |
+| BNBUSDT  | 2.5%                  |
+| XRPUSDT  | 2.5%                  |
+| DOGEUSDT | 1.0%                  |
 
-Timeframe principal: **5 minutos** | Timeframe de confirmação: **1 hora**
+Timeframe principal: **5 minutos** | Timeframe de confirmacao: **1 hora**
 
 ---
 
-## Funcionalidades Atuais
+## Funcionalidades
 
-### 1. Análise Técnica (`indicators.py` + `strategy.py`)
-Calcula 7 critérios a cada ciclo (5 min) por ativo:
+### 1. Analise Tecnica (`indicators.py` + `strategy.py`)
+Calcula 7 criterios a cada ciclo (5 min) por ativo:
 
-| Critério              | Detalhe                                      |
+| Criterio              | Detalhe                                      |
 |-----------------------|----------------------------------------------|
-| Tendência SMA         | SMA9 vs SMA21                                |
-| Posição do preço      | Acima/abaixo das duas médias                 |
-| Direção das SMAs      | Ambas subindo ou ambas caindo                |
+| Tendencia SMA         | SMA9 vs SMA21                                |
+| Posicao do preco      | Acima/abaixo das duas medias                 |
+| Direcao das SMAs      | Ambas subindo ou ambas caindo                |
 | Zona do RSI (14)      | Buy zone: 30-45 / Sell zone: 55-70           |
-| Breakout              | Rompeu máxima ou mínima das últimas 10 velas |
-| Volume + Breakout     | Confirmação de volume acima da média (20)    |
-| Body ratio do candle  | Força do candle na direção do sinal          |
+| Breakout              | Rompeu maxima ou minima das ultimas 10 velas |
+| Volume + Breakout     | Confirmacao de volume acima da media (20)    |
+| Body ratio do candle  | Forca do candle na direcao do sinal          |
 
-Score mínimo para sinal: **4/7**. Resultado: `BUY`, `SELL` ou `HOLD`.
+Score minimo para sinal: **4/7**. Resultado: `BUY`, `SELL` ou `HOLD`.
 
-### 2. Filtro de Tendência HTF (`htf.py`)
-Consulta o gráfico de 1h antes de confirmar o sinal.
-Sinais contra a tendência do 1h são bloqueados (viram `HOLD`).
+### 2. Filtro de Tendencia HTF (`htf.py`)
+Consulta o grafico de 1h antes de confirmar o sinal.
+Sinais contra a tendencia do 1h sao bloqueados (viram `HOLD`).
 
-### 3. Score de Confiança e Prioridade (`strategy.py`)
-- `confidence_score` (0–100): mede o alinhamento dos indicadores
-- `priority_score` (0–100): determina se o alerta vai para o Telegram
-- Threshold de alerta: priority ≥ 85 ou tipo `sinal`
+### 3. Score de Confianca e Prioridade (`strategy.py`)
+- `confidence_score` (0-100): mede o alinhamento dos indicadores
+- `priority_score` (0-100): determina se o alerta vai para o Telegram
+- Threshold de alerta: priority >= 85 ou tipo `sinal`
 
-### 4. Interpretação por IA (`context_agent.py`)
-Usa **Claude Haiku** para gerar um comentário de 4 linhas em português
-explicando por que o sinal faz (ou não faz) sentido antes de enviar o alerta.
+### 4. Interpretacao por IA (`context_agent.py`)
+Usa **Claude Haiku** para gerar um comentario em portugues explicando
+por que o sinal faz (ou nao faz) sentido antes de enviar o alerta.
 
 ### 5. Alertas via Telegram (`telegram_notifier.py` + `alert_control.py`)
-- Envia o sinal mais relevante do ciclo
-- Controle de deduplicação: só reenvia se o símbolo, tipo ou prioridade mudar
-- Formato: símbolo + decisão + confiança + interpretação da IA
+Sistema completo de notificacoes com:
+- **Formatacao HTML** com emojis por tipo de alerta
+- **Retry automatico** com backoff (3 tentativas, fallback sem formatacao)
+- **Rate limiting** (max 25 msg/s)
+- **Funcoes especializadas:** `send_trade_alert()`, `send_trade_close()`,
+  `send_opportunity_alert()`, `send_pump_alert()`, `send_system_alert()`,
+  `send_circuit_breaker_alert()`, `send_daily_report_formatted()`
+- **Deduplicacao**: so reenvia se simbolo, tipo ou prioridade mudar
+- **Prefixos visuais por sistema**: PAPER, AGENT, SCALPING, PUMP
 
-### 6. Paper Trading (`paper_trader.py`)
-Simulação de trades com capital virtual de **$10.000**:
+### 6. Comandos Telegram (`telegram_commands.py`)
+9 comandos bidirecionais com respostas formatadas em HTML:
+
+| Comando | Acao |
+|---|---|
+| `/status` | Capital e trades dos 4 sistemas |
+| `/posicoes` | Posicoes abertas de todos os sistemas |
+| `/capital` | Capital detalhado por sistema com % desde inicio |
+| `/performance` | Win rate, P&L e trades do dia |
+| `/saude` | CPU, RAM, disco, temperatura do Pi, uptime |
+| `/pausar` | Para abertura de novos trades |
+| `/retomar` | Retoma operacao normal |
+| `/relatorio` | Relatorio diario completo |
+| `/ajuda` | Lista todos os comandos |
+
+### 7. Paper Trading (`paper_trader.py`)
+Simulacao de trades com capital virtual de **$10.000**:
 - Abre LONG/SHORT ao receber sinal BUY/SELL
-- Fecha por sinal contrário ou stop loss por ativo
-- Registra cada trade em `paper_trades.csv`
-- Exibe win rate, P&L e posições abertas a cada ciclo
+- Fecha por sinal contrario ou stop loss por ativo
+- Stop loss dinamico baseado em ATR
+- Maximo de 3 posicoes simultaneas
+- Registra cada trade no banco SQLite
 
-### 7. Multi-Agent Trading (`trade_agents.py`)
+### 8. Multi-Agent Trading (`trade_agents.py`)
 Pipeline de 3 agentes com capital virtual separado de **$10.000**:
 
 ```
 Sinal BUY/SELL
-     │
-     ▼
-[Agente 1 - Analista] → Claude Haiku valida o sinal
-     │ aprovado?
-     ▼
-[Agente 2 - Risco]    → Calcula position size (ATR-based), SL e TP (RR 2:1)
-     │ aprovado?
-     ▼
-[Agente 3 - Executor] → Registra a posição e loga o trade
+     |
+     v
+[Agente 1 - Analista] -> Claude Haiku valida o sinal
+     | aprovado?
+     v
+[Agente 2 - Risco]    -> Calcula position size (ATR-based), SL e TP (RR 2:1)
+     | aprovado?
+     v
+[Agente 3 - Executor] -> Registra a posicao e loga o trade
 ```
 
-- Máximo de 3 posições simultâneas
+- Maximo de 3 posicoes simultaneas
 - Position sizing: risco de 2% do capital por trade
-- SL baseado em ATR (ou configuração por ativo, o maior)
-- Ajuste de tamanho pela confiança do analista (<70% → 50% do size)
+- SL baseado em ATR (ou configuracao por ativo, o maior)
+- Ajuste de tamanho pela confianca do analista (<70% -> 50% do size)
 
-### 8. Pump Scanner (`pump_scanner.py` + `pump_trader.py`)
+### 9. Scalping Strategy (4o sistema)
+Sistema de scalping com 3 motores independentes e confluencia:
+
+```
+Candles multi-timeframe (1m, 3m, 5m, 15m)
+     |
+     v
+[Motor 1] Volume Breakout (volume_breakout.py)
+[Motor 2] RSI/BB Reversal (rsi_bb_reversal.py)
+[Motor 3] EMA Crossover   (ema_crossover.py)
+     |
+     v
+[Confluencia] (confluence.py) -> Score 0-3
+     | score >= 2?
+     v
+[Risk Manager] (risk_manager.py) -> Position size, SL, TP, alavancagem
+     |
+     v
+[Scalping Trader] (scalping_trader.py) -> Executa e gerencia posicao
+```
+
+**Componentes:**
+| Modulo | Funcao |
+|---|---|
+| `volume_breakout.py` | Detecta candles com volume >= 2.5x a media, breakout confirmado |
+| `rsi_bb_reversal.py` | RSI extremo + toque Bollinger Band + pullback confirmado |
+| `ema_crossover.py` | Cruzamento EMA9/EMA21 + retest na zona + alinhamento 15m |
+| `confluence.py` | Soma sinais: 1/3 = invalido, 2/3 = medio (50% size, 3x), 3/3 = alto (100%, 5x) |
+| `risk_manager.py` | Position sizing baseado em ATR, SL/TP com RR minimo, parciais em TP1 |
+| `signal_types.py` | Tipos padronizados de sinal entre os motores |
+| `scalping_data.py` | Coleta dados multi-timeframe (1m, 3m, 5m, 15m) |
+| `news_filter.py` | Filtra periodos de noticias macro (FOMC, CPI, etc.) |
+
+### 10. Pump Scanner (`pump_scanner.py` + `pump_trader.py`)
 Processo independente que roda a cada **60 segundos**:
 - Monitora as **top 50 moedas** por volume na Binance
-- Detecta: volume ≥ 5x a média E variação ≥ 2% (1 candle) ou ≥ 4% (3 candles)
+- Detecta: volume >= 5x a media E variacao >= 2% (1 candle) ou >= 4% (3 candles)
 - Abre LONG em pump, SHORT em dump
 - Trailing stop de 3% a partir do pico
-- Timeout de 30 minutos por posição
-- Cooldown de 30 minutos por ativo após alerta
+- Timeout de 30 minutos por posicao
+- Cooldown de 30 minutos por ativo apos alerta
+- Alertas formatados com `send_pump_alert()`
 
-### 9. Circuit Breaker (`daily_report.py`)
-Para operações automaticamente se, no dia:
-- Perda acumulada ≥ 5% — ou —
-- Número de trades ≥ 20
+### 11. Circuit Breaker (`daily_report.py`)
+Para operacoes automaticamente se, no dia:
+- Perda acumulada >= 5% — ou —
+- Numero de trades >= 20
 
 Funciona nos 3 sistemas independentemente (paper, agent, pump).
+**Envia alerta no Telegram** quando ativado (com dedup de 1 hora por sistema).
 
-### 10. Relatório Diário (`daily_report.py`)
-Envia automaticamente via Telegram após meia-noite:
+### 12. Relatorio Diario (`daily_report.py`)
+Envia automaticamente via Telegram apos meia-noite:
 - P&L do dia por sistema (paper / multi-agent / pump)
-- Win rate, número de trades, wins e losses
+- Win rate, numero de trades, wins e losses
 - Capital atual de cada sistema
-- Posições abertas no momento
+- Posicoes abertas no momento
 
-### 11. Backtest (`backtest.py`)
-Executa a estratégia sobre dados históricos (30 dias por padrão):
-- Busca dados da Binance via API (sem limite de velas)
-- Usa SL por candle extremo (mais realista)
-- Métricas: win rate, retorno total, max drawdown, profit factor
-- Separação HTF-alinhado vs contra-HTF
-- Exporta resultados para `backtest_{SIMBOLO}.csv`
-
-### 12. Supervisor (`supervisor.py`)
-Gerencia `main.py` e `pump_scanner.py` como processos separados:
+### 13. Supervisor (`supervisor.py`)
+Gerencia `main.py`, `pump_scanner.py` e `dashboard_server.py`:
 - Reinicia automaticamente em caso de crash
 - Limite de 50 restarts por bot
-- Log por arquivo diário em `logs/`
+- Log por arquivo diario em `logs/`
+- **Notifica via Telegram**: inicio, crash/restart, limite atingido, encerramento
+
+### 14. Dashboard Web (`dashboard_server.py`)
+Painel responsivo Flask na porta 5000:
+- Status em tempo real dos 4 sistemas
+- Cards de capital com retorno %
+- Posicoes abertas e historico de trades
+- Grafico P&L acumulado (Chart.js)
+- Saude do sistema (CPU, RAM, disco, temperatura)
+- Botoes de pausar/retomar
+- API JSON em `/api/status`
+
+### 15. Backtest (`backtest.py`)
+Executa a estrategia sobre dados historicos (30 dias por padrao):
+- Busca dados da Binance via API
+- Metricas: win rate, retorno total, max drawdown, profit factor
+- Separacao HTF-alinhado vs contra-HTF
 
 ---
 
-## Fluxo de Execução (ciclo de 5 min)
+## Fluxo de Execucao
 
+### Ciclo principal (main.py — a cada 5 min)
 ```
 Para cada ativo (BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, DOGEUSDT):
   1. Busca 100 velas de 5m na Binance
   2. Calcula indicadores (SMA, RSI, breakout, volume, body ratio)
-  3. Busca tendência do 1h
+  3. Busca tendencia do 1h
   4. Gera sinal + scores
 
-Pós-análise:
-  5. Exporta JSON de análise e oportunidades
+Pos-analise:
+  5. Exporta JSON de analise e oportunidades
   6. Seleciona o TOP 1 do ciclo
-  7. Se priority ≥ 85 ou tipo=sinal → Claude interpreta → envia Telegram
-  8. Circuit breaker? → Paper Trading
-  9. Circuit breaker? → Multi-Agent Trading
-  10. Verifica horário → Relatório diário
+  7. Se priority >= 85 ou tipo=sinal -> Claude interpreta -> send_opportunity_alert()
+  8. Circuit breaker? -> Paper Trading
+  9. Circuit breaker? -> Multi-Agent Trading
+  10. Circuit breaker? -> Scalping Strategy
+  11. Verifica horario -> Relatorio diario
 ```
+
+### Pump Scanner (pump_scanner.py — a cada 60s)
+```
+  1. Busca top 50 pares USDT por volume
+  2. Analisa volume e preco de cada ativo
+  3. Detecta pump/dump -> send_pump_alert()
+  4. Gerencia posicoes abertas (trailing stop, timeout)
+```
+
+### Supervisor (supervisor.py — processo pai)
+```
+supervisor.py
+├── main.py          <- analise + paper + agent + scalping
+├── pump_scanner.py  <- scan de volume a cada 60s
+└── dashboard_server.py <- painel web Flask
+```
+
+Notifica via Telegram: inicio, crash, restart, limite de restarts, encerramento.
 
 ---
 
-## Stack Técnica
+## Stack Tecnica
 
-| Componente      | Tecnologia                            |
-|-----------------|---------------------------------------|
-| Linguagem       | Python 3.11                           |
-| Dados de mercado| Binance REST API (público, sem chave) |
-| Indicadores     | `ta` (Technical Analysis Library)    |
-| Processamento   | `pandas`, `numpy`                     |
-| IA              | Anthropic Claude Haiku (claude-haiku-4-5-20251001) |
-| Notificações    | Telegram Bot API                      |
-| Persistência    | JSON (estado) + CSV (histórico)       |
-| Dashboard       | React + Vite + TypeScript (em desenvolvimento) |
+| Componente       | Tecnologia                                        |
+|------------------|---------------------------------------------------|
+| Linguagem        | Python 3.13                                       |
+| Hardware         | Raspberry Pi 4 Model B (4 GB RAM) + SSD externo   |
+| Dados de mercado | Binance REST API (publico, sem chave)              |
+| Indicadores      | `ta` (Technical Analysis Library)                  |
+| Processamento    | `pandas`, `numpy`                                  |
+| IA               | Anthropic Claude Haiku (claude-haiku-4-5-20251001) |
+| Notificacoes     | Telegram Bot API (HTML, retry, rate limiting)      |
+| Persistencia     | SQLite WAL mode (`bot.db`)                         |
+| Dashboard        | Flask + Chart.js (porta 5000)                      |
 
 ---
 
 ## Arquivos de Estado
 
-| Arquivo                  | Conteúdo                              |
-|--------------------------|---------------------------------------|
-| `paper_state.json`       | Capital e posições do paper trader    |
-| `agent_state.json`       | Capital e posições do multi-agent     |
-| `pump_positions.json`    | Posições abertas do pump trader       |
-| `last_alert.json`        | Último alerta enviado (deduplicação)  |
-| `pump_cooldown.json`     | Cooldown por ativo no pump scanner    |
-| `technical_analysis.json`| Última análise completa de todos os ativos |
-| `relevant_opportunities.json` | Oportunidades filtradas do ciclo |
-| `log.csv`                | Histórico de todas as análises        |
-| `alerts.csv`             | Histórico de alertas gerados          |
-| `paper_trades.csv`       | Histórico de trades do paper trader   |
-| `agent_trades.csv`       | Histórico de trades do multi-agent    |
-| `pump_trades.csv`        | Histórico de trades do pump scanner   |
+| Arquivo                       | Conteudo                              |
+|-------------------------------|---------------------------------------|
+| `paper_state.json`            | Capital e posicoes do paper trader    |
+| `agent_state.json`            | Capital e posicoes do multi-agent     |
+| `pump_positions.json`         | Posicoes abertas do pump trader       |
+| `last_alert.json`             | Ultimo alerta enviado (deduplicacao)  |
+| `pump_cooldown.json`          | Cooldown por ativo no pump scanner    |
+| `bot_control.json`            | Estado de pausa (via /pausar)         |
+| `last_report_date.txt`        | Data do ultimo relatorio enviado      |
+| `technical_analysis.json`     | Ultima analise completa               |
+| `relevant_opportunities.json` | Oportunidades filtradas do ciclo      |
 
 ---
 
-## Próximas Atualizações
+## Banco de Dados (`bot.db`)
 
-### Prioridade Alta — Correções de Bugs
+SQLite com WAL mode — permite escrita simultanea segura de multiplos processos.
 
-- [ ] **Cálculo de alocação no paper_trader**
-  Guardar o valor alocado na abertura da posição (como o multi-agent já faz),
-  em vez de recalcular no fechamento com base no capital atual.
-
-- [ ] **Circuit breaker com % real de capital**
-  Substituir a soma de percentuais por um cálculo baseado no capital inicial
-  do dia para medir a perda diária com precisão.
-
-- [ ] **Tratamento de erro por símbolo no main loop**
-  Envolver cada símbolo em `try/except` individual para que uma falha de API
-  em um ativo não cancele a análise dos outros.
-
-- [ ] **Delay em retries de erro HTTP no `market.py`**
-  Adicionar `time.sleep(2)` também nos erros HTTP (não só em exceções),
-  especialmente para o erro 429 de rate limit.
-
-### Prioridade Média — Melhorias de Estratégia
-
-- [ ] **Take Profit no paper_trader**
-  Definir um alvo de saída (ex: 2x o SL) para que posições vencedoras
-  não revertam para loss antes do sinal contrário chegar.
-
-- [ ] **HTF com análise mais rica**
-  Complementar a tendência do 1h com price action (preço acima/abaixo de SMA longa,
-  inclinação da SMA200) para um filtro HTF mais robusto.
-
-- [ ] **Eliminar duplicação strategy.py / backtest.py**
-  Fazer o backtest importar e chamar `generate_signal` diretamente
-  em vez de manter uma cópia manual da lógica.
-
-- [ ] **Cooldown por tempo no `alert_control.py`**
-  Adicionar janela mínima de X minutos entre alertas do mesmo ativo,
-  independentemente de mudança de prioridade.
-
-### Prioridade Média — Novas Funcionalidades
-
-- [ ] **Dashboard web funcional**
-  Conectar o React (`dashboard/`) à análise em tempo real via
-  WebSocket ou polling do `technical_analysis.json`.
-  Exibir: sinais ao vivo, posições abertas, equity curve, histórico.
-
-- [ ] **Relatório semanal/mensal**
-  Expandir o `daily_report.py` para enviar resumos semanais e mensais
-  com métricas acumuladas de todos os sistemas.
-
-- [ ] **Notificação de circuit breaker ativo**
-  Enviar alerta no Telegram quando o circuit breaker for ativado,
-  informando qual sistema parou e o motivo (perda ou limite de trades).
-
-- [ ] **Backtest automático periódico**
-  Rodar o backtest semanalmente e logar se o desempenho piorou,
-  servindo como aviso de degradação da estratégia.
-
-### Prioridade Baixa — Qualidade de Código
-
-- [ ] **Reduzir verbosidade do Telegram notifier**
-  Remover os prints de status code e corpo da resposta do Telegram,
-  ou movê-los para nível DEBUG.
-
-- [ ] **Race condition no relatório diário**
-  Usar um arquivo de lock ou verificação atômica para garantir que
-  `main.py` e `pump_scanner.py` não enviem o relatório em duplicata.
-
-- [ ] **Corrigir labels do prompt no `context_agent.py`**
-  Trocar `SMA X / SMA Y` por `SMA9: X / SMA21: Y` para que
-  o Claude saiba qual é qual.
-
-- [ ] **Cleanup de código morto no `pump_trader.py`**
-  Remover condições ternárias redundantes que sempre resultam
-  no mesmo valor (`price if X else price`).
+| Tabela | Conteudo |
+|---|---|
+| `analysis_log` | Analise tecnica de cada ciclo: preco, SMA, RSI, score, decisao |
+| `alerts` | Alertas enviados ao Telegram |
+| `paper_trades` | Historico do paper trader com P&L |
+| `agent_trades` | Historico do agent trader com SL, TP, confianca do Claude |
+| `pump_trades` | Historico do pump trader com duracao e peak price |
+| `scalping_trades` | Historico do scalping com motor, confluencia, parciais |
 
 ---
 
-## Como Rodar
+## Configuracao (config.py)
 
-```bash
-# Instalar dependências
-pip install -r requirements.txt
+| Variavel | Valor | Descricao |
+|---|---|---|
+| `SYMBOLS` | 6 ativos | Pares monitorados |
+| `INTERVAL` | `5m` | Timeframe principal |
+| `LIMIT` | 100 | Velas por analise |
+| `SMA_SHORT` / `SMA_LONG` | 9 / 21 | Periodos das medias moveis |
+| `RSI_WINDOW` | 14 | Periodo do RSI |
+| `SIGNAL_SCORE_MIN` | 4 | Score minimo para sinal |
+| `ALERT_PRIORITY_MIN` | 85 | Priority score para alerta Telegram |
+| `PAPER_INITIAL_CAPITAL` | $10.000 | Capital inicial paper trader |
+| `AGENT_INITIAL_CAPITAL` | $10.000 | Capital inicial agent trader |
+| `PUMP_INITIAL_CAPITAL` | $5.000 | Capital inicial pump trader |
+| `STOP_LOSS_PCT` | 1.5% | Stop loss padrao |
+| `STOP_LOSS_MAP` | por ativo | Stop loss otimizado por backtesting |
+| `DAILY_LOSS_LIMIT_PCT` | 5% | Circuit breaker: limite de perda diaria |
+| `DAILY_MAX_TRADES` | 20 | Circuit breaker: maximo de trades/dia |
+| `PUMP_VOLUME_MULTIPLIER` | 5x | Multiplo de volume para detectar pump |
+| `PUMP_PRICE_CHANGE_MIN` | 2% | Variacao minima de preco para alerta |
+| `PUMP_TRAILING_STOP` | 3% | Trailing stop das posicoes de pump |
+| `PUMP_MAX_POSITION_TIME` | 30 min | Tempo maximo em posicao de pump |
+| `PUMP_RSI_EXHAUSTION` | 80 | RSI acima disso = pump exaurindo |
+| `BODY_RATIO_MIN` | 0.6 | Forca minima do candle para pontuar |
 
-# Configurar variáveis de ambiente no .env
-ANTHROPIC_API_KEY=...
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
+---
 
-# Rodar via supervisor (recomendado — reinicia automaticamente)
-python supervisor.py
+## Referencia dos Modulos
 
-# Rodar apenas o bot principal
-python main.py
-
-# Rodar apenas o pump scanner
-python pump_scanner.py
-
-# Rodar backtest
-python backtest.py
-
-# Gerar relatório diário manualmente
-python daily_report.py
-```
+| Modulo | Funcoes principais |
+|---|---|
+| `main.py` | `run_bot()` — loop principal com analise, trading e alertas |
+| `supervisor.py` | Gerencia processos, reinicia crashes, notifica Telegram |
+| `database.py` | `init_db()`, `insert_*()`, `get_trades_today()`, `get_recent_trades()`, `get_cumulative_pnl()` |
+| `market.py` | `get_candles(symbol, interval, limit)` |
+| `indicators.py` | `add_indicators(df)` |
+| `strategy.py` | `generate_signal(df, htf_trend)` |
+| `htf.py` | `get_htf_trend(symbol)` |
+| `context_agent.py` | `interpret_signal(result)` — interpretacao via Claude Haiku |
+| `paper_trader.py` | `process_signals(results)`, `get_status()` |
+| `trade_agents.py` | `orchestrate(results)`, `get_agent_status()` |
+| `scalping_trader.py` | `process_scalping(symbols)`, `get_scalping_status()` |
+| `volume_breakout.py` | Motor de breakout de volume (2.5x media, confirmacao direcional) |
+| `rsi_bb_reversal.py` | Motor de reversao RSI + Bollinger Bands |
+| `ema_crossover.py` | Motor de cruzamento EMA9/EMA21 com retest |
+| `confluence.py` | Score de confluencia entre os 3 motores |
+| `risk_manager.py` | Position sizing ATR-based, SL/TP, alavancagem |
+| `signal_types.py` | Tipos padronizados de sinal |
+| `scalping_data.py` | Coleta multi-timeframe (1m, 3m, 5m, 15m) |
+| `news_filter.py` | Filtro de noticias macro |
+| `pump_scanner.py` | `scan()` — detecta volume anormal a cada 60s |
+| `pump_trader.py` | `open_position()`, `check_positions()`, `get_status()` |
+| `telegram_notifier.py` | `send_telegram_message()`, `send_trade_alert()`, `send_pump_alert()`, `send_system_alert()`, `send_circuit_breaker_alert()`, etc. |
+| `telegram_commands.py` | `is_paused()`, `start_command_listener()` — 9 comandos |
+| `daily_report.py` | `is_circuit_broken()`, `generate_report()`, `calc_daily_stats()` |
+| `alert_control.py` | `should_send_alert(data)` — deduplicacao |
+| `dashboard_server.py` | Flask app — `/`, `/api/status`, `/pause`, `/resume` |
+| `backtest.py` | Backtesting historico com dados da Binance |
