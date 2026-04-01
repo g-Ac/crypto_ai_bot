@@ -11,42 +11,46 @@
   <title>Crypto AI Bot | {{ instance.label or "Control Room" }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --bg-primary: #07111f;
-      --bg-secondary: rgba(7, 17, 31, 0.82);
-      --panel: rgba(10, 22, 39, 0.88);
-      --panel-strong: rgba(13, 27, 47, 0.96);
-      --panel-soft: rgba(17, 34, 57, 0.78);
-      --border: rgba(130, 168, 214, 0.18);
-      --border-strong: rgba(130, 168, 214, 0.3);
-      --text-primary: #edf5ff;
-      --text-secondary: #a6bdd8;
-      --text-dim: #6f87a3;
-      --green: #35d08f;
-      --red: #ff6b7f;
-      --yellow: #ffca6a;
-      --blue: #5fb7ff;
+      --bg: #0a0f1a;
+      --bg-panel: rgba(14, 21, 35, 0.72);
+      --bg-panel-solid: rgba(14, 21, 35, 0.92);
+      --border: rgba(100, 160, 240, 0.12);
+      --border-hi: rgba(100, 160, 240, 0.25);
+      --text: #eaf2ff;
+      --text-2: #8da4c2;
+      --text-3: #5a7294;
+      --cyan: #00d4ff;
+      --green: #00ff88;
+      --red: #ff5a6e;
+      --yellow: #ffd166;
       --orange: #ff9f66;
-      --purple: #b592ff;
-      --cyan: #69f0ff;
-      --shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+      --purple: #a78bfa;
+      --blue: #5fb7ff;
+      --glass: blur(20px) saturate(1.4);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --radius-pill: 999px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.35);
+      --mono: "JetBrains Mono", "Consolas", monospace;
+      --sans: "Inter", system-ui, sans-serif;
+      --transition: 200ms ease;
     }
 
-    * { box-sizing: border-box; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body {
-      min-height: 100%;
-      margin: 0;
-      background:
-        radial-gradient(circle at top left, rgba(95, 183, 255, 0.18), transparent 30%),
-        radial-gradient(circle at top right, rgba(181, 146, 255, 0.12), transparent 25%),
-        linear-gradient(180deg, #07111f 0%, #040b14 100%);
-      color: var(--text-primary);
-      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+    html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: clamp(13px, 1.4vw, 15px);
+      line-height: 1.5;
     }
 
     body::before {
@@ -54,1305 +58,1359 @@
       position: fixed;
       inset: 0;
       pointer-events: none;
-      background-image:
-        linear-gradient(rgba(255, 255, 255, 0.024) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.024) 1px, transparent 1px);
-      background-size: 34px 34px;
-      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 90%);
+      z-index: 0;
+      background:
+        radial-gradient(ellipse at 20% 0%, rgba(0,212,255,0.08), transparent 50%),
+        radial-gradient(ellipse at 80% 10%, rgba(167,139,250,0.06), transparent 40%),
+        linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+      mask-image: linear-gradient(180deg, black, transparent 85%);
     }
 
-    .top-navbar {
+    /* ---------- TOP NAV ---------- */
+    .topbar {
       position: sticky;
       top: 0;
-      z-index: 20;
+      z-index: 100;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 1rem 1.5rem;
-      background: rgba(4, 10, 18, 0.88);
-      backdrop-filter: blur(18px);
+      gap: 12px;
+      padding: 0 20px;
+      height: 56px;
+      background: rgba(8, 13, 24, 0.85);
+      backdrop-filter: var(--glass);
       border-bottom: 1px solid var(--border);
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.24);
     }
 
-    .brand-block {
+    .topbar-brand {
       display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-      min-width: 220px;
+      align-items: center;
+      gap: 10px;
+      margin-right: auto;
+      min-width: 0;
     }
 
-    .brand-kicker,
-    .section-eyebrow {
-      margin: 0;
-      color: var(--cyan);
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      font-size: 0.67rem;
-      font-weight: 600;
-    }
+    .topbar-brand svg { flex-shrink: 0; }
 
-    .brand-title {
-      margin: 0;
-      font-size: clamp(1.35rem, 2vw, 1.9rem);
+    .topbar-brand-text {
+      font-size: 14px;
       font-weight: 700;
       letter-spacing: 0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .brand-subtitle {
-      margin: 0;
-      color: var(--text-secondary);
-      font-size: 0.84rem;
+    .topbar-brand-sub {
+      display: none;
+      font-size: 11px;
+      color: var(--text-3);
+      margin-left: 8px;
     }
 
-    .status-ribbon,
-    .control-ribbon {
+    @media (min-width: 768px) {
+      .topbar-brand-sub { display: inline; }
+    }
+
+    /* Tab buttons */
+    .tab-nav {
       display: flex;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 0.6rem;
+      gap: 2px;
     }
 
-    .status-pill,
-    .chip,
-    .mode-badge {
+    .tab-btn {
+      position: relative;
       display: inline-flex;
       align-items: center;
-      gap: 0.45rem;
-      padding: 0.5rem 0.8rem;
-      border-radius: 999px;
+      gap: 6px;
+      padding: 8px 16px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-2);
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color var(--transition), background var(--transition);
+      white-space: nowrap;
+      min-height: 44px;
+    }
+
+    .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+
+    .tab-btn[aria-selected="true"] {
+      color: var(--cyan);
+      background: rgba(0,212,255,0.08);
+    }
+
+    .tab-btn[aria-selected="true"]::after {
+      content: "";
+      position: absolute;
+      bottom: -1px;
+      left: 12px;
+      right: 12px;
+      height: 2px;
+      border-radius: 2px;
+      background: var(--cyan);
+      box-shadow: 0 0 12px var(--cyan);
+    }
+
+    .tab-btn .tab-icon { display: none; }
+
+    @media (max-width: 640px) {
+      .tab-btn span { display: none; }
+      .tab-btn .tab-icon { display: inline; font-size: 18px; }
+      .tab-btn { padding: 8px 12px; }
+    }
+
+    /* Status dot in topbar */
+    .topbar-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: var(--radius-pill);
       border: 1px solid var(--border);
-      background: rgba(15, 29, 47, 0.78);
-      color: var(--text-secondary);
-      font-size: 0.78rem;
-      line-height: 1;
+      background: rgba(255,255,255,0.03);
+      font-size: 12px;
+      font-weight: 600;
       white-space: nowrap;
     }
 
-    .status-pill strong,
-    .chip strong,
-    .mode-badge strong {
-      color: var(--text-primary);
-      font-weight: 600;
-    }
-
-    a.chip,
-    a.mode-badge,
-    a.status-pill {
-      text-decoration: none;
-      color: inherit;
-    }
-
-    .chip-link {
-      transition: transform 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-    }
-
-    .chip-link:hover {
-      color: var(--text-primary);
-      border-color: var(--border-strong);
-      transform: translateY(-1px);
-    }
-
-    .status-pill .dot,
-    .mode-badge .dot {
+    .status-dot {
       width: 8px;
       height: 8px;
-      border-radius: 999px;
-      display: inline-block;
-      background: var(--text-dim);
-      box-shadow: 0 0 14px currentColor;
+      border-radius: 50%;
+      flex-shrink: 0;
     }
 
-    .tone-good { color: var(--green); }
-    .tone-good .dot { background: var(--green); }
-    .tone-warn { color: var(--yellow); }
-    .tone-warn .dot { background: var(--yellow); }
-    .tone-bad { color: var(--red); }
-    .tone-bad .dot { background: var(--red); }
-    .tone-neutral { color: var(--text-secondary); }
-    .tone-positive { color: var(--green); }
-    .tone-negative { color: var(--red); }
+    .status-dot.ok { background: var(--green); box-shadow: 0 0 10px var(--green); }
+    .status-dot.warn { background: var(--yellow); box-shadow: 0 0 10px var(--yellow); }
+    .status-dot.err { background: var(--red); box-shadow: 0 0 10px var(--red); }
 
-    .control-button {
+    .topbar-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .topbar-controls form { margin: 0; }
+
+    .btn-ctrl {
       border: none;
-      border-radius: 999px;
-      padding: 0.55rem 1rem;
-      font-size: 0.8rem;
+      border-radius: var(--radius-pill);
+      padding: 6px 14px;
+      font-family: var(--sans);
+      font-size: 12px;
       font-weight: 600;
       color: #fff;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+      transition: opacity var(--transition);
     }
 
-    .control-button.pause { background: linear-gradient(135deg, #ef5350, #d32f2f); }
-    .control-button.resume { background: linear-gradient(135deg, #2e9b5d, #1f7a46); }
+    .btn-ctrl:hover { opacity: 0.85; }
+    .btn-pause { background: linear-gradient(135deg, #ef5350, #d32f2f); }
+    .btn-resume { background: linear-gradient(135deg, #2e9b5d, #1a7a42); }
 
-    .dashboard-shell {
-      width: min(1600px, calc(100% - 2rem));
-      margin: 1.5rem auto 2rem;
-      display: grid;
-      gap: 1.2rem;
+    .topbar-links {
+      display: none;
+      align-items: center;
+      gap: 4px;
     }
 
-    .hero-grid,
-    .split-grid {
-      display: grid;
-      gap: 1.2rem;
-    }
+    @media (min-width: 1024px) { .topbar-links { display: flex; } }
 
-    .hero-grid {
-      grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.92fr);
-      align-items: stretch;
-    }
-
-    .hero-side {
-      display: grid;
-      gap: 1.2rem;
-    }
-
-    .panel {
-      background: linear-gradient(180deg, rgba(12, 24, 42, 0.96), rgba(8, 17, 31, 0.94));
+    .chip-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 10px;
+      border-radius: var(--radius-pill);
       border: 1px solid var(--border);
-      border-radius: 28px;
+      background: rgba(255,255,255,0.02);
+      color: var(--text-2);
+      font-size: 11px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: border-color var(--transition), color var(--transition);
+      white-space: nowrap;
+    }
+
+    .chip-link:hover { border-color: var(--border-hi); color: var(--text); }
+    .chip-link strong { color: var(--text); }
+    .chip-link.is-current { border-color: rgba(0,255,136,0.3); }
+
+    /* ---------- SHELL & TABS ---------- */
+    .shell {
+      position: relative;
+      z-index: 1;
+      width: min(1520px, 100% - 24px);
+      margin: 16px auto 32px;
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ---------- GLASS PANELS ---------- */
+    .card {
+      background: var(--bg-panel);
+      backdrop-filter: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       box-shadow: var(--shadow);
       overflow: hidden;
     }
 
-    .hero-panel {
-      position: relative;
-      padding: 1.5rem;
-      overflow: hidden;
-      background:
-        radial-gradient(circle at 15% 10%, rgba(95, 183, 255, 0.12), transparent 25%),
-        radial-gradient(circle at 85% 18%, rgba(181, 146, 255, 0.1), transparent 25%),
-        linear-gradient(180deg, rgba(12, 24, 42, 0.98), rgba(7, 16, 28, 0.98));
-    }
-
-    .hero-panel::after {
-      content: "";
-      position: absolute;
-      inset: auto 0 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent);
-    }
-
-    .hero-header,
-    .section-heading,
-    .panel-title-row {
+    .card-header {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      gap: 1rem;
+      gap: 12px;
+      padding: 16px 20px 12px;
     }
 
-    .hero-title {
-      margin: 0.35rem 0 0.5rem;
-      font-size: clamp(1.8rem, 3vw, 2.7rem);
-      line-height: 1.05;
-      max-width: 12ch;
+    .card-header h3 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
     }
 
-    .hero-subtitle {
-      margin: 0;
-      max-width: 64ch;
-      color: var(--text-secondary);
-      font-size: 0.97rem;
-      line-height: 1.6;
+    .card-body { padding: 0 20px 20px; }
+
+    .eyebrow {
+      display: block;
+      color: var(--cyan);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      margin-bottom: 2px;
     }
 
-    .hero-meta {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      min-width: 220px;
-    }
-
-    .large-chip {
-      justify-content: space-between;
-      min-width: 220px;
-      padding: 0.85rem 1rem;
-      background: rgba(15, 29, 47, 0.92);
-      border-color: var(--border-strong);
-    }
-
-    .hero-kpi-grid,
-    .capital-grid,
-    .metric-grid,
-    .spotlight-grid,
-    .resource-grid,
-    .position-grid {
-      display: grid;
-      gap: 1rem;
-    }
-
-    .hero-kpi-grid {
-      margin-top: 1.4rem;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-
-    .hero-kpi-card,
-    .capital-card,
-    .metric-card,
-    .spotlight-card,
-    .resource-card,
-    .position-card {
-      border-radius: 22px;
+    .badge-sm {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
       border: 1px solid var(--border);
-      background: rgba(13, 25, 42, 0.82);
-      padding: 1rem;
-      min-width: 0;
+      background: rgba(255,255,255,0.03);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-2);
+      white-space: nowrap;
     }
 
-    .hero-kpi-card {
-      background: linear-gradient(180deg, rgba(13, 27, 47, 0.96), rgba(11, 20, 35, 0.92));
+    .badge-sm strong { color: var(--text); }
+
+    /* ---------- KPI BAR ---------- */
+    .kpi-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
     }
 
-    .hero-kpi-label,
-    .metric-label,
-    .capital-label,
-    .spotlight-label,
-    .resource-label {
-      color: var(--text-dim);
+    .kpi-card {
+      padding: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(14,24,42,0.95), rgba(10,16,28,0.92));
+    }
+
+    .kpi-label {
+      font-size: 10px;
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.12em;
-      font-size: 0.68rem;
-      margin-bottom: 0.45rem;
+      color: var(--text-3);
+      margin-bottom: 6px;
     }
 
-    .hero-kpi-value,
-    .capital-value,
-    .metric-value {
-      font-family: "IBM Plex Mono", monospace;
+    .kpi-value {
+      font-family: var(--mono);
+      font-size: clamp(18px, 2.2vw, 24px);
       font-weight: 600;
-      letter-spacing: -0.03em;
+      letter-spacing: -0.02em;
     }
 
-    .hero-kpi-value {
-      font-size: clamp(1.15rem, 2vw, 1.55rem);
+    .kpi-sub {
+      font-size: 12px;
+      color: var(--text-2);
+      margin-top: 2px;
     }
 
-    .capital-value {
-      font-size: 1.42rem;
+    @media (max-width: 768px) {
+      .kpi-bar { grid-template-columns: repeat(2, 1fr); }
     }
 
+    @media (max-width: 480px) {
+      .kpi-bar { grid-template-columns: 1fr; }
+    }
+
+    /* ---------- CHART WRAP ---------- */
+    .chart-wrap {
+      position: relative;
+      height: 380px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.05);
+      background: radial-gradient(ellipse at 50% 0%, rgba(0,212,255,0.05), transparent 50%), rgba(6,12,22,0.9);
+      padding: 12px;
+    }
+
+    .chart-wrap.medium { height: 300px; }
+    .chart-wrap.compact { height: 230px; }
+
+    @media (max-width: 768px) {
+      .chart-wrap { height: 280px; }
+      .chart-wrap.medium { height: 240px; }
+    }
+
+    /* ---------- CAPITAL CARDS ---------- */
     .capital-grid {
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
     }
 
     .capital-card {
-      padding: 1.2rem;
-      background:
-        linear-gradient(180deg, rgba(14, 28, 47, 0.96), rgba(9, 19, 34, 0.94)),
-        linear-gradient(135deg, rgba(255, 255, 255, 0.02), transparent);
+      padding: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(14,28,47,0.94), rgba(9,18,32,0.92));
     }
 
-    .capital-card-header,
-    .spotlight-card-top,
-    .position-card-top,
-    .symbol-row-top {
+    .capital-card-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 0.75rem;
+      gap: 8px;
+      margin-bottom: 12px;
     }
 
-    .system-badge {
+    .sys-badge {
       display: inline-flex;
       align-items: center;
-      gap: 0.45rem;
-      padding: 0.35rem 0.7rem;
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(255, 255, 255, 0.03);
-      font-size: 0.74rem;
-      color: var(--text-secondary);
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-2);
     }
 
-    .system-dot {
+    .sys-dot {
       width: 10px;
       height: 10px;
-      border-radius: 999px;
-      display: inline-block;
-      box-shadow: 0 0 18px currentColor;
+      border-radius: 50%;
+      box-shadow: 0 0 14px currentColor;
     }
 
-    .capital-subline,
-    .resource-subline,
-    .spotlight-subline {
-      margin-top: 0.35rem;
-      color: var(--text-secondary);
-      font-size: 0.82rem;
+    .capital-val {
+      font-family: var(--mono);
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .capital-ret {
+      font-size: 13px;
+      margin-top: 2px;
     }
 
     .capital-stats {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 0.65rem;
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255,255,255,0.06);
     }
 
-    .capital-stat strong,
-    .spotlight-value,
-    .resource-value {
+    .capital-stat {
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    .capital-stat strong {
       display: block;
-      margin-top: 0.2rem;
-      font-family: "IBM Plex Mono", monospace;
-      font-size: 0.95rem;
+      margin-top: 2px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text);
     }
 
+    @media (max-width: 1100px) {
+      .capital-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 540px) {
+      .capital-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ---------- GRID LAYOUTS ---------- */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .grid-2-1 {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 16px;
+    }
+
+    .gap-16 { gap: 16px; }
+    .mt-16 { margin-top: 16px; }
+    .mb-16 { margin-bottom: 16px; }
+
+    @media (max-width: 1024px) {
+      .grid-2, .grid-2-1, .grid-3 { grid-template-columns: 1fr; }
+    }
+
+    /* ---------- METRIC CARDS ---------- */
     .metric-grid {
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
     }
 
     .metric-card {
       position: relative;
+      padding: 14px 14px 14px 18px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: rgba(10,20,35,0.9);
       overflow: hidden;
-      background: rgba(10, 20, 35, 0.92);
     }
 
     .metric-card::before {
       content: "";
       position: absolute;
-      inset: 0 auto 0 0;
-      width: 5px;
-      border-radius: 6px;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      border-radius: 4px;
       background: var(--accent, var(--blue));
-      box-shadow: 0 0 24px var(--accent, var(--blue));
+      box-shadow: 0 0 16px var(--accent, var(--blue));
+    }
+
+    .metric-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-3);
+      margin-bottom: 4px;
     }
 
     .metric-value {
-      font-size: 1.3rem;
-      padding-left: 0.4rem;
+      font-family: var(--mono);
+      font-size: 18px;
+      font-weight: 600;
     }
 
-    .hero-chart-note {
-      margin-top: 1rem;
-      color: var(--text-dim);
-      font-size: 0.78rem;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-
-    .hero-chart-wrap {
-      position: relative;
-      margin-top: 0.9rem;
-      height: 440px;
-      min-height: 320px;
-      border-radius: 24px;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      background:
-        radial-gradient(circle at 50% 0%, rgba(95, 183, 255, 0.08), transparent 40%),
-        linear-gradient(180deg, rgba(4, 11, 20, 0.86), rgba(6, 14, 25, 0.96));
-      padding: 1rem 1rem 0.8rem;
-    }
-
-    .resource-grid,
-    .spotlight-grid,
+    /* ---------- POSITIONS ---------- */
     .position-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .resource-card strong,
-    .resource-value {
-      font-size: 1.02rem;
-    }
-
-    .split-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      align-items: start;
-    }
-
-    .position-grid {
-      padding: 1.2rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
     }
 
     .position-card {
-      min-height: 100%;
       display: flex;
       flex-direction: column;
-      gap: 0.9rem;
+      gap: 10px;
+      padding: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: rgba(12,22,38,0.85);
+    }
+
+    .position-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
     }
 
     .position-symbol {
-      font-size: 1.2rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-    }
-
-    .side-badge {
-      padding: 0.32rem 0.6rem;
-      border-radius: 999px;
-      font-size: 0.72rem;
+      font-size: 16px;
       font-weight: 700;
     }
 
-    .side-long { background: rgba(53, 208, 143, 0.14); color: var(--green); }
-    .side-short { background: rgba(255, 107, 127, 0.14); color: var(--red); }
-
-    .position-main-value {
-      font-family: "IBM Plex Mono", monospace;
-      font-size: 1.55rem;
+    .position-pnl {
+      font-family: var(--mono);
+      font-size: 22px;
       font-weight: 600;
     }
 
     .position-meta-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.65rem;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
     }
 
-    .position-meta,
-    .symbol-meta,
-    .capital-stat {
-      color: var(--text-dim);
-      font-size: 0.78rem;
+    .pos-meta {
+      font-size: 11px;
+      color: var(--text-3);
     }
 
-    .position-meta strong,
-    .symbol-meta strong {
+    .pos-meta strong {
       display: block;
-      margin-top: 0.2rem;
-      color: var(--text-primary);
-      font-family: "IBM Plex Mono", monospace;
-      font-size: 0.88rem;
+      margin-top: 1px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text);
     }
 
-    .position-tags {
+    .tag-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.45rem;
+      gap: 6px;
     }
 
     .mini-tag {
+      padding: 3px 8px;
+      border-radius: var(--radius-pill);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.07);
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    .side-badge {
+      padding: 3px 8px;
+      border-radius: var(--radius-pill);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .side-long { background: rgba(0,255,136,0.12); color: var(--green); }
+    .side-short { background: rgba(255,90,110,0.12); color: var(--red); }
+
+    /* ---------- TABLES ---------- */
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.05);
+      background: rgba(8,16,28,0.8);
+    }
+
+    .table-wrap table {
+      width: 100%;
+      min-width: 700px;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .table-wrap th, .table-wrap td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      text-align: left;
+    }
+
+    .table-wrap th {
+      position: sticky;
+      top: 0;
+      background: rgba(10,18,32,0.98);
+      color: var(--text-3);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      z-index: 1;
+    }
+
+    .table-wrap tr:last-child td { border-bottom: none; }
+
+    .text-mono {
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .confidence-badge {
       display: inline-flex;
       align-items: center;
-      padding: 0.28rem 0.55rem;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: var(--text-secondary);
-      font-size: 0.72rem;
-    }
-
-    .symbol-list {
-      padding: 0.9rem 1.2rem 1.2rem;
-      display: grid;
-      gap: 0.8rem;
-      max-height: 720px;
-      overflow: auto;
-    }
-
-    .symbol-row {
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      background: rgba(11, 22, 38, 0.88);
-      padding: 1rem;
-    }
-
-    .symbol-row-title {
-      font-size: 1rem;
+      justify-content: center;
+      min-width: 44px;
+      padding: 3px 8px;
+      border-radius: var(--radius-pill);
+      font-size: 11px;
       font-weight: 700;
+      border: 1px solid rgba(255,255,255,0.07);
     }
 
-    .symbol-row-pnl {
-      font-family: "IBM Plex Mono", monospace;
-      font-size: 1rem;
-      font-weight: 600;
-    }
+    .confidence-high { color: var(--green); background: rgba(0,255,136,0.1); }
+    .confidence-mid { color: var(--yellow); background: rgba(255,209,102,0.1); }
+    .confidence-low { color: var(--red); background: rgba(255,90,110,0.1); }
 
-    .symbol-bar {
-      position: relative;
-      height: 8px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.05);
-      overflow: hidden;
-      margin: 0.8rem 0 0.65rem;
-    }
-
-    .symbol-bar span {
-      position: absolute;
-      inset: 0 auto 0 0;
-      border-radius: inherit;
-      background: linear-gradient(90deg, rgba(95, 183, 255, 0.88), rgba(53, 208, 143, 0.95));
-      box-shadow: 0 0 20px rgba(95, 183, 255, 0.38);
-    }
-
-    .symbol-meta-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 0.6rem;
-    }
-
-    .section-block .section-heading,
-    .logs-panel .section-heading,
-    .history-panel .section-heading,
-    .panel .section-heading {
-      padding: 1.1rem 1.2rem 0;
-    }
-
-    .panel h2,
-    .section-heading h2,
-    .panel-title-row h2 {
-      margin: 0.2rem 0 0;
-      font-size: 1.1rem;
-      font-weight: 700;
-    }
-
-    .period-group {
+    /* ---------- SUBTABS (history / logs / trade systems) ---------- */
+    .subtab-row {
       display: flex;
       align-items: center;
-      gap: 0.45rem;
+      gap: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding: 0 20px;
+      overflow-x: auto;
+    }
+
+    .subtab-btn {
+      padding: 12px 14px 10px;
+      border: none;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--text-2);
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color var(--transition), border-color var(--transition);
+      white-space: nowrap;
+      min-height: 44px;
+    }
+
+    .subtab-btn:hover { color: var(--text); }
+
+    .subtab-btn.active {
+      color: #fff;
+      border-bottom-color: var(--cyan);
+    }
+
+    .subtab-pane { display: none; padding: 16px 20px; }
+    .subtab-pane.active { display: block; }
+
+    /* ---------- PERIOD BUTTONS ---------- */
+    .period-group {
+      display: flex;
+      gap: 6px;
       flex-wrap: wrap;
     }
 
     .period-btn {
+      padding: 6px 14px;
       border: 1px solid var(--border);
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.03);
-      color: var(--text-secondary);
-      padding: 0.5rem 0.8rem;
-      font-size: 0.76rem;
+      border-radius: var(--radius-pill);
+      background: rgba(255,255,255,0.02);
+      color: var(--text-2);
+      font-family: var(--sans);
+      font-size: 12px;
       font-weight: 600;
-      transition: 0.2s ease;
+      cursor: pointer;
+      transition: all var(--transition);
+      min-height: 36px;
     }
 
-    .period-btn:hover,
-    .period-btn.active {
+    .period-btn:hover, .period-btn.active {
       color: #fff;
-      background: linear-gradient(135deg, rgba(95, 183, 255, 0.24), rgba(181, 146, 255, 0.22));
-      border-color: rgba(95, 183, 255, 0.42);
-      box-shadow: 0 0 18px rgba(95, 183, 255, 0.18);
+      background: rgba(0,212,255,0.12);
+      border-color: rgba(0,212,255,0.4);
+      box-shadow: 0 0 12px rgba(0,212,255,0.15);
     }
 
-    .history-tabs,
-    .log-tabs {
-      padding: 0 1.2rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    /* ---------- LEADERBOARD ---------- */
+    .lb-row {
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(8,18,32,0.88);
+      margin-bottom: 10px;
     }
 
-    .history-tabs .nav-link,
-    .log-tabs .nav-link {
-      color: var(--text-secondary);
-      border: none;
-      background: transparent;
-      font-size: 0.82rem;
-      font-weight: 600;
-      border-bottom: 2px solid transparent;
-      border-radius: 0;
-      padding: 0.95rem 0.7rem 0.75rem;
-    }
+    .lb-row:last-child { margin-bottom: 0; }
 
-    .history-tabs .nav-link.active,
-    .log-tabs .nav-link.active {
-      color: #fff;
-      background: transparent;
-      border-color: var(--cyan);
-    }
-
-    .history-content,
-    .log-content {
-      background: transparent;
-      border: none;
-      padding: 0;
-    }
-
-    .history-pane-inner {
-      padding: 1rem 1.2rem 1.2rem;
-    }
-
-    .table-shell {
-      overflow-x: auto;
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      background: rgba(8, 17, 31, 0.82);
-    }
-
-    .table-shell table {
-      width: 100%;
-      min-width: 720px;
-      border-collapse: collapse;
-      color: var(--text-primary);
-      font-size: 0.82rem;
-    }
-
-    .table-shell th,
-    .table-shell td {
-      padding: 0.8rem 0.85rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      text-align: left;
-    }
-
-    .table-shell th {
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      font-size: 0.68rem;
-      position: sticky;
-      top: 0;
-      background: rgba(10, 20, 35, 0.98);
-      z-index: 1;
-    }
-
-    .table-shell tr:last-child td { border-bottom: none; }
-
-    .text-mono {
-      font-family: "IBM Plex Mono", monospace;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .confidence-badge,
-    .system-pill {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 54px;
-      padding: 0.25rem 0.48rem;
-      border-radius: 999px;
-      font-size: 0.7rem;
-      font-weight: 700;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .confidence-high { color: var(--green); background: rgba(53, 208, 143, 0.12); }
-    .confidence-mid { color: var(--yellow); background: rgba(255, 202, 106, 0.12); }
-    .confidence-low { color: var(--red); background: rgba(255, 107, 127, 0.12); }
-
-    .log-terminal {
-      margin: 1rem 1.2rem 1.2rem;
-      min-height: 280px;
-      max-height: 360px;
-      overflow: auto;
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      background: rgba(2, 8, 15, 0.96);
-      padding: 1rem;
-      color: #8df0b0;
-      font-family: "IBM Plex Mono", monospace;
-      font-size: 0.74rem;
-      white-space: pre-wrap;
-      line-height: 1.55;
-    }
-
-    .empty-state {
-      margin: 1rem 1.2rem 1.2rem;
-      padding: 1rem 1.1rem;
-      border-radius: 18px;
-      border: 1px dashed rgba(255, 255, 255, 0.12);
-      background: rgba(255, 255, 255, 0.02);
-      color: var(--text-secondary);
-      font-size: 0.86rem;
-    }
-
-    .collapse-btn {
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.03);
-      color: var(--text-secondary);
-      padding: 0.5rem 0.85rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-
-    .ajax-loading {
-      margin: 1rem 1.2rem 1.2rem;
-      padding: 1.2rem;
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.03);
-      color: var(--text-secondary);
-      text-align: center;
-      font-size: 0.84rem;
-    }
-
-    .analytics-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.95fr);
-      gap: 1.2rem;
-    }
-
-    .chart-panel {
-      overflow: hidden;
-    }
-
-    .panel-chart-wrap {
-      position: relative;
-      padding: 0 1.2rem;
-    }
-
-    .panel-chart-wrap.medium {
-      height: 320px;
-      margin-top: 0.9rem;
-    }
-
-    .panel-chart-wrap.compact {
-      height: 250px;
-      min-height: 220px;
-    }
-
-    .leaderboard-list,
-    .setup-list,
-    .reason-list {
-      padding: 1rem 1.2rem 1.2rem;
-      display: grid;
-      gap: 0.85rem;
-    }
-
-    .leaderboard-row,
-    .setup-card,
-    .reason-row,
-    .stack-card {
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
-        rgba(8, 18, 32, 0.9);
-    }
-
-    .leaderboard-row,
-    .setup-card,
-    .stack-card {
-      padding: 0.95rem 1rem;
-    }
-
-    .leaderboard-head,
-    .setup-head,
-    .reason-row {
+    .lb-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 0.75rem;
+      gap: 8px;
     }
 
-    .leaderboard-title,
-    .setup-title {
-      font-size: 1rem;
+    .lb-title {
+      font-size: 14px;
       font-weight: 700;
-      color: var(--text-primary);
     }
 
-    .leaderboard-subline,
-    .setup-subline,
-    .reason-subline {
-      color: var(--text-secondary);
-      font-size: 0.82rem;
-      line-height: 1.5;
+    .lb-sub {
+      font-size: 12px;
+      color: var(--text-2);
+      margin-top: 2px;
     }
 
-    .leaderboard-meter {
-      margin-top: 0.8rem;
-      height: 8px;
-      border-radius: 999px;
+    .lb-meter {
+      height: 6px;
+      border-radius: var(--radius-pill);
+      background: rgba(255,255,255,0.06);
       overflow: hidden;
-      background: rgba(255, 255, 255, 0.07);
+      margin: 10px 0;
     }
 
-    .leaderboard-meter span {
+    .lb-meter span {
       display: block;
       height: 100%;
       border-radius: inherit;
-      background: linear-gradient(90deg, rgba(95, 183, 255, 0.94), rgba(105, 240, 255, 0.88));
-      box-shadow: 0 0 20px rgba(105, 240, 255, 0.24);
+      background: linear-gradient(90deg, var(--blue), var(--cyan));
+      box-shadow: 0 0 14px rgba(0,212,255,0.25);
     }
 
-    .leaderboard-meta,
-    .setup-meta,
-    .mini-metric-grid {
+    .lb-stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-      gap: 0.75rem;
-      margin-top: 0.8rem;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 8px;
+      margin-top: 10px;
     }
 
     .mini-stat {
-      border-radius: 16px;
-      border: 1px solid rgba(130, 168, 214, 0.14);
-      background: rgba(255, 255, 255, 0.03);
-      padding: 0.8rem 0.9rem;
+      padding: 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.02);
     }
 
     .mini-stat-label {
-      color: var(--text-secondary);
-      font-size: 0.76rem;
+      font-size: 10px;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.09em;
+      letter-spacing: 0.08em;
+      color: var(--text-2);
     }
 
     .mini-stat strong {
       display: block;
-      margin-top: 0.34rem;
-      font-size: 1.02rem;
-      color: var(--text-primary);
+      margin-top: 3px;
+      font-size: 14px;
+      color: var(--text);
     }
 
-    .radar-grid {
+    /* ---------- FUNNEL / RADAR ---------- */
+    .radar-split {
       display: grid;
-      grid-template-columns: minmax(220px, 0.95fr) minmax(0, 1fr);
-      gap: 1rem;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
       align-items: center;
-      padding: 0.9rem 1.2rem 1.2rem;
     }
 
-    .stat-stack {
-      display: grid;
-      gap: 0.8rem;
+    .stack-card {
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(8,18,32,0.88);
+      margin-bottom: 8px;
     }
+
+    .stack-card:last-child { margin-bottom: 0; }
 
     .stack-label {
-      color: var(--text-secondary);
+      font-size: 10px;
+      font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      font-size: 0.75rem;
-      margin-bottom: 0.3rem;
+      color: var(--text-2);
+      margin-bottom: 4px;
     }
 
     .stack-card strong {
       display: block;
-      font-size: 1.16rem;
-      color: var(--text-primary);
+      font-size: 16px;
+      color: var(--text);
     }
 
-    .stack-subline {
-      margin-top: 0.35rem;
-      color: var(--text-secondary);
-      font-size: 0.81rem;
-      line-height: 1.45;
+    .stack-sub {
+      font-size: 12px;
+      color: var(--text-2);
+      margin-top: 2px;
     }
 
+    @media (max-width: 640px) { .radar-split { grid-template-columns: 1fr; } }
+
+    /* ---------- SETUP / RESEARCH CARDS ---------- */
     .setup-card {
-      display: grid;
-      gap: 0.85rem;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(8,18,32,0.88);
+      margin-bottom: 10px;
+    }
+
+    .setup-card:last-child { margin-bottom: 0; }
+
+    .setup-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .setup-title { font-size: 14px; font-weight: 700; }
+
+    .setup-sub {
+      font-size: 12px;
+      color: var(--text-2);
+      line-height: 1.5;
+      margin-top: 4px;
     }
 
     .setup-pill {
-      border-radius: 999px;
-      padding: 0.32rem 0.68rem;
-      font-size: 0.71rem;
+      padding: 3px 10px;
+      border-radius: var(--radius-pill);
+      font-size: 10px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.09em;
-      border: 1px solid rgba(130, 168, 214, 0.18);
-      color: var(--text-primary);
-      background: rgba(255, 255, 255, 0.05);
+      letter-spacing: 0.08em;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      white-space: nowrap;
     }
 
-    .setup-pill.promising {
-      border-color: rgba(53, 208, 143, 0.42);
-      background: rgba(53, 208, 143, 0.12);
-      color: #8df0be;
-    }
-
-    .setup-pill.watch {
-      border-color: rgba(105, 240, 255, 0.42);
-      background: rgba(105, 240, 255, 0.12);
-      color: #9ff7ff;
-    }
-
-    .setup-pill.avoid {
-      border-color: rgba(255, 107, 127, 0.42);
-      background: rgba(255, 107, 127, 0.12);
-      color: #ffb0bc;
-    }
-
-    .setup-pill.insufficient {
-      border-color: rgba(255, 159, 102, 0.42);
-      background: rgba(255, 159, 102, 0.12);
-      color: #ffc49c;
-    }
+    .setup-pill.promising { border-color: rgba(0,255,136,0.4); background: rgba(0,255,136,0.1); color: #8df0be; }
+    .setup-pill.watch { border-color: rgba(0,212,255,0.4); background: rgba(0,212,255,0.1); color: #9ff7ff; }
+    .setup-pill.avoid { border-color: rgba(255,90,110,0.4); background: rgba(255,90,110,0.1); color: #ffb0bc; }
+    .setup-pill.insufficient { border-color: rgba(255,159,102,0.4); background: rgba(255,159,102,0.1); color: #ffc49c; }
 
     .reason-row {
-      padding: 0.9rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(8,18,32,0.88);
+      margin-bottom: 8px;
     }
 
-    @media (max-width: 1400px) {
-      .hero-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .analytics-grid { grid-template-columns: 1fr; }
+    .reason-row:last-child { margin-bottom: 0; }
+
+    /* ---------- SYMBOL PERFORMANCE ---------- */
+    .symbol-list {
+      max-height: 600px;
+      overflow-y: auto;
     }
 
-    @media (max-width: 1180px) {
-      .hero-grid,
-      .split-grid,
-      .analytics-grid,
-      .radar-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .resource-grid,
-      .spotlight-grid,
-      .position-grid {
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      }
+    .symbol-row {
+      padding: 14px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.05);
+      background: rgba(10,20,36,0.85);
+      margin-bottom: 8px;
     }
 
-    @media (max-width: 820px) {
-      .top-navbar {
-        padding: 1rem;
-        flex-direction: column;
-        align-items: stretch;
-      }
+    .symbol-row:last-child { margin-bottom: 0; }
 
-      .dashboard-shell {
-        width: min(100%, calc(100% - 1rem));
-        margin-top: 1rem;
-      }
+    .symbol-row-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
 
-      .hero-panel,
-      .panel {
-        border-radius: 24px;
-      }
+    .symbol-name { font-size: 14px; font-weight: 700; }
 
-      .hero-header,
-      .section-heading,
-      .panel-title-row {
-        flex-direction: column;
-        align-items: stretch;
-      }
+    .symbol-pnl {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 600;
+    }
 
-      .hero-meta { min-width: 0; }
-      .hero-chart-wrap { height: 340px; }
-      .hero-kpi-grid,
-      .metric-grid,
-      .resource-grid,
-      .spotlight-grid,
-      .position-grid,
-      .leaderboard-meta,
-      .setup-meta,
-      .mini-metric-grid,
-      .capital-grid,
-      .symbol-meta-grid,
-      .capital-stats,
-      .position-meta-grid {
-        grid-template-columns: 1fr;
-      }
+    .symbol-bar {
+      height: 6px;
+      border-radius: var(--radius-pill);
+      background: rgba(255,255,255,0.05);
+      overflow: hidden;
+      margin: 10px 0 8px;
+    }
 
-      .log-terminal { min-height: 220px; }
+    .symbol-bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(0,212,255,0.85), rgba(0,255,136,0.9));
+      box-shadow: 0 0 12px rgba(0,212,255,0.3);
+    }
+
+    .symbol-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .symbol-stat {
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    .symbol-stat strong {
+      display: block;
+      margin-top: 1px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    /* ---------- LOG TERMINAL ---------- */
+    .log-terminal {
+      min-height: 240px;
+      max-height: 340px;
+      overflow: auto;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.05);
+      background: rgba(2,6,12,0.95);
+      padding: 14px;
+      color: #8df0b0;
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+
+    /* ---------- HEALTH GAUGES ---------- */
+    .gauge-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+    }
+
+    .gauge-card {
+      text-align: center;
+      padding: 20px 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: rgba(10,20,35,0.88);
+    }
+
+    .gauge-ring {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 10px;
+    }
+
+    .gauge-ring svg {
+      width: 80px;
+      height: 80px;
+      transform: rotate(-90deg);
+    }
+
+    .gauge-ring .bg { stroke: rgba(255,255,255,0.06); }
+    .gauge-ring .fg { transition: stroke-dashoffset 600ms ease; }
+
+    .gauge-ring .gauge-val {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .gauge-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-2);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* Process cards */
+    .process-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .process-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: rgba(10,20,35,0.88);
+    }
+
+    .process-card .proc-name {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .process-card .proc-status {
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    /* ---------- UTILITY ---------- */
+    .tone-pos { color: var(--green); }
+    .tone-neg { color: var(--red); }
+    .tone-neut { color: var(--text-2); }
+    .tone-warn-text { color: var(--yellow); }
+
+    .empty-state {
+      padding: 20px;
+      border-radius: var(--radius);
+      border: 1px dashed rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.015);
+      color: var(--text-2);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .ajax-loading {
+      padding: 20px;
+      border-radius: var(--radius);
+      background: rgba(255,255,255,0.02);
+      color: var(--text-2);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    /* Skeleton animation */
+    .skeleton {
+      background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: var(--radius-sm);
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+
+    /* Focus visible for keyboard a11y */
+    :focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
     }
   </style>
 </head>
 <body>
-  <nav class="top-navbar">
-    <div class="brand-block">
-      <p class="brand-kicker">Crypto AI Bot / {{ instance.label or "Control Room" }}</p>
-      <h1 class="brand-title">Crypto AI Bot</h1>
-      <p class="brand-subtitle">Instancia {{ instance.bot_id or "baseline" }} · porta {{ instance.dashboard_port or "5000" }}</p>
+
+  <!-- ==================== TOP BAR ==================== -->
+  <nav class="topbar" role="navigation">
+    <div class="topbar-brand">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="10" stroke="var(--cyan)" stroke-width="1.5" opacity="0.6"/>
+        <circle cx="12" cy="12" r="5" fill="var(--cyan)" opacity="0.3"/>
+        <circle cx="12" cy="12" r="2" fill="var(--cyan)"/>
+      </svg>
+      <span class="topbar-brand-text">{{ instance.label or "Control Room" }}</span>
+      <span class="topbar-brand-sub">{{ instance.bot_id or "baseline" }} : {{ instance.dashboard_port or "5000" }}</span>
     </div>
 
-    <div class="status-ribbon">
-      <span class="chip">
-        Runtime <strong>{{ instance.bot_id or "baseline" }}</strong>
-      </span>
-      <span class="chip">
-        Versao <strong>{{ instance.version_tag or instance.git_sha or "unknown" }}</strong>
-      </span>
-      <span class="status-pill {% if health.cpu_usage_pct|default(0)|float >= 70 %}tone-warn{% else %}tone-good{% endif %}" id="cpuBadge">
-        <span class="dot"></span>
-        CPU <strong id="cpuValue">{{ "%.0f"|format(health.cpu_usage_pct|default(0)|float) }}%</strong>
-      </span>
-      <span class="status-pill {% if health.ram_usage_pct|default(0)|float >= 80 %}tone-warn{% else %}tone-good{% endif %}" id="ramBadge">
-        <span class="dot"></span>
-        RAM <strong id="ramValue">{{ "%.0f"|format(health.ram_usage_pct|default(0)|float) }}%</strong>
-      </span>
-      <span class="status-pill {% if health.disk_usage_pct|default(0)|float >= 80 %}tone-warn{% else %}tone-good{% endif %}" id="diskBadge">
-        <span class="dot"></span>
-        Disco <strong id="diskValue">{{ "%.0f"|format(health.disk_usage_pct|default(0)|float) }}%</strong>
-      </span>
-      <span class="status-pill {% if health.temperature_c|default(0)|float >= 65 %}tone-warn{% else %}tone-good{% endif %}" id="tempBadge">
-        <span class="dot"></span>
-        Temp <strong id="tempValue">{{ "%.1f"|format(health.temperature_c|default(0)|float) }} C</strong>
-      </span>
-      <span class="chip">
-        Uptime <strong id="uptimeValue">{{ health.uptime|default("N/A") }}</strong>
+    <div class="tab-nav" role="tablist" aria-label="Dashboard tabs" id="mainTabList">
+      <button class="tab-btn" role="tab" aria-selected="true" aria-controls="tab-overview" id="btn-overview" data-tab="overview">
+        <span class="tab-icon">&#9673;</span><span>Overview</span>
+      </button>
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-trading" id="btn-trading" data-tab="trading">
+        <span class="tab-icon">&#8645;</span><span>Trading</span>
+      </button>
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-analytics" id="btn-analytics" data-tab="analytics">
+        <span class="tab-icon">&#9670;</span><span>Analytics</span>
+      </button>
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-system" id="btn-system" data-tab="system">
+        <span class="tab-icon">&#9881;</span><span>System</span>
+      </button>
+    </div>
+
+    <div class="topbar-status" id="overallBadge">
+      <span class="status-dot {% if bot_status.overall == 'healthy' %}ok{% elif bot_status.overall == 'degraded' %}warn{% else %}err{% endif %}" id="overallDot"></span>
+      <span id="overallLabel">
+        {%- if bot_status.overall == "healthy" -%}Healthy
+        {%- elif bot_status.overall == "degraded" -%}Degraded
+        {%- else -%}Offline{%- endif -%}
       </span>
     </div>
 
-    <div class="control-ribbon">
-      <span class="mode-badge {% if bot_status.overall == 'healthy' %}tone-good{% elif bot_status.overall == 'degraded' %}tone-warn{% else %}tone-bad{% endif %}" id="overallBadge">
-        <span class="dot"></span>
-        <strong id="overallLabel">
-          {% if bot_status.overall == "healthy" %}
-            Bot 100% OK
-          {% elif bot_status.overall == "degraded" %}
-            Degradado
-          {% else %}
-            Offline
-          {% endif %}
-        </strong>
-      </span>
-      <span class="chip">
-        Ciclo <strong id="cycleValue">{{ bot_status.last_cycle_ago|default("N/A") }}</strong>
-      </span>
+    <div class="topbar-controls">
       {% if dashboard.paused %}
-      <span class="mode-badge tone-bad"><span class="dot"></span><strong>PAUSADO</strong></span>
-      <form method="post" action="/resume" class="mb-0">
-        <button class="control-button resume">Retomar</button>
+      <form method="post" action="/resume">
+        <button class="btn-ctrl btn-resume" type="submit">Resume</button>
       </form>
       {% else %}
-      <span class="mode-badge tone-good"><span class="dot"></span><strong>RODANDO</strong></span>
-      <form method="post" action="/pause" class="mb-0">
-        <button class="control-button pause">Pausar</button>
+      <form method="post" action="/pause">
+        <button class="btn-ctrl btn-pause" type="submit">Pause</button>
       </form>
       {% endif %}
-      <span class="chip">
-        Atualizado <strong id="refreshStamp">{{ dashboard.last_update }}</strong>
-      </span>
+    </div>
+
+    <div class="topbar-links">
       {% if comparison_url %}
-      <a class="chip chip-link" href="{{ comparison_url }}">
-        Comparacao <strong>{{ comparison_pair_label }}</strong>
-      </a>
+      <a class="chip-link" href="{{ comparison_url }}">Compare <strong>{{ comparison_pair_label }}</strong></a>
       {% endif %}
       {% if audit_url %}
-      <a class="chip chip-link" href="{{ audit_url }}">
-        Auditoria <strong>Scalping</strong>
-      </a>
+      <a class="chip-link" href="{{ audit_url }}">Audit</a>
       {% endif %}
       {% if outcomes_url %}
-      <a class="chip chip-link" href="{{ outcomes_url }}">
-        Outcomes <strong>Scalping</strong>
-      </a>
+      <a class="chip-link" href="{{ outcomes_url }}">Outcomes</a>
       {% endif %}
       {% if scorer_url %}
-      <a class="chip chip-link" href="{{ scorer_url }}">
-        Scorer <strong>Scalping</strong>
-      </a>
+      <a class="chip-link" href="{{ scorer_url }}">Scorer</a>
       {% endif %}
       {% for link in runtime_links %}
-      <a class="chip chip-link {% if link.is_current %}tone-good{% endif %}" href="{{ link.url }}">
+      <a class="chip-link {% if link.is_current %}is-current{% endif %}" href="{{ link.url }}">
         {{ link.label }} <strong>:{{ link.dashboard_port or "?" }}</strong>
       </a>
       {% endfor %}
     </div>
   </nav>
 
-  <main class="dashboard-shell">
-    <section class="hero-grid">
-      <article class="panel hero-panel">
-        <div class="hero-header">
-          <div>
-            <p class="section-eyebrow">Equity Command Center</p>
-            <h2 class="hero-title">Crescimento em destaque, motores orbitando ao redor da curva total.</h2>
-            <p class="hero-subtitle">
-              O dashboard agora prioriza leitura rapida, espaco para a curva respirar e atualizacoes mais suaves,
-              sem travar a navegacao com reload completo.
-            </p>
-          </div>
-          <div class="hero-meta">
-            <span class="chip large-chip" id="heroBestSystemChip">
-              Lider <strong>{{ summary.best_system.key|default("paper")|upper if summary.best_system is defined else "PAPER" }}</strong>
-            </span>
-            <span class="chip large-chip" id="heroOpenPositionsChip">
-              Posicoes <strong>{{ summary.open_positions|default(0) }}</strong>
-            </span>
-          </div>
-        </div>
-        <div class="hero-kpi-grid" id="heroKpiGrid"></div>
-        <div class="hero-chart-note">Curva total com preenchimento; linhas secundarias para cada estrategia.</div>
-        <div class="hero-chart-wrap">
-          <canvas id="pnlChart"></canvas>
-        </div>
-      </article>
+  <!-- ==================== MAIN SHELL ==================== -->
+  <main class="shell">
 
-      <div class="hero-side">
-        <section class="panel">
-          <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+    <!-- ========== TAB 1: OVERVIEW ========== -->
+    <section class="tab-panel active" id="tab-overview" role="tabpanel" aria-labelledby="btn-overview">
+      <div class="kpi-bar" id="heroKpiGrid"></div>
+
+      <div class="card mb-16">
+        <div class="card-header">
+          <div>
+            <span class="eyebrow">Equity Curve</span>
+            <h3>Portfolio P&amp;L</h3>
+          </div>
+          <span class="badge-sm" id="refreshStamp">{{ dashboard.last_update }}</span>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap">
+            <canvas id="pnlChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="capital-grid mb-16" id="capitalGrid"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <span class="eyebrow">Bot Status</span>
+            <h3 id="botStatusTitle">Operational</h3>
+          </div>
+          <span class="badge-sm">Polling 25s</span>
+        </div>
+        <div class="card-body" id="statusSummary"></div>
+      </div>
+    </section>
+
+    <!-- ========== TAB 2: TRADING ========== -->
+    <section class="tab-panel" id="tab-trading" role="tabpanel" aria-labelledby="btn-trading">
+
+      <div class="card mb-16">
+        <div class="card-header">
+          <div>
+            <span class="eyebrow">Live Exposure</span>
+            <h3>Open Positions</h3>
+          </div>
+          <span class="badge-sm" id="positionsCountChip">0 open</span>
+        </div>
+        <div class="card-body" id="positionsContent"></div>
+      </div>
+
+      <div class="card mb-16">
+        <div class="card-header">
+          <div>
+            <span class="eyebrow">Execution Archive</span>
+            <h3>Trade History</h3>
+          </div>
+          <div class="period-group" id="periodBtns">
+            <button class="period-btn active" data-days="0">Today</button>
+            <button class="period-btn" data-days="1">24h</button>
+            <button class="period-btn" data-days="7">7d</button>
+            <button class="period-btn" data-days="30">30d</button>
+          </div>
+        </div>
+        <div class="subtab-row" id="historyTabs">
+          <button class="subtab-btn active" data-system="paper" data-target="histPaper">Paper</button>
+          <button class="subtab-btn" data-system="agent" data-target="histAgent">Agent</button>
+          <button class="subtab-btn" data-system="pump" data-target="histPump">Pump</button>
+          <button class="subtab-btn" data-system="scalping" data-target="histScalping">Scalping</button>
+        </div>
+        <div id="histPaper" class="subtab-pane active"><div id="histPaper_content"></div></div>
+        <div id="histAgent" class="subtab-pane"><div id="histAgent_content"></div></div>
+        <div id="histPump" class="subtab-pane"><div id="histPump_content"></div></div>
+        <div id="histScalping" class="subtab-pane"><div id="histScalping_content"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <span class="eyebrow">Market Coverage</span>
+            <h3>Symbol Ranking (30d)</h3>
+          </div>
+        </div>
+        <div class="card-body" id="symbolContent"></div>
+      </div>
+    </section>
+
+    <!-- ========== TAB 3: ANALYTICS ========== -->
+    <section class="tab-panel" id="tab-analytics" role="tabpanel" aria-labelledby="btn-analytics">
+
+      <div class="metric-grid mb-16" id="metricsGrid"></div>
+
+      <div class="grid-2 mb-16">
+        <div class="card">
+          <div class="card-header">
             <div>
-              <p class="section-eyebrow">Mission Control</p>
-              <h2>Radar operacional</h2>
+              <span class="eyebrow">System Leaderboard</span>
+              <h3>Engine Comparison</h3>
             </div>
-            <span class="chip">Polling 25s</span>
           </div>
-          <div id="statusSummary" style="padding:1rem 1.2rem 1.2rem;"></div>
-        </section>
+          <div class="card-body">
+            <div class="chart-wrap medium" style="margin-bottom:16px;">
+              <canvas id="systemsChart"></canvas>
+            </div>
+            <div id="systemLeaderboard"></div>
+          </div>
+        </div>
 
-        <section class="panel">
-          <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+        <div class="card">
+          <div class="card-header">
             <div>
-              <p class="section-eyebrow">Strategy Spotlight</p>
-              <h2>Quem esta puxando a curva</h2>
+              <span class="eyebrow">Scalping Radar</span>
+              <h3>Decision Funnel</h3>
+            </div>
+            <span class="badge-sm">24h</span>
+          </div>
+          <div class="card-body">
+            <div class="radar-split">
+              <div class="chart-wrap compact">
+                <canvas id="funnelChart"></canvas>
+              </div>
+              <div id="funnelSummary"></div>
             </div>
           </div>
-          <div class="spotlight-grid" id="strategySpotlights" style="padding:1rem 1.2rem 1.2rem;"></div>
-        </section>
-      </div>
-    </section>
-
-    <section class="section-block">
-      <div class="section-heading">
-        <div>
-          <p class="section-eyebrow">Strategies</p>
-          <h2>Capital por motor</h2>
         </div>
-        <span class="chip">Atualiza sem recarregar tudo</span>
       </div>
-      <div class="capital-grid" id="capitalGrid" style="padding:1rem 0 0;"></div>
-    </section>
 
-    <section class="section-block">
-      <div class="metric-grid" id="metricsGrid"></div>
-    </section>
-
-    <section class="section-block">
-      <div class="section-heading">
-        <div>
-          <p class="section-eyebrow">Decision Intelligence</p>
-          <h2>Quem esta performando melhor e como o scalping esta decidindo</h2>
-        </div>
-        <span class="chip" id="researchStampChip">Research --</span>
-      </div>
-      <div class="analytics-grid">
-        <section class="panel chart-panel">
-          <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
             <div>
-              <p class="section-eyebrow">System Leaderboard</p>
-              <h2>Motores em perspectiva</h2>
+              <span class="eyebrow">Research Lab</span>
+              <h3>Signal Quality</h3>
             </div>
-            <span class="chip">Retorno e win rate</span>
+            <span class="badge-sm" id="researchStampChip">Research --</span>
           </div>
-          <div class="panel-chart-wrap medium">
-            <canvas id="systemsChart"></canvas>
+          <div class="card-body">
+            <div class="chart-wrap medium" style="margin-bottom:16px;">
+              <canvas id="researchChart"></canvas>
+            </div>
+            <div class="metric-grid mb-16" id="researchSummary"></div>
+            <div id="topReasonsList"></div>
           </div>
-          <div class="leaderboard-list" id="systemLeaderboard"></div>
-        </section>
+        </div>
 
-        <section class="panel chart-panel">
-          <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+        <div class="card">
+          <div class="card-header">
             <div>
-              <p class="section-eyebrow">Scalping Radar</p>
-              <h2>Funil operacional</h2>
+              <span class="eyebrow">Best Strategy Families</span>
+              <h3>Top Setups (Scorer 30d)</h3>
             </div>
-            <span class="chip">Ultimas 24h</span>
           </div>
-          <div class="radar-grid">
-            <div class="panel-chart-wrap compact">
-              <canvas id="funnelChart"></canvas>
+          <div class="card-body" id="setupLeaderboard"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== TAB 4: SYSTEM ========== -->
+    <section class="tab-panel" id="tab-system" role="tabpanel" aria-labelledby="btn-system">
+
+      <div class="card mb-16">
+        <div class="card-header">
+          <div>
+            <span class="eyebrow">Hardware</span>
+            <h3>Health Metrics</h3>
+          </div>
+          <span class="badge-sm" id="uptimeChip">Uptime: {{ health.uptime|default("N/A") }}</span>
+        </div>
+        <div class="card-body">
+          <div class="gauge-grid" id="gaugeGrid"></div>
+        </div>
+      </div>
+
+      <div class="grid-2 mb-16">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="eyebrow">Processes</span>
+              <h3>Bot Status</h3>
             </div>
-            <div class="stat-stack" id="funnelSummary"></div>
           </div>
-        </section>
-      </div>
-    </section>
+          <div class="card-body">
+            <div class="process-grid" id="processGrid"></div>
+          </div>
+        </div>
 
-    <section class="split-grid">
-      <section class="panel chart-panel">
-        <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="eyebrow">Safety</span>
+              <h3>Circuit Breakers</h3>
+            </div>
+          </div>
+          <div class="card-body" id="circuitBreakers"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
           <div>
-            <p class="section-eyebrow">Research Lab</p>
-            <h2>Qualidade dos sinais observados</h2>
+            <span class="eyebrow">Telemetry</span>
+            <h3>Live Logs</h3>
           </div>
-          <span class="chip">Outcomes + scorer</span>
+          <span class="badge-sm" id="cycleChip">Cycle: {{ bot_status.last_cycle_ago|default("N/A") }}</span>
         </div>
-        <div class="panel-chart-wrap medium">
-          <canvas id="researchChart"></canvas>
+        <div class="subtab-row" id="logTabs">
+          <button class="subtab-btn active" data-source="main" data-target="logMain">Main</button>
+          <button class="subtab-btn" data-source="scalping" data-target="logScalping">Scalping</button>
+          <button class="subtab-btn" data-source="pump" data-target="logPump">Pump</button>
+          <button class="subtab-btn" data-source="supervisor" data-target="logSupervisor">Supervisor</button>
         </div>
-        <div class="mini-metric-grid" id="researchSummary"></div>
-        <div class="reason-list" id="topReasonsList"></div>
-      </section>
-
-      <section class="panel chart-panel">
-        <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
-          <div>
-            <p class="section-eyebrow">Best Strategy Families</p>
-            <h2>Setups mais fortes vistos no laboratorio</h2>
-          </div>
-          <span class="chip">Scorer 30d</span>
+        <div id="logMain" class="subtab-pane active">
+          <div class="log-terminal" id="logMainContent"></div>
         </div>
-        <div class="setup-list" id="setupLeaderboard"></div>
-      </section>
-    </section>
-
-    <section class="split-grid">
-      <section class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="section-eyebrow">Live Exposure</p>
-            <h2>Posicoes abertas</h2>
-          </div>
-          <span class="chip" id="positionsCountChip">0 abertas</span>
+        <div id="logScalping" class="subtab-pane">
+          <div class="log-terminal" id="logScalpingContent">Loading...</div>
         </div>
-        <div id="positionsContent"></div>
-      </section>
-
-      <section class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="section-eyebrow">Market Coverage</p>
-            <h2>Performance por ativo</h2>
-          </div>
-          <span class="chip">Top 30 dias</span>
+        <div id="logPump" class="subtab-pane">
+          <div class="log-terminal" id="logPumpContent">Loading...</div>
         </div>
-        <div id="symbolContent"></div>
-      </section>
-    </section>
-
-    <section class="panel history-panel">
-      <div class="section-heading">
-        <div>
-          <p class="section-eyebrow">Execution Archive</p>
-          <h2>Historico de trades</h2>
+        <div id="logSupervisor" class="subtab-pane">
+          <div class="log-terminal" id="logSupervisorContent">Loading...</div>
         </div>
-        <div class="period-group" id="periodBtns">
-          <button class="period-btn active" data-days="0">Hoje</button>
-          <button class="period-btn" data-days="7">7d</button>
-          <button class="period-btn" data-days="30">30d</button>
-        </div>
-      </div>
-      <ul class="nav nav-tabs history-tabs" id="historyTabs">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#histPaper" data-system="paper">Paper</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#histAgent" data-system="agent">Agent</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#histPump" data-system="pump">Pump</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#histScalping" data-system="scalping">Scalping</button></li>
-      </ul>
-      <div class="tab-content history-content">
-        <div class="tab-pane fade show active" id="histPaper"><div id="histPaper_content" class="history-pane-inner"></div></div>
-        <div class="tab-pane fade" id="histAgent"><div id="histAgent_content" class="history-pane-inner"></div></div>
-        <div class="tab-pane fade" id="histPump"><div id="histPump_content" class="history-pane-inner"></div></div>
-        <div class="tab-pane fade" id="histScalping"><div id="histScalping_content" class="history-pane-inner"></div></div>
       </div>
     </section>
 
-    <section class="panel logs-panel">
-      <div class="section-heading">
-        <div>
-          <p class="section-eyebrow">Telemetry</p>
-          <h2>Logs recentes</h2>
-        </div>
-        <button class="collapse-btn" type="button" data-bs-toggle="collapse" data-bs-target="#logsCollapse" aria-expanded="true">
-          Ocultar/Mostrar
-        </button>
-      </div>
-      <div class="collapse show" id="logsCollapse">
-        <ul class="nav nav-tabs log-tabs" id="logTabs">
-          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#logMain" data-source="main">Main</button></li>
-          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#logScalping" data-source="scalping">Scalping</button></li>
-          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#logPump" data-source="pump">Pump</button></li>
-        </ul>
-        <div class="tab-content log-content">
-          <div class="tab-pane fade show active" id="logMain">
-            <div class="log-terminal" id="logMainContent"></div>
-          </div>
-          <div class="tab-pane fade" id="logScalping">
-            <div class="log-terminal" id="logScalpingContent">Carregando...</div>
-          </div>
-          <div class="tab-pane fade" id="logPump">
-            <div class="log-terminal" id="logPumpContent">Carregando...</div>
-          </div>
-        </div>
-      </div>
-    </section>
   </main>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- ==================== JAVASCRIPT ==================== -->
   <script>
+    /* ===== Constants & State ===== */
     const initialStatus = {{ dashboard | tojson }};
     const systemMeta = {
-      paper: { label: "Paper Trading", color: "#5fb7ff" },
-      agent: { label: "Multi-Agent", color: "#35d08f" },
-      pump: { label: "Pump Scanner", color: "#ff9f66" },
-      scalping: { label: "Scalping", color: "#b592ff" }
+      paper:    { label: "Paper Trading", color: "#5fb7ff" },
+      agent:    { label: "Multi-Agent",   color: "#00ff88" },
+      pump:     { label: "Pump Scanner",  color: "#ff9f66" },
+      scalping: { label: "Scalping",      color: "#a78bfa" }
     };
 
     const currencyFormatter = new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      style: "currency", currency: "USD",
+      minimumFractionDigits: 2, maximumFractionDigits: 2
     });
 
     let dashboardState = initialStatus;
@@ -1363,251 +1421,254 @@
     let currentPeriod = 0;
     let activeLogSource = "main";
 
-    function safeNumber(value, fallback = 0) {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : fallback;
+    /* ===== Utility Functions ===== */
+    function safeNumber(v, fb = 0) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fb;
     }
 
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
+    function escapeHtml(v) {
+      return String(v ?? "")
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
     }
 
-    function formatMoney(value) {
-      return currencyFormatter.format(safeNumber(value));
+    function formatMoney(v) { return currencyFormatter.format(safeNumber(v)); }
+
+    function formatPct(v, d = 2) {
+      const n = safeNumber(v);
+      return `${n >= 0 ? "+" : ""}${n.toFixed(d)}%`;
     }
 
-    function formatPct(value, digits = 2) {
-      const num = safeNumber(value);
-      return `${num >= 0 ? "+" : ""}${num.toFixed(digits)}%`;
-    }
-
-    function toneClass(value) {
-      const num = safeNumber(value);
-      if (num > 0) return "tone-positive";
-      if (num < 0) return "tone-negative";
-      return "tone-neutral";
+    function toneClass(v) {
+      const n = safeNumber(v);
+      return n > 0 ? "tone-pos" : n < 0 ? "tone-neg" : "tone-neut";
     }
 
     function withAlpha(color, alpha = 1) {
       const hex = String(color || "").replace("#", "");
       if (hex.length === 6) {
-        const red = parseInt(hex.slice(0, 2), 16);
-        const green = parseInt(hex.slice(2, 4), 16);
-        const blue = parseInt(hex.slice(4, 6), 16);
-        return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+        const r = parseInt(hex.slice(0, 2), 16);
+        const g = parseInt(hex.slice(2, 4), 16);
+        const b = parseInt(hex.slice(4, 6), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
       }
       return color;
     }
 
-    function recommendationLabel(value) {
-      const normalized = String(value || "").toLowerCase();
-      if (normalized === "promising") return "Promissora";
-      if (normalized === "watch") return "Monitorar";
-      if (normalized === "avoid") return "Evitar";
-      return "Amostra curta";
+    function recommendationLabel(v) {
+      const s = String(v || "").toLowerCase();
+      if (s === "promising") return "Promising";
+      if (s === "watch") return "Watch";
+      if (s === "avoid") return "Avoid";
+      return "Low Sample";
     }
 
-    function recommendationClass(value) {
-      const normalized = String(value || "").toLowerCase();
-      if (["promising", "watch", "avoid", "insufficient"].includes(normalized)) {
-        return normalized;
+    function recommendationClass(v) {
+      const s = String(v || "").toLowerCase();
+      return ["promising", "watch", "avoid", "insufficient"].includes(s) ? s : "insufficient";
+    }
+
+    function levelClass(v, warn, crit) {
+      const n = safeNumber(v);
+      if (n >= crit) return "err";
+      if (n >= warn) return "warn";
+      return "ok";
+    }
+
+    function gaugeColor(v, warn, crit) {
+      const n = safeNumber(v);
+      if (n >= crit) return "var(--red)";
+      if (n >= warn) return "var(--yellow)";
+      return "var(--cyan)";
+    }
+
+    /* ===== Tab Navigation ===== */
+    function initTabs() {
+      const btns = document.querySelectorAll("#mainTabList .tab-btn");
+      const panels = document.querySelectorAll(".tab-panel");
+
+      function activate(tabId) {
+        btns.forEach(b => {
+          const selected = b.dataset.tab === tabId;
+          b.setAttribute("aria-selected", selected);
+        });
+        panels.forEach(p => p.classList.toggle("active", p.id === "tab-" + tabId));
       }
-      return "insufficient";
+
+      btns.forEach(btn => {
+        btn.addEventListener("click", () => activate(btn.dataset.tab));
+      });
+
+      // Keyboard navigation: arrow keys
+      document.getElementById("mainTabList").addEventListener("keydown", (e) => {
+        const tabs = [...btns];
+        const idx = tabs.indexOf(document.activeElement);
+        if (idx < 0) return;
+        let next = idx;
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") { next = (idx + 1) % tabs.length; e.preventDefault(); }
+        if (e.key === "ArrowLeft" || e.key === "ArrowUp") { next = (idx - 1 + tabs.length) % tabs.length; e.preventDefault(); }
+        if (next !== idx) {
+          tabs[next].focus();
+          tabs[next].click();
+        }
+      });
     }
 
-    function levelClass(value, warn, crit) {
-      const num = safeNumber(value);
-      if (num >= crit) return "tone-bad";
-      if (num >= warn) return "tone-warn";
-      return "tone-good";
+    /* ===== Subtab Navigation (history, logs) ===== */
+    function initSubtabs(containerSel, onChange) {
+      const container = document.querySelector(containerSel);
+      if (!container) return;
+      const btns = container.querySelectorAll(".subtab-btn");
+
+      btns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          btns.forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          const parent = container.parentElement;
+          parent.querySelectorAll(".subtab-pane").forEach(p => p.classList.remove("active"));
+          const target = parent.querySelector("#" + btn.dataset.target);
+          if (target) target.classList.add("active");
+          if (onChange) onChange(btn);
+        });
+      });
     }
 
-    function setBadgeState(id, value, suffix, warn, crit, digits = 0) {
-      const badge = document.getElementById(id);
-      if (!badge) return;
-      const numeric = safeNumber(value);
-      const cls = levelClass(numeric, warn, crit);
-      badge.classList.remove("tone-good", "tone-warn", "tone-bad");
-      badge.classList.add(cls);
-      const strong = badge.querySelector("strong");
-      if (strong) {
-        strong.textContent = `${numeric.toFixed(digits)}${suffix}`;
-      }
-    }
-
+    /* ===== Render: Header / Status ===== */
     function renderHeader(status) {
       const health = status.health || {};
       const bot = status.bot_status || {};
 
-      setBadgeState("cpuBadge", health.cpu_usage_pct, "%", 70, 90, 0);
-      setBadgeState("ramBadge", health.ram_usage_pct, "%", 80, 90, 0);
-      setBadgeState("diskBadge", health.disk_usage_pct, "%", 80, 90, 0);
-      setBadgeState("tempBadge", health.temperature_c, " C", 65, 75, 1);
-
-      document.getElementById("uptimeValue").textContent = health.uptime || "N/A";
-      document.getElementById("cycleValue").textContent = bot.last_cycle_ago || "N/A";
-      document.getElementById("refreshStamp").textContent = status.last_update || "";
-
-      const overallBadge = document.getElementById("overallBadge");
-      const overallLabel = document.getElementById("overallLabel");
-      if (overallBadge && overallLabel) {
-        overallBadge.classList.remove("tone-good", "tone-warn", "tone-bad");
-        let label = "Offline";
-        let cls = "tone-bad";
+      // Overall badge
+      const dot = document.getElementById("overallDot");
+      const label = document.getElementById("overallLabel");
+      if (dot && label) {
+        dot.className = "status-dot";
         if (bot.overall === "healthy") {
-          label = "Bot 100% OK";
-          cls = "tone-good";
+          dot.classList.add("ok");
+          label.textContent = "Healthy";
         } else if (bot.overall === "degraded") {
-          label = bot.errors_today > 0 ? `Degradado (${bot.errors_today} erros)` : "Degradado";
-          cls = "tone-warn";
+          dot.classList.add("warn");
+          label.textContent = bot.errors_today > 0 ? `Degraded (${bot.errors_today} errs)` : "Degraded";
+        } else {
+          dot.classList.add("err");
+          label.textContent = "Offline";
         }
-        overallBadge.classList.add(cls);
-        overallLabel.textContent = label;
       }
+
+      // Stamps
+      const rs = document.getElementById("refreshStamp");
+      if (rs) rs.textContent = status.last_update || "";
+      const cc = document.getElementById("cycleChip");
+      if (cc) cc.textContent = "Cycle: " + (bot.last_cycle_ago || "N/A");
+      const uc = document.getElementById("uptimeChip");
+      if (uc) uc.textContent = "Uptime: " + (health.uptime || "N/A");
     }
 
+    /* ===== Render: KPI Bar (Overview) ===== */
     function renderHero(status) {
-      const summary = status.summary || {};
-      const best = summary.best_system || {};
-      const bestMeta = systemMeta[best.key] || systemMeta.paper;
-      const heroKpiGrid = document.getElementById("heroKpiGrid");
-      heroKpiGrid.innerHTML = `
-        <div class="hero-kpi-card">
-          <div class="hero-kpi-label">Capital Total</div>
-          <div class="hero-kpi-value">${formatMoney(summary.portfolio_value)}</div>
-          <div class="capital-subline ${toneClass(summary.portfolio_ret)}">${formatPct(summary.portfolio_ret)}</div>
+      const s = status.summary || {};
+      const g = document.getElementById("heroKpiGrid");
+      if (!g) return;
+      g.innerHTML = `
+        <div class="kpi-card">
+          <div class="kpi-label">Portfolio Value</div>
+          <div class="kpi-value">${formatMoney(s.portfolio_value)}</div>
+          <div class="kpi-sub ${toneClass(s.portfolio_ret)}">${formatPct(s.portfolio_ret)}</div>
         </div>
-        <div class="hero-kpi-card">
-          <div class="hero-kpi-label">P&amp;L Hoje</div>
-          <div class="hero-kpi-value ${toneClass(summary.today_pnl_usd)}">${formatMoney(summary.today_pnl_usd)}</div>
-          <div class="capital-subline">Somando todos os motores</div>
+        <div class="kpi-card">
+          <div class="kpi-label">Today's P&amp;L</div>
+          <div class="kpi-value ${toneClass(s.today_pnl_usd)}">${formatMoney(s.today_pnl_usd)}</div>
+          <div class="kpi-sub">All engines combined</div>
         </div>
-        <div class="hero-kpi-card">
-          <div class="hero-kpi-label">Pico Curva 30d</div>
-          <div class="hero-kpi-value">${formatMoney(summary.curve_peak)}</div>
-          <div class="capital-subline">Valor maximo da curva acumulada</div>
+        <div class="kpi-card">
+          <div class="kpi-label">Win Rate (30d)</div>
+          <div class="kpi-value">${safeNumber((status.metrics||{}).win_rate).toFixed(1)}%</div>
+          <div class="kpi-sub">${safeNumber((status.metrics||{}).total_trades)} trades</div>
         </div>
-        <div class="hero-kpi-card">
-          <div class="hero-kpi-label">Drawdown do Pico</div>
-          <div class="hero-kpi-value ${summary.curve_drawdown > 0 ? "tone-negative" : "tone-neutral"}">${formatMoney(summary.curve_drawdown)}</div>
-          <div class="capital-subline">Diferenca para o topo recente</div>
+        <div class="kpi-card">
+          <div class="kpi-label">Open Positions</div>
+          <div class="kpi-value">${safeNumber(s.open_positions)}</div>
+          <div class="kpi-sub">Leader: ${escapeHtml(((s.best_system||{}).key||"paper").toUpperCase())}</div>
         </div>
       `;
-
-      document.getElementById("heroBestSystemChip").innerHTML = `Lider <strong style="color:${bestMeta.color};">${escapeHtml(bestMeta.label)}</strong>`;
-      document.getElementById("heroOpenPositionsChip").innerHTML = `Posicoes <strong>${safeNumber(summary.open_positions)}</strong>`;
     }
 
+    /* ===== Render: Status Summary (Overview) ===== */
     function renderStatusSummary(status) {
-      const health = status.health || {};
       const bot = status.bot_status || {};
       const summary = status.summary || {};
       const best = summary.best_system || {};
-      const bestMeta = systemMeta[best.key] || systemMeta.paper;
+      const meta = systemMeta[best.key] || systemMeta.paper;
       const experiment = (status.instance || {}).scalping_experiment || {};
-      const experimentFlags = [
+      const flags = [
         experiment.force_entries ? "force entries" : "",
         experiment.ignore_risk_filters ? "risk off" : "",
-        experiment.disable_ai_gate ? "IA off" : "",
+        experiment.disable_ai_gate ? "AI off" : "",
         experiment.disable_cooldown ? "cooldown off" : "",
         experiment.audit_enabled ? "audit on" : ""
       ].filter(Boolean);
-      const resources = [
-        { label: "CPU", value: safeNumber(health.cpu_usage_pct), suffix: "%" },
-        { label: "RAM", value: safeNumber(health.ram_usage_pct), suffix: "%" },
-        { label: "Disco", value: safeNumber(health.disk_usage_pct), suffix: "%" },
-        { label: "Temp", value: safeNumber(health.temperature_c), suffix: " C" }
-      ];
 
-      document.getElementById("statusSummary").innerHTML = `
-        <div class="resource-card" style="margin-bottom:1rem;">
-          <div class="resource-label">Status geral</div>
-          <div class="resource-value ${bot.overall === "healthy" ? "tone-positive" : bot.overall === "degraded" ? "tone-warn" : "tone-negative"}">
-            ${bot.overall === "healthy" ? "Tudo sincronizado" : bot.overall === "degraded" ? "Operando com alerta" : "Intervencao necessaria"}
+      const el = document.getElementById("statusSummary");
+      if (!el) return;
+
+      const title = document.getElementById("botStatusTitle");
+      if (title) {
+        title.textContent = bot.overall === "healthy" ? "All Systems Go" : bot.overall === "degraded" ? "Degraded" : "Intervention Needed";
+      }
+
+      el.innerHTML = `
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px;">
+          <div class="mini-stat">
+            <div class="mini-stat-label">Overall</div>
+            <strong class="${bot.overall==='healthy' ? 'tone-pos' : bot.overall==='degraded' ? 'tone-warn-text' : 'tone-neg'}">${escapeHtml(bot.overall || "unknown")}</strong>
           </div>
-          <div class="resource-subline">
-            Ultimo ciclo ${escapeHtml(bot.last_cycle_ago || "N/A")} · Erros hoje ${safeNumber(bot.errors_today)}
+          <div class="mini-stat">
+            <div class="mini-stat-label">Last Cycle</div>
+            <strong>${escapeHtml(bot.last_cycle_ago || "N/A")}</strong>
           </div>
-        </div>
-        <div class="resource-grid">
-          ${resources.map(resource => `
-            <div class="resource-card">
-              <div class="resource-label">${resource.label}</div>
-              <strong>${resource.value.toFixed(resource.label === "Temp" ? 1 : 0)}${resource.suffix}</strong>
-              <div class="resource-subline">${resource.label === "Temp" ? "Temperatura atual" : "Uso atual do sistema"}</div>
-            </div>
-          `).join("")}
-          <div class="resource-card">
-            <div class="resource-label">Curva lider</div>
-            <strong style="color:${bestMeta.color};">${escapeHtml(bestMeta.label)}</strong>
-            <div class="resource-subline">${formatPct(best.ret)} retorno · ${formatMoney(best.value)}</div>
+          <div class="mini-stat">
+            <div class="mini-stat-label">Errors Today</div>
+            <strong>${safeNumber(bot.errors_today)}</strong>
           </div>
-          <div class="resource-card">
-            <div class="resource-label">Uptime</div>
-            <strong>${escapeHtml(health.uptime || "N/A")}</strong>
-            <div class="resource-subline">Bot supervisor + motores ativos</div>
+          <div class="mini-stat">
+            <div class="mini-stat-label">Leader</div>
+            <strong style="color:${meta.color};">${escapeHtml(meta.label)}</strong>
           </div>
-          <div class="resource-card">
-            <div class="resource-label">Modo Scalping</div>
-            <strong>${experimentFlags.length ? "Experimental" : "Padrao"}</strong>
-            <div class="resource-subline">${escapeHtml(experimentFlags.slice(0, 4).join(" · ") || "Gates normais ativos")}</div>
+          <div class="mini-stat">
+            <div class="mini-stat-label">Scalping Mode</div>
+            <strong>${flags.length ? "Experimental" : "Standard"}</strong>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-label">Curve Peak</div>
+            <strong>${formatMoney(summary.curve_peak)}</strong>
           </div>
         </div>
       `;
     }
 
-    function renderStrategySpotlights(status) {
-      const container = document.getElementById("strategySpotlights");
-      const capital = status.capital || {};
-      const statsToday = status.stats_today || {};
-      const ordered = Object.entries(capital)
-        .map(([key, value]) => ({ key, ...value }))
-        .sort((a, b) => safeNumber(b.ret) - safeNumber(a.ret));
-
-      container.innerHTML = ordered.map(system => {
-        const meta = systemMeta[system.key];
-        const day = statsToday[system.key] || {};
-        return `
-          <div class="spotlight-card">
-            <div class="spotlight-card-top">
-              <span class="system-badge">
-                <span class="system-dot" style="color:${meta.color};background:${meta.color};"></span>
-                ${escapeHtml(meta.label)}
-              </span>
-              <span class="${toneClass(system.ret)}">${formatPct(system.ret)}</span>
-            </div>
-            <div class="spotlight-value" style="margin-top:0.85rem;">${formatMoney(system.value)}</div>
-            <div class="spotlight-subline">${safeNumber(day.count)} trades hoje · ${formatMoney(day.pnl_usd)}</div>
-          </div>
-        `;
-      }).join("");
-    }
-
+    /* ===== Render: Capital Grid (Overview) ===== */
     function renderCapitalGrid(status) {
-      const container = document.getElementById("capitalGrid");
+      const el = document.getElementById("capitalGrid");
+      if (!el) return;
       const capital = status.capital || {};
       const statsToday = status.stats_today || {};
 
-      container.innerHTML = Object.entries(systemMeta).map(([key, meta]) => {
-        const system = capital[key] || {};
+      el.innerHTML = Object.entries(systemMeta).map(([key, meta]) => {
+        const sys = capital[key] || {};
         const day = statsToday[key] || {};
         return `
           <div class="capital-card">
-            <div class="capital-card-header">
-              <span class="system-badge">
-                <span class="system-dot" style="color:${meta.color};background:${meta.color};"></span>
+            <div class="capital-card-head">
+              <span class="sys-badge">
+                <span class="sys-dot" style="color:${meta.color};background:${meta.color};"></span>
                 ${escapeHtml(meta.label)}
               </span>
-              ${system.cb ? '<span class="chip tone-bad">CB ativo</span>' : '<span class="chip">Estavel</span>'}
+              ${sys.cb ? '<span class="badge-sm tone-neg">CB Active</span>' : '<span class="badge-sm">Stable</span>'}
             </div>
-            <div class="capital-label" style="margin-top:1rem;">Capital atual</div>
-            <div class="capital-value">${formatMoney(system.value)}</div>
-            <div class="capital-subline ${toneClass(system.ret)}">${formatPct(system.ret)}</div>
+            <div class="capital-val">${formatMoney(sys.value)}</div>
+            <div class="capital-ret ${toneClass(sys.ret)}">${formatPct(sys.ret)}</div>
             <div class="capital-stats">
               <div class="capital-stat">Trades<strong>${safeNumber(day.count)}</strong></div>
               <div class="capital-stat">P&amp;L<strong class="${toneClass(day.pnl_usd)}">${formatMoney(day.pnl_usd)}</strong></div>
@@ -1618,344 +1679,272 @@
       }).join("");
     }
 
+    /* ===== Render: Metrics (Analytics) ===== */
     function renderMetrics(status) {
-      const container = document.getElementById("metricsGrid");
-      const metrics = status.metrics || {};
+      const el = document.getElementById("metricsGrid");
+      if (!el) return;
+      const m = status.metrics || {};
       const cards = [
-        { label: "Win Rate", value: `${safeNumber(metrics.win_rate).toFixed(1)}%`, accent: "#5fb7ff" },
-        { label: "Profit Factor", value: safeNumber(metrics.profit_factor).toFixed(2), accent: "#35d08f" },
-        { label: "Max Drawdown", value: `${safeNumber(metrics.max_drawdown_pct).toFixed(2)}%`, accent: "#ff6b7f" },
-        { label: "Trades 30d", value: safeNumber(metrics.total_trades), accent: "#69f0ff" },
-        { label: "Melhor Trade", value: formatPct(metrics.largest_win), accent: "#35d08f", tone: toneClass(metrics.largest_win) },
-        { label: "Pior Trade", value: formatPct(metrics.largest_loss), accent: "#ff9f66", tone: toneClass(metrics.largest_loss) }
+        { label: "Win Rate",       value: `${safeNumber(m.win_rate).toFixed(1)}%`,           accent: "var(--blue)" },
+        { label: "Profit Factor",  value: safeNumber(m.profit_factor).toFixed(2),            accent: "var(--green)" },
+        { label: "Max Drawdown",   value: `${safeNumber(m.max_drawdown_pct).toFixed(2)}%`,   accent: "var(--red)" },
+        { label: "Trades 30d",     value: safeNumber(m.total_trades),                        accent: "var(--cyan)" },
+        { label: "Best Trade",     value: formatPct(m.largest_win),                          accent: "var(--green)", tone: toneClass(m.largest_win) },
+        { label: "Worst Trade",    value: formatPct(m.largest_loss),                         accent: "var(--orange)", tone: toneClass(m.largest_loss) }
       ];
 
-      container.innerHTML = cards.map(card => `
-        <div class="metric-card" style="--accent:${card.accent};">
-          <div class="metric-label">${card.label}</div>
-          <div class="metric-value ${card.tone || ""}">${card.value}</div>
+      el.innerHTML = cards.map(c => `
+        <div class="metric-card" style="--accent:${c.accent};">
+          <div class="metric-label">${c.label}</div>
+          <div class="metric-value ${c.tone || ""}">${c.value}</div>
         </div>
       `).join("");
     }
 
+    /* ===== Render: Positions (Trading) ===== */
     function renderPositions(status) {
-      const container = document.getElementById("positionsContent");
+      const el = document.getElementById("positionsContent");
+      if (!el) return;
       const positions = status.positions || [];
-      document.getElementById("positionsCountChip").textContent = `${positions.length} abertas`;
+      const chip = document.getElementById("positionsCountChip");
+      if (chip) chip.textContent = `${positions.length} open`;
 
       if (!positions.length) {
-        container.innerHTML = '<div class="empty-state">Nenhuma posicao aberta no momento. Quando houver exposicao, este bloco vira um mural de cards com P&amp;L ao vivo.</div>';
+        el.innerHTML = '<div class="empty-state">No open positions right now. Cards will appear here when there is live exposure.</div>';
         return;
       }
 
-      container.innerHTML = `
-        <div class="position-grid">
-          ${positions.map(position => {
-            const key = String(position.system || "").toLowerCase();
-            const meta = systemMeta[key] || { label: position.system || "Sistema", color: "#69f0ff" };
-            const sideClass = String(position.type || "").toUpperCase() === "SHORT" ? "side-short" : "side-long";
-            const pnl = position.pnl_pct;
-            return `
-              <article class="position-card">
-                <div class="position-card-top">
-                  <span class="system-badge">
-                    <span class="system-dot" style="color:${meta.color};background:${meta.color};"></span>
-                    ${escapeHtml(position.system || meta.label)}
-                  </span>
-                  <span class="side-badge ${sideClass}">${escapeHtml(position.type || "--")}</span>
-                </div>
-                <div>
-                  <div class="position-symbol">${escapeHtml(position.symbol || "--")}</div>
-                  <div class="position-main-value ${toneClass(pnl)}">${pnl == null ? "--" : formatPct(pnl)}</div>
-                </div>
-                <div class="position-meta-grid">
-                  <div class="position-meta">Entrada<strong>${position.entry_price ? safeNumber(position.entry_price).toFixed(4) : "--"}</strong></div>
-                  <div class="position-meta">Atual<strong>${position.current_price ? safeNumber(position.current_price).toFixed(4) : "--"}</strong></div>
-                  <div class="position-meta">Stop<strong>${position.sl_price ? safeNumber(position.sl_price).toFixed(4) : "--"}</strong></div>
-                  <div class="position-meta">Take<strong>${position.tp_price ? safeNumber(position.tp_price).toFixed(4) : "--"}</strong></div>
-                </div>
-                <div class="position-tags">
-                  ${position.leverage ? `<span class="mini-tag">${escapeHtml(position.leverage)}x</span>` : ""}
-                  ${position.confluence_score ? `<span class="mini-tag">CS ${safeNumber(position.confluence_score).toFixed(0)}</span>` : ""}
-                  ${position.position_size_usd ? `<span class="mini-tag">${formatMoney(position.position_size_usd)}</span>` : ""}
-                  ${position.analyst_confidence != null ? `<span class="mini-tag">Conf ${safeNumber(position.analyst_confidence).toFixed(0)}%</span>` : ""}
-                  ${position.tp1_hit ? '<span class="mini-tag">TP1 OK</span>' : ""}
-                </div>
-              </article>
-            `;
-          }).join("")}
-        </div>
-      `;
+      el.innerHTML = `<div class="position-grid">${positions.map(p => {
+        const key = String(p.system || "").toLowerCase();
+        const meta = systemMeta[key] || { label: p.system || "System", color: "#00d4ff" };
+        const sideC = String(p.type||"").toUpperCase() === "SHORT" ? "side-short" : "side-long";
+        return `
+          <article class="position-card">
+            <div class="position-top">
+              <span class="sys-badge">
+                <span class="sys-dot" style="color:${meta.color};background:${meta.color};"></span>
+                ${escapeHtml(p.system || meta.label)}
+              </span>
+              <span class="side-badge ${sideC}">${escapeHtml(p.type || "--")}</span>
+            </div>
+            <div>
+              <div class="position-symbol">${escapeHtml(p.symbol || "--")}</div>
+              <div class="position-pnl ${toneClass(p.pnl_pct)}">${p.pnl_pct == null ? "--" : formatPct(p.pnl_pct)}</div>
+            </div>
+            <div class="position-meta-grid">
+              <div class="pos-meta">Entry<strong>${p.entry_price ? safeNumber(p.entry_price).toFixed(4) : "--"}</strong></div>
+              <div class="pos-meta">Current<strong>${p.current_price ? safeNumber(p.current_price).toFixed(4) : "--"}</strong></div>
+              <div class="pos-meta">Stop<strong>${p.sl_price ? safeNumber(p.sl_price).toFixed(4) : "--"}</strong></div>
+              <div class="pos-meta">Take<strong>${p.tp_price ? safeNumber(p.tp_price).toFixed(4) : "--"}</strong></div>
+            </div>
+            <div class="tag-row">
+              ${p.leverage ? `<span class="mini-tag">${escapeHtml(p.leverage)}x</span>` : ""}
+              ${p.confluence_score ? `<span class="mini-tag">CS ${safeNumber(p.confluence_score).toFixed(0)}</span>` : ""}
+              ${p.position_size_usd ? `<span class="mini-tag">${formatMoney(p.position_size_usd)}</span>` : ""}
+              ${p.analyst_confidence != null ? `<span class="mini-tag">Conf ${safeNumber(p.analyst_confidence).toFixed(0)}%</span>` : ""}
+              ${p.tp1_hit ? '<span class="mini-tag">TP1 OK</span>' : ""}
+            </div>
+          </article>
+        `;
+      }).join("")}</div>`;
     }
 
+    /* ===== Render: Symbol Performance (Trading) ===== */
     function renderSymbolPerformance(status) {
-      const container = document.getElementById("symbolContent");
+      const el = document.getElementById("symbolContent");
+      if (!el) return;
       const symbols = status.by_symbol || [];
 
       if (!symbols.length) {
-        container.innerHTML = '<div class="empty-state">Ainda nao ha trades suficientes para montar o ranking por ativo.</div>';
+        el.innerHTML = '<div class="empty-state">Not enough trades yet to build a symbol ranking.</div>';
         return;
       }
 
-      container.innerHTML = `
-        <div class="symbol-list">
-          ${symbols.map(item => {
-            const trades = safeNumber(item.trades);
-            const wins = safeNumber(item.wins);
-            const losses = safeNumber(item.losses);
-            const winRate = trades ? (wins / trades) * 100 : 0;
-            const width = Math.min(100, Math.max(winRate, 6));
-            return `
-              <article class="symbol-row">
-                <div class="symbol-row-top">
-                  <div>
-                    <div class="symbol-row-title">${escapeHtml(item.symbol)}</div>
-                    <div class="symbol-meta">${trades} trades nos ultimos 30 dias</div>
-                  </div>
-                  <div class="symbol-row-pnl ${toneClass(item.total_pnl)}">${formatMoney(item.total_pnl)}</div>
-                </div>
-                <div class="symbol-bar"><span style="width:${width}%;"></span></div>
-                <div class="symbol-meta-grid">
-                  <div class="symbol-meta">Wins<strong>${wins}</strong></div>
-                  <div class="symbol-meta">Losses<strong>${losses}</strong></div>
-                  <div class="symbol-meta">Media<strong class="${toneClass(item.avg_pnl_pct)}">${formatPct(item.avg_pnl_pct)}</strong></div>
-                </div>
-              </article>
-            `;
-          }).join("")}
-        </div>
-      `;
-    }
-
-    function renderSystemLeaderboard(status) {
-      const container = document.getElementById("systemLeaderboard");
-      if (!container) return;
-      const rows = (((status.insights || {}).system_leaderboard) || []).slice(0, 4);
-
-      if (!rows.length) {
-        container.innerHTML = '<div class="empty-state" style="margin:0;">Ainda nao ha dados suficientes para comparar os motores.</div>';
-        return;
-      }
-
-      const maxAbsReturn = Math.max(...rows.map(item => Math.abs(safeNumber(item.return_pct))), 1);
-      container.innerHTML = rows.map(item => {
-        const meterWidth = Math.max(10, (Math.abs(safeNumber(item.return_pct)) / maxAbsReturn) * 100);
+      el.innerHTML = `<div class="symbol-list">${symbols.map(item => {
+        const trades = safeNumber(item.trades);
+        const wins = safeNumber(item.wins);
+        const losses = safeNumber(item.losses);
+        const wr = trades ? (wins / trades) * 100 : 0;
+        const w = Math.min(100, Math.max(wr, 6));
         return `
-          <article class="leaderboard-row">
-            <div class="leaderboard-head">
+          <article class="symbol-row">
+            <div class="symbol-row-top">
               <div>
-                <div class="leaderboard-title" style="color:${item.color};">${escapeHtml(item.label)}</div>
-                <div class="leaderboard-subline">${safeNumber(item.total_trades)} trades 30d · PF ${safeNumber(item.profit_factor).toFixed(2)} · DD ${safeNumber(item.max_drawdown_pct).toFixed(2)}%</div>
+                <div class="symbol-name">${escapeHtml(item.symbol)}</div>
+                <div class="symbol-stat">${trades} trades in 30d</div>
               </div>
-              <div class="${toneClass(item.return_pct)}"><strong>${formatPct(item.return_pct)}</strong></div>
+              <div class="symbol-pnl ${toneClass(item.total_pnl)}">${formatMoney(item.total_pnl)}</div>
             </div>
-            <div class="leaderboard-meter">
-              <span style="width:${meterWidth}%; background:linear-gradient(90deg, ${withAlpha(item.color, 0.96)}, rgba(105, 240, 255, 0.9));"></span>
-            </div>
-            <div class="leaderboard-meta">
-              <div class="mini-stat">
-                <div class="mini-stat-label">Capital</div>
-                <strong>${formatMoney(item.capital_value)}</strong>
-              </div>
-              <div class="mini-stat">
-                <div class="mini-stat-label">Win Rate</div>
-                <strong>${safeNumber(item.win_rate).toFixed(1)}%</strong>
-              </div>
-              <div class="mini-stat">
-                <div class="mini-stat-label">Hoje</div>
-                <strong class="${toneClass(item.today_pnl_usd)}">${formatMoney(item.today_pnl_usd)}</strong>
-              </div>
+            <div class="symbol-bar"><span style="width:${w}%;"></span></div>
+            <div class="symbol-stats">
+              <div class="symbol-stat">Wins<strong>${wins}</strong></div>
+              <div class="symbol-stat">Losses<strong>${losses}</strong></div>
+              <div class="symbol-stat">Avg<strong class="${toneClass(item.avg_pnl_pct)}">${formatPct(item.avg_pnl_pct)}</strong></div>
             </div>
           </article>
+        `;
+      }).join("")}</div>`;
+    }
+
+    /* ===== Render: System Leaderboard (Analytics) ===== */
+    function renderSystemLeaderboard(status) {
+      const el = document.getElementById("systemLeaderboard");
+      if (!el) return;
+      const rows = (((status.insights||{}).system_leaderboard)||[]).slice(0, 4);
+
+      if (!rows.length) {
+        el.innerHTML = '<div class="empty-state">Not enough data to compare engines yet.</div>';
+        return;
+      }
+
+      const maxR = Math.max(...rows.map(r => Math.abs(safeNumber(r.return_pct))), 1);
+      el.innerHTML = rows.map(r => {
+        const w = Math.max(10, (Math.abs(safeNumber(r.return_pct)) / maxR) * 100);
+        return `
+          <div class="lb-row">
+            <div class="lb-head">
+              <div>
+                <div class="lb-title" style="color:${r.color};">${escapeHtml(r.label)}</div>
+                <div class="lb-sub">${safeNumber(r.total_trades)} trades 30d &middot; PF ${safeNumber(r.profit_factor).toFixed(2)} &middot; DD ${safeNumber(r.max_drawdown_pct).toFixed(2)}%</div>
+              </div>
+              <span class="${toneClass(r.return_pct)}"><strong>${formatPct(r.return_pct)}</strong></span>
+            </div>
+            <div class="lb-meter"><span style="width:${w}%; background:linear-gradient(90deg, ${withAlpha(r.color, 0.95)}, var(--cyan));"></span></div>
+            <div class="lb-stats">
+              <div class="mini-stat"><div class="mini-stat-label">Capital</div><strong>${formatMoney(r.capital_value)}</strong></div>
+              <div class="mini-stat"><div class="mini-stat-label">Win Rate</div><strong>${safeNumber(r.win_rate).toFixed(1)}%</strong></div>
+              <div class="mini-stat"><div class="mini-stat-label">Today</div><strong class="${toneClass(r.today_pnl_usd)}">${formatMoney(r.today_pnl_usd)}</strong></div>
+            </div>
+          </div>
         `;
       }).join("");
     }
 
+    /* ===== Render: Funnel Summary (Analytics) ===== */
     function renderFunnelSummary(status) {
-      const container = document.getElementById("funnelSummary");
-      if (!container) return;
-
+      const el = document.getElementById("funnelSummary");
+      if (!el) return;
       const funnel = status.scalping_funnel || {};
-      const breakdown = funnel.breakdown || {};
-      const outcomes = ((((status.insights || {}).research) || {}).outcomes_summary) || {};
+      const bd = funnel.breakdown || {};
+      const outcomes = ((((status.insights||{}).research)||{}).outcomes_summary) || {};
       const total = safeNumber(funnel.total);
-      const opened = safeNumber(breakdown.opened);
-      const confluenceBlocked = safeNumber(breakdown.confluence_block);
-      const extraBlocks = safeNumber(breakdown.ai_rejected) + safeNumber(breakdown.risk_blocked) + safeNumber(breakdown.cooldown) + safeNumber(breakdown.in_position) + safeNumber(breakdown.error);
+      const opened = safeNumber(bd.opened);
+      const confBlock = safeNumber(bd.confluence_block);
+      const extra = safeNumber(bd.ai_rejected) + safeNumber(bd.risk_blocked) + safeNumber(bd.cooldown) + safeNumber(bd.in_position) + safeNumber(bd.error);
 
-      container.innerHTML = `
-        <div class="stack-card">
-          <div class="stack-label">Observados</div>
-          <strong>${total}</strong>
-          <div class="stack-subline">${opened} entradas abertas e ${confluenceBlocked} barradas por confluencia.</div>
-        </div>
-        <div class="stack-card">
-          <div class="stack-label">Bloqueios extras</div>
-          <strong>${extraBlocks}</strong>
-          <div class="stack-subline">IA, risco, cooldown, posicao em aberto e erros somados.</div>
-        </div>
-        <div class="stack-card">
-          <div class="stack-label">Eventos rotulados</div>
-          <strong>${safeNumber(outcomes.labeled_events)}</strong>
-          <div class="stack-subline">${safeNumber(outcomes.complete_labels)} completos · ${safeNumber(outcomes.partial_labels)} parciais.</div>
-        </div>
-        <div class="stack-card">
-          <div class="stack-label">Actionable</div>
-          <strong>${safeNumber(outcomes.actionable)}</strong>
-          <div class="stack-subline">${safeNumber(outcomes.winners)} vencedores e ${safeNumber(outcomes.losers)} perdedores ja identificados.</div>
-        </div>
+      el.innerHTML = `
+        <div class="stack-card"><div class="stack-label">Observed</div><strong>${total}</strong><div class="stack-sub">${opened} opened, ${confBlock} confluence blocked.</div></div>
+        <div class="stack-card"><div class="stack-label">Extra Blocks</div><strong>${extra}</strong><div class="stack-sub">AI, risk, cooldown, in-position, errors.</div></div>
+        <div class="stack-card"><div class="stack-label">Labeled Events</div><strong>${safeNumber(outcomes.labeled_events)}</strong><div class="stack-sub">${safeNumber(outcomes.complete_labels)} complete, ${safeNumber(outcomes.partial_labels)} partial.</div></div>
+        <div class="stack-card"><div class="stack-label">Actionable</div><strong>${safeNumber(outcomes.actionable)}</strong><div class="stack-sub">${safeNumber(outcomes.winners)} winners, ${safeNumber(outcomes.losers)} losers identified.</div></div>
       `;
     }
 
+    /* ===== Render: Research Summary (Analytics) ===== */
     function renderResearchSummary(status) {
-      const research = (((status.insights || {}).research) || {});
+      const research = ((status.insights||{}).research) || {};
       const outcomes = research.outcomes_summary || {};
       const scorer = research.scorer_summary || {};
       const reasons = research.top_reasons || [];
-      const summaryContainer = document.getElementById("researchSummary");
-      const reasonsContainer = document.getElementById("topReasonsList");
+
       const stamp = document.getElementById("researchStampChip");
+      if (stamp) stamp.innerHTML = `Research <strong>${escapeHtml(research.generated_at || "--")}</strong>`;
 
-      if (stamp) {
-        stamp.innerHTML = `Research <strong>${escapeHtml(research.generated_at || "--")}</strong>`;
-      }
-
-      if (summaryContainer) {
-        summaryContainer.innerHTML = `
-          <div class="mini-stat">
-            <div class="mini-stat-label">Labels</div>
-            <strong>${safeNumber(outcomes.labeled_events)}</strong>
-          </div>
-          <div class="mini-stat">
-            <div class="mini-stat-label">Completos</div>
-            <strong>${safeNumber(outcomes.complete_labels)}</strong>
-          </div>
-          <div class="mini-stat">
-            <div class="mini-stat-label">Actionable</div>
-            <strong>${safeNumber(outcomes.actionable)}</strong>
-          </div>
-          <div class="mini-stat">
-            <div class="mini-stat-label">Media 60m</div>
-            <strong class="${toneClass(outcomes.avg_close_return_60m_pct)}">${formatPct(outcomes.avg_close_return_60m_pct, 2)}</strong>
-          </div>
-          <div class="mini-stat">
-            <div class="mini-stat-label">Grupos</div>
-            <strong>${safeNumber(scorer.groups_total)}</strong>
-          </div>
-          <div class="mini-stat">
-            <div class="mini-stat-label">Promissoras</div>
-            <strong>${safeNumber(scorer.promising_groups)}</strong>
-          </div>
+      const sm = document.getElementById("researchSummary");
+      if (sm) {
+        sm.innerHTML = `
+          <div class="metric-card" style="--accent:var(--blue);"><div class="metric-label">Labels</div><div class="metric-value">${safeNumber(outcomes.labeled_events)}</div></div>
+          <div class="metric-card" style="--accent:var(--cyan);"><div class="metric-label">Complete</div><div class="metric-value">${safeNumber(outcomes.complete_labels)}</div></div>
+          <div class="metric-card" style="--accent:var(--green);"><div class="metric-label">Actionable</div><div class="metric-value">${safeNumber(outcomes.actionable)}</div></div>
+          <div class="metric-card" style="--accent:var(--purple);"><div class="metric-label">Avg 60m</div><div class="metric-value ${toneClass(outcomes.avg_close_return_60m_pct)}">${formatPct(outcomes.avg_close_return_60m_pct, 2)}</div></div>
+          <div class="metric-card" style="--accent:var(--orange);"><div class="metric-label">Groups</div><div class="metric-value">${safeNumber(scorer.groups_total)}</div></div>
+          <div class="metric-card" style="--accent:var(--green);"><div class="metric-label">Promising</div><div class="metric-value">${safeNumber(scorer.promising_groups)}</div></div>
         `;
       }
 
-      if (!reasonsContainer) return;
+      const rl = document.getElementById("topReasonsList");
+      if (!rl) return;
       if (!reasons.length) {
-        reasonsContainer.innerHTML = '<div class="empty-state" style="margin:0;">Sem motivos dominantes suficientes ainda. O bloco fica mais rico conforme o dataset amadurece.</div>';
+        rl.innerHTML = '<div class="empty-state">No dominant reasons available yet. This grows as the dataset matures.</div>';
         return;
       }
-
-      reasonsContainer.innerHTML = reasons.map(item => `
-        <article class="reason-row">
+      rl.innerHTML = reasons.map(r => `
+        <div class="reason-row">
           <div>
-            <div class="leaderboard-title">${escapeHtml(item.reason || "Sem motivo")}</div>
-            <div class="reason-subline">Motivo mais frequente dentro dos eventos rotulados recentes.</div>
+            <div style="font-weight:700;">${escapeHtml(r.reason || "No reason")}</div>
+            <div style="font-size:12px;color:var(--text-2);">Frequent reason in labeled events.</div>
           </div>
-          <span class="chip"><strong>${safeNumber(item.count)}</strong>x</span>
-        </article>
+          <span class="badge-sm"><strong>${safeNumber(r.count)}</strong>x</span>
+        </div>
       `).join("");
     }
 
+    /* ===== Render: Setup Leaderboard (Analytics) ===== */
     function renderSetupLeaderboard(status) {
-      const container = document.getElementById("setupLeaderboard");
-      if (!container) return;
-      const setups = ((((status.insights || {}).research) || {}).top_setups) || [];
+      const el = document.getElementById("setupLeaderboard");
+      if (!el) return;
+      const setups = ((((status.insights||{}).research)||{}).top_setups) || [];
 
       if (!setups.length) {
-        container.innerHTML = '<div class="empty-state" style="margin:0;">Ainda nao ha familias de setup suficientes para classificar. Assim que o scorer ganhar amostra, este painel passa a mostrar as melhores leituras.</div>';
+        el.innerHTML = '<div class="empty-state">Not enough setup families to classify. This panel populates as the scorer gains data.</div>';
         return;
       }
 
-      container.innerHTML = setups.map(item => `
-        <article class="setup-card">
+      el.innerHTML = setups.map(s => `
+        <div class="setup-card">
           <div class="setup-head">
             <div>
-              <div class="setup-title">${escapeHtml(String(item.best_signal_source || "no_signal").replace(/_/g, " "))} · ${escapeHtml(item.direction || "NEUTRAL")}</div>
-              <div class="setup-subline">${escapeHtml(item.scenario_type || "unknown")} / ${escapeHtml(item.event_outcome || "unknown")}</div>
+              <div class="setup-title">${escapeHtml(String(s.best_signal_source||"no_signal").replace(/_/g," "))} &middot; ${escapeHtml(s.direction||"NEUTRAL")}</div>
+              <div class="setup-sub">${escapeHtml(s.scenario_type||"unknown")} / ${escapeHtml(s.event_outcome||"unknown")}</div>
             </div>
-            <span class="setup-pill ${recommendationClass(item.recommendation)}">${recommendationLabel(item.recommendation)}</span>
+            <span class="setup-pill ${recommendationClass(s.recommendation)}">${recommendationLabel(s.recommendation)}</span>
           </div>
-          <div class="setup-subline">${escapeHtml(item.top_reason || "Sem motivo dominante mapeado ainda.")}</div>
-          <div class="setup-meta">
-            <div class="mini-stat">
-              <div class="mini-stat-label">Edge</div>
-              <strong class="${toneClass(item.edge_score)}">${safeNumber(item.edge_score).toFixed(2)}</strong>
-            </div>
-            <div class="mini-stat">
-              <div class="mini-stat-label">Win Rate</div>
-              <strong>${safeNumber(item.win_rate).toFixed(1)}%</strong>
-            </div>
-            <div class="mini-stat">
-              <div class="mini-stat-label">60m</div>
-              <strong class="${toneClass(item.avg_close_return_60m_pct)}">${formatPct(item.avg_close_return_60m_pct, 2)}</strong>
-            </div>
-            <div class="mini-stat">
-              <div class="mini-stat-label">Amostra</div>
-              <strong>${safeNumber(item.complete_actionable)}/${safeNumber(item.total)}</strong>
-            </div>
+          <div class="setup-sub">${escapeHtml(s.top_reason || "No dominant reason mapped yet.")}</div>
+          <div class="lb-stats" style="margin-top:10px;">
+            <div class="mini-stat"><div class="mini-stat-label">Edge</div><strong class="${toneClass(s.edge_score)}">${safeNumber(s.edge_score).toFixed(2)}</strong></div>
+            <div class="mini-stat"><div class="mini-stat-label">Win Rate</div><strong>${safeNumber(s.win_rate).toFixed(1)}%</strong></div>
+            <div class="mini-stat"><div class="mini-stat-label">60m Avg</div><strong class="${toneClass(s.avg_close_return_60m_pct)}">${formatPct(s.avg_close_return_60m_pct, 2)}</strong></div>
+            <div class="mini-stat"><div class="mini-stat-label">Sample</div><strong>${safeNumber(s.complete_actionable)}/${safeNumber(s.total)}</strong></div>
           </div>
-        </article>
+        </div>
       `).join("");
     }
 
-    function renderConfidenceBadge(value) {
-      if (value == null) return "--";
-      const numeric = safeNumber(value);
-      const cls = numeric >= 70 ? "confidence-high" : numeric >= 50 ? "confidence-mid" : "confidence-low";
-      return `<span class="confidence-badge ${cls}">${numeric.toFixed(0)}%</span>`;
+    /* ===== Render: Trade Table ===== */
+    function renderConfidenceBadge(v) {
+      if (v == null) return "--";
+      const n = safeNumber(v);
+      const c = n >= 70 ? "confidence-high" : n >= 50 ? "confidence-mid" : "confidence-low";
+      return `<span class="confidence-badge ${c}">${n.toFixed(0)}%</span>`;
     }
 
     function renderTradeTable(trades, system) {
       if (!trades || !trades.length) {
-        return '<div class="empty-state" style="margin:0;">Nenhum trade registrado neste periodo.</div>';
+        return '<div class="empty-state">No trades recorded in this period.</div>';
       }
-
       const isAgent = system === "agent";
       return `
-        <div class="table-shell">
+        <div class="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Data/Hora</th>
-                <th>Ativo</th>
-                <th>Lado</th>
-                <th>Entrada</th>
-                <th>Saida</th>
-                <th>P&amp;L %</th>
-                <th>P&amp;L $</th>
-                <th>Motivo</th>
-                ${isAgent ? "<th>Confianca</th>" : ""}
-              </tr>
-            </thead>
-            <tbody>
-              ${trades.map(trade => {
-                const side = String(trade.type || "").toUpperCase();
-                const sideClass = side === "SHORT" ? "side-short" : "side-long";
-                return `
-                  <tr>
-                    <td class="text-mono">${escapeHtml(trade.timestamp || trade.exit_time || "--")}</td>
-                    <td><strong>${escapeHtml(trade.symbol || "--")}</strong></td>
-                    <td><span class="side-badge ${sideClass}">${escapeHtml(side || "--")}</span></td>
-                    <td class="text-mono">${trade.entry_price ? safeNumber(trade.entry_price).toFixed(4) : "--"}</td>
-                    <td class="text-mono">${trade.exit_price ? safeNumber(trade.exit_price).toFixed(4) : "--"}</td>
-                    <td class="text-mono ${toneClass(trade.pnl_pct)}">${formatPct(trade.pnl_pct)}</td>
-                    <td class="text-mono ${toneClass(trade.pnl_usd)}">${formatMoney(trade.pnl_usd)}</td>
-                    <td>${escapeHtml(trade.exit_reason || "--")}</td>
-                    ${isAgent ? `<td>${renderConfidenceBadge(trade.analyst_confidence)}</td>` : ""}
-                  </tr>
-                `;
-              }).join("")}
-            </tbody>
+            <thead><tr>
+              <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>P&amp;L %</th><th>P&amp;L $</th><th>Reason</th>
+              ${isAgent ? "<th>Confidence</th>" : ""}
+            </tr></thead>
+            <tbody>${trades.map(t => {
+              const side = String(t.type||"").toUpperCase();
+              const sc = side === "SHORT" ? "side-short" : "side-long";
+              return `<tr>
+                <td class="text-mono">${escapeHtml(t.timestamp || t.exit_time || "--")}</td>
+                <td><strong>${escapeHtml(t.symbol || "--")}</strong></td>
+                <td><span class="side-badge ${sc}">${escapeHtml(side || "--")}</span></td>
+                <td class="text-mono">${t.entry_price ? safeNumber(t.entry_price).toFixed(4) : "--"}</td>
+                <td class="text-mono">${t.exit_price ? safeNumber(t.exit_price).toFixed(4) : "--"}</td>
+                <td class="text-mono ${toneClass(t.pnl_pct)}">${formatPct(t.pnl_pct)}</td>
+                <td class="text-mono ${toneClass(t.pnl_usd)}">${formatMoney(t.pnl_usd)}</td>
+                <td>${escapeHtml(t.exit_reason || "--")}</td>
+                ${isAgent ? `<td>${renderConfidenceBadge(t.analyst_confidence)}</td>` : ""}
+              </tr>`;
+            }).join("")}</tbody>
           </table>
         </div>
       `;
@@ -1963,300 +1952,163 @@
 
     function renderTradesFromState(status) {
       const trades = status.trades || {};
-      const targets = {
-        paper: "histPaper_content",
-        agent: "histAgent_content",
-        pump: "histPump_content",
-        scalping: "histScalping_content"
-      };
-
-      Object.entries(targets).forEach(([system, targetId]) => {
-        const container = document.getElementById(targetId);
-        if (container) {
-          container.innerHTML = renderTradeTable(trades[system] || [], system);
-        }
+      const targets = { paper: "histPaper_content", agent: "histAgent_content", pump: "histPump_content", scalping: "histScalping_content" };
+      Object.entries(targets).forEach(([sys, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = renderTradeTable(trades[sys] || [], sys);
       });
     }
 
+    /* ===== Render: Logs ===== */
     function renderLogLines(containerId, lines) {
-      const container = document.getElementById(containerId);
-      if (!container) return;
-      container.textContent = (lines && lines.length) ? lines.join("\n") : "Sem logs disponiveis.";
-      container.scrollTop = container.scrollHeight;
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      el.textContent = (lines && lines.length) ? lines.join("\n") : "No logs available.";
+      el.scrollTop = el.scrollHeight;
     }
 
+    /* ===== Render: Health Gauges (System) ===== */
+    function renderGauges(status) {
+      const h = status.health || {};
+      const gauges = [
+        { label: "CPU",  value: safeNumber(h.cpu_usage_pct),  max: 100, suffix: "%", warn: 70, crit: 90 },
+        { label: "RAM",  value: safeNumber(h.ram_usage_pct),  max: 100, suffix: "%", warn: 80, crit: 90 },
+        { label: "Disk", value: safeNumber(h.disk_usage_pct), max: 100, suffix: "%", warn: 80, crit: 90 },
+        { label: "Temp", value: safeNumber(h.temperature_c),  max: 100, suffix: "C", warn: 65, crit: 75, digits: 1 }
+      ];
+
+      const el = document.getElementById("gaugeGrid");
+      if (!el) return;
+
+      const circumference = 2 * Math.PI * 34;
+      el.innerHTML = gauges.map(g => {
+        const pct = Math.min(g.value / g.max, 1);
+        const offset = circumference * (1 - pct);
+        const color = gaugeColor(g.value, g.warn, g.crit);
+        const display = (g.digits != null) ? g.value.toFixed(g.digits) : g.value.toFixed(0);
+        return `
+          <div class="gauge-card">
+            <div class="gauge-ring">
+              <svg viewBox="0 0 80 80">
+                <circle class="bg" cx="40" cy="40" r="34" fill="none" stroke-width="6"/>
+                <circle class="fg" cx="40" cy="40" r="34" fill="none" stroke-width="6"
+                  stroke="${color}" stroke-linecap="round"
+                  stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/>
+              </svg>
+              <div class="gauge-val">${display}${g.suffix}</div>
+            </div>
+            <div class="gauge-label">${g.label}</div>
+          </div>
+        `;
+      }).join("") + `
+        <div class="gauge-card">
+          <div class="gauge-ring">
+            <svg viewBox="0 0 80 80">
+              <circle class="bg" cx="40" cy="40" r="34" fill="none" stroke-width="6"/>
+              <circle class="fg" cx="40" cy="40" r="34" fill="none" stroke-width="6"
+                stroke="var(--cyan)" stroke-linecap="round"
+                stroke-dasharray="${circumference}" stroke-dashoffset="0"/>
+            </svg>
+            <div class="gauge-val" style="font-size:11px;">${escapeHtml(h.uptime || "N/A")}</div>
+          </div>
+          <div class="gauge-label">Uptime</div>
+        </div>
+      `;
+    }
+
+    /* ===== Render: Processes & Circuit Breakers (System) ===== */
+    function renderProcesses(status) {
+      const bot = status.bot_status || {};
+      const processes = [
+        { name: "Main Bot",       running: bot.overall === "healthy" || bot.overall === "degraded" },
+        { name: "Pump Scanner",   running: !!(status.capital || {}).pump },
+        { name: "Dashboard",      running: true },
+        { name: "Supervisor",     running: bot.overall !== "offline" }
+      ];
+
+      const el = document.getElementById("processGrid");
+      if (!el) return;
+      el.innerHTML = processes.map(p => `
+        <div class="process-card">
+          <span class="status-dot ${p.running ? 'ok' : 'err'}"></span>
+          <div>
+            <div class="proc-name">${p.name}</div>
+            <div class="proc-status">${p.running ? "Running" : "Stopped"}</div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderCircuitBreakers(status) {
+      const capital = status.capital || {};
+      const el = document.getElementById("circuitBreakers");
+      if (!el) return;
+
+      el.innerHTML = `<div class="process-grid">${Object.entries(systemMeta).map(([key, meta]) => {
+        const sys = capital[key] || {};
+        const active = !!sys.cb;
+        return `
+          <div class="process-card">
+            <span class="status-dot ${active ? 'err' : 'ok'}"></span>
+            <div>
+              <div class="proc-name">${escapeHtml(meta.label)}</div>
+              <div class="proc-status">${active ? "CB ACTIVE" : "Clear"}</div>
+            </div>
+          </div>
+        `;
+      }).join("")}</div>`;
+    }
+
+    /* ===== Charts ===== */
     function getFilledSeries(chartData, labels) {
-      const mapped = new Map((chartData || []).map(item => [item.day, safeNumber(item.pnl)]));
+      const mapped = new Map((chartData || []).map(i => [i.day, safeNumber(i.pnl)]));
       let last = 0;
-      return labels.map(label => {
-        if (mapped.has(label)) {
-          last = mapped.get(label);
-        }
-        return Number(last.toFixed(2));
-      });
+      return labels.map(l => { if (mapped.has(l)) last = mapped.get(l); return Number(last.toFixed(2)); });
     }
 
     function buildChartPayload(status) {
       const chart = status.chart || {};
       const labels = [...new Set([
-        ...(chart.total || []).map(item => item.day),
-        ...(chart.paper || []).map(item => item.day),
-        ...(chart.agent || []).map(item => item.day),
-        ...(chart.pump || []).map(item => item.day),
-        ...(chart.scalping || []).map(item => item.day)
+        ...(chart.total||[]).map(i=>i.day), ...(chart.paper||[]).map(i=>i.day),
+        ...(chart.agent||[]).map(i=>i.day), ...(chart.pump||[]).map(i=>i.day),
+        ...(chart.scalping||[]).map(i=>i.day)
       ])].sort();
-
       return {
         labels,
-        total: getFilledSeries(chart.total || [], labels),
-        paper: getFilledSeries(chart.paper || [], labels),
-        agent: getFilledSeries(chart.agent || [], labels),
-        pump: getFilledSeries(chart.pump || [], labels),
-        scalping: getFilledSeries(chart.scalping || [], labels)
+        total:    getFilledSeries(chart.total||[], labels),
+        paper:    getFilledSeries(chart.paper||[], labels),
+        agent:    getFilledSeries(chart.agent||[], labels),
+        pump:     getFilledSeries(chart.pump||[], labels),
+        scalping: getFilledSeries(chart.scalping||[], labels)
       };
     }
 
-    function createOrUpdateSystemsChart(status) {
-      const canvas = document.getElementById("systemsChart");
-      if (!canvas) return;
+    const chartTooltipStyle = {
+      backgroundColor: "rgba(8,14,26,0.95)",
+      titleColor: "#eaf2ff",
+      bodyColor: "#eaf2ff",
+      borderColor: "rgba(100,160,240,0.2)",
+      borderWidth: 1,
+      cornerRadius: 8,
+      padding: 10,
+      titleFont: { family: "Inter", size: 12, weight: "600" },
+      bodyFont:  { family: "JetBrains Mono", size: 11 }
+    };
 
-      const rows = (((status.insights || {}).system_leaderboard) || []).slice(0, 4);
-      const labels = rows.map(item => item.label);
-      const returns = rows.map(item => safeNumber(item.return_pct));
-      const winRates = rows.map(item => safeNumber(item.win_rate));
-
-      const barDataset = {
-        type: "bar",
-        label: "Retorno %",
-        data: returns,
-        yAxisID: "y",
-        borderRadius: 14,
-        borderSkipped: false,
-        borderWidth: 1.2,
-        borderColor: rows.map(item => withAlpha(item.color, 0.95)),
-        backgroundColor: rows.map(item => withAlpha(item.color, 0.32)),
-      };
-
-      const lineDataset = {
-        type: "line",
-        label: "Win Rate 30d",
-        data: winRates,
-        yAxisID: "y1",
-        borderColor: "#edf5ff",
-        backgroundColor: "#edf5ff",
-        tension: 0.34,
-        pointRadius: 3,
-        pointHoverRadius: 5,
-      };
-
-      if (!systemsChartInstance) {
-        systemsChartInstance = new Chart(canvas.getContext("2d"), {
-          data: { labels, datasets: [barDataset, lineDataset] },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                labels: {
-                  color: "#edf5ff",
-                  usePointStyle: true,
-                  padding: 18,
-                  font: { family: "IBM Plex Sans", size: 11, weight: "600" }
-                }
-              },
-              tooltip: {
-                backgroundColor: "rgba(9, 19, 34, 0.95)",
-                titleColor: "#edf5ff",
-                bodyColor: "#edf5ff",
-                borderColor: "rgba(130, 168, 214, 0.24)",
-                borderWidth: 1,
-                callbacks: {
-                  afterBody: (items) => {
-                    const index = items[0]?.dataIndex ?? 0;
-                    const row = rows[index] || {};
-                    return [
-                      `Capital: ${formatMoney(row.capital_value)}`,
-                      `PF: ${safeNumber(row.profit_factor).toFixed(2)}`,
-                      `Trades: ${safeNumber(row.total_trades)}`
-                    ];
-                  }
-                }
-              }
-            },
-            scales: {
-              x: {
-                grid: { color: "rgba(255,255,255,0.04)", drawBorder: false },
-                ticks: { color: "#7f98b5" }
-              },
-              y: {
-                position: "left",
-                grid: { color: "rgba(255,255,255,0.05)", drawBorder: false },
-                ticks: {
-                  color: "#7f98b5",
-                  callback: value => `${safeNumber(value).toFixed(1)}%`
-                }
-              },
-              y1: {
-                position: "right",
-                grid: { drawOnChartArea: false, drawBorder: false },
-                ticks: {
-                  color: "#9eb2c9",
-                  callback: value => `${safeNumber(value).toFixed(0)}%`
-                }
-              }
-            }
-          }
-        });
-        return;
-      }
-
-      systemsChartInstance.data.labels = labels;
-      systemsChartInstance.data.datasets[0] = barDataset;
-      systemsChartInstance.data.datasets[1] = lineDataset;
-      systemsChartInstance.update();
-    }
-
-    function createOrUpdateFunnelChart(status) {
-      const canvas = document.getElementById("funnelChart");
-      if (!canvas) return;
-
-      const funnel = status.scalping_funnel || {};
-      const breakdown = funnel.breakdown || {};
-      const entries = [
-        { key: "opened", label: "Opened", color: "#35d08f" },
-        { key: "confluence_block", label: "Confluence", color: "#5fb7ff" },
-        { key: "risk_blocked", label: "Risk", color: "#ff9f66" },
-        { key: "ai_rejected", label: "IA", color: "#ff6b7f" },
-        { key: "cooldown", label: "Cooldown", color: "#ffd166" },
-        { key: "in_position", label: "In Position", color: "#69f0ff" },
-        { key: "error", label: "Error", color: "#ffffff" }
-      ].filter(item => safeNumber(breakdown[item.key]) > 0);
-
-      const labels = entries.length ? entries.map(item => item.label) : ["Sem dados"];
-      const values = entries.length ? entries.map(item => safeNumber(breakdown[item.key])) : [1];
-      const colors = entries.length ? entries.map(item => withAlpha(item.color, 0.88)) : ["rgba(127, 152, 181, 0.4)"];
-
-      if (!funnelChartInstance) {
-        funnelChartInstance = new Chart(canvas.getContext("2d"), {
-          type: "doughnut",
-          data: {
-            labels,
-            datasets: [{
-              data: values,
-              backgroundColor: colors,
-              borderColor: "rgba(5, 11, 20, 0.95)",
-              borderWidth: 2,
-              hoverOffset: 6
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: "62%",
-            plugins: {
-              legend: {
-                position: "bottom",
-                labels: {
-                  color: "#edf5ff",
-                  usePointStyle: true,
-                  padding: 16,
-                  font: { family: "IBM Plex Sans", size: 11, weight: "600" }
-                }
-              },
-              tooltip: {
-                backgroundColor: "rgba(9, 19, 34, 0.95)",
-                titleColor: "#edf5ff",
-                bodyColor: "#edf5ff",
-                borderColor: "rgba(130, 168, 214, 0.24)",
-                borderWidth: 1,
-              }
-            }
-          }
-        });
-        return;
-      }
-
-      funnelChartInstance.data.labels = labels;
-      funnelChartInstance.data.datasets[0].data = values;
-      funnelChartInstance.data.datasets[0].backgroundColor = colors;
-      funnelChartInstance.update();
-    }
-
-    function createOrUpdateResearchChart(status) {
-      const canvas = document.getElementById("researchChart");
-      if (!canvas) return;
-
-      const recommendationCounts = ((((status.insights || {}).research) || {}).recommendation_counts) || {};
-      const labels = ["Promissoras", "Monitorar", "Evitar", "Amostra curta"];
-      const values = [
-        safeNumber(recommendationCounts.promising),
-        safeNumber(recommendationCounts.watch),
-        safeNumber(recommendationCounts.avoid),
-        safeNumber(recommendationCounts.insufficient)
-      ];
-      const colors = [
-        "rgba(53, 208, 143, 0.82)",
-        "rgba(105, 240, 255, 0.82)",
-        "rgba(255, 107, 127, 0.82)",
-        "rgba(255, 159, 102, 0.82)"
-      ];
-
-      if (!researchChartInstance) {
-        researchChartInstance = new Chart(canvas.getContext("2d"), {
-          type: "bar",
-          data: {
-            labels,
-            datasets: [{
-              label: "Grupos",
-              data: values,
-              borderRadius: 14,
-              borderSkipped: false,
-              backgroundColor: colors,
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                backgroundColor: "rgba(9, 19, 34, 0.95)",
-                titleColor: "#edf5ff",
-                bodyColor: "#edf5ff",
-                borderColor: "rgba(130, 168, 214, 0.24)",
-                borderWidth: 1,
-              }
-            },
-            scales: {
-              x: {
-                grid: { display: false, drawBorder: false },
-                ticks: { color: "#9eb2c9" }
-              },
-              y: {
-                grid: { color: "rgba(255,255,255,0.05)", drawBorder: false },
-                ticks: {
-                  color: "#7f98b5",
-                  precision: 0
-                }
-              }
-            }
-          }
-        });
-        return;
-      }
-
-      researchChartInstance.data.labels = labels;
-      researchChartInstance.data.datasets[0].data = values;
-      researchChartInstance.data.datasets[0].backgroundColor = colors;
-      researchChartInstance.update();
-    }
+    const chartLegendStyle = {
+      color: "#eaf2ff",
+      usePointStyle: true,
+      pointStyle: "circle",
+      padding: 16,
+      font: { family: "Inter", size: 11, weight: "600" }
+    };
 
     function buildGradient(ctx, area) {
-      const gradient = ctx.createLinearGradient(0, area.top, 0, area.bottom);
-      gradient.addColorStop(0, "rgba(105, 240, 255, 0.34)");
-      gradient.addColorStop(0.45, "rgba(95, 183, 255, 0.18)");
-      gradient.addColorStop(1, "rgba(95, 183, 255, 0.02)");
-      return gradient;
+      const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+      g.addColorStop(0, "rgba(0,212,255,0.3)");
+      g.addColorStop(0.5, "rgba(0,212,255,0.1)");
+      g.addColorStop(1, "rgba(0,212,255,0.01)");
+      return g;
     }
 
     function createOrUpdateChart(status) {
@@ -2266,53 +2118,12 @@
       const ctx = canvas.getContext("2d");
 
       const datasets = [
-        {
-          label: "Portfolio Total",
-          data: payload.total,
-          borderColor: "#69f0ff",
-          borderWidth: 3.5,
-          fill: true,
-          tension: 0.34,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          backgroundColor: ({ chart }) => {
-            const area = chart.chartArea;
-            if (!area) return "rgba(105, 240, 255, 0.12)";
-            return buildGradient(chart.ctx, area);
-          }
-        },
-        {
-          label: "Paper",
-          data: payload.paper,
-          borderColor: "#5fb7ff",
-          borderWidth: 1.8,
-          tension: 0.28,
-          pointRadius: 0
-        },
-        {
-          label: "Multi-Agent",
-          data: payload.agent,
-          borderColor: "#35d08f",
-          borderWidth: 1.8,
-          tension: 0.28,
-          pointRadius: 0
-        },
-        {
-          label: "Pump",
-          data: payload.pump,
-          borderColor: "#ff9f66",
-          borderWidth: 1.8,
-          tension: 0.28,
-          pointRadius: 0
-        },
-        {
-          label: "Scalping",
-          data: payload.scalping,
-          borderColor: "#b592ff",
-          borderWidth: 1.8,
-          tension: 0.28,
-          pointRadius: 0
-        }
+        { label: "Portfolio Total", data: payload.total, borderColor: "#00d4ff", borderWidth: 3, fill: true, tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
+          backgroundColor: ({ chart }) => { const a = chart.chartArea; return a ? buildGradient(chart.ctx, a) : "rgba(0,212,255,0.1)"; } },
+        { label: "Paper",      data: payload.paper,    borderColor: "#5fb7ff", borderWidth: 1.5, tension: 0.25, pointRadius: 0 },
+        { label: "Multi-Agent", data: payload.agent,   borderColor: "#00ff88", borderWidth: 1.5, tension: 0.25, pointRadius: 0 },
+        { label: "Pump",       data: payload.pump,     borderColor: "#ff9f66", borderWidth: 1.5, tension: 0.25, pointRadius: 0 },
+        { label: "Scalping",   data: payload.scalping, borderColor: "#a78bfa", borderWidth: 1.5, tension: 0.25, pointRadius: 0 }
       ];
 
       if (!pnlChartInstance) {
@@ -2320,72 +2131,146 @@
           type: "line",
           data: { labels: payload.labels, datasets },
           options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             interaction: { mode: "index", intersect: false },
-            animation: { duration: 500 },
+            animation: { duration: 400 },
             plugins: {
-              legend: {
-                position: "top",
-                labels: {
-                  color: "#edf5ff",
-                  usePointStyle: true,
-                  pointStyle: "circle",
-                  padding: 18,
-                  font: { family: "IBM Plex Sans", size: 11, weight: "600" }
-                }
-              },
-              tooltip: {
-                backgroundColor: "rgba(9, 19, 34, 0.95)",
-                titleColor: "#edf5ff",
-                bodyColor: "#edf5ff",
-                borderColor: "rgba(130, 168, 214, 0.24)",
-                borderWidth: 1,
-                callbacks: {
-                  label: (context) => ` ${context.dataset.label}: ${formatMoney(context.parsed.y)}`
-                }
-              }
+              legend: { position: "top", labels: chartLegendStyle },
+              tooltip: { ...chartTooltipStyle, callbacks: { label: (c) => ` ${c.dataset.label}: ${formatMoney(c.parsed.y)}` } }
             },
             scales: {
-              x: {
-                grid: { color: "rgba(255,255,255,0.04)", drawBorder: false },
-                ticks: {
-                  color: "#7f98b5",
-                  maxRotation: 0,
-                  callback: (value) => {
-                    const raw = payload.labels[value] || "";
-                    if (!raw) return "";
-                    const [year, month, day] = raw.split("-");
-                    return `${day}/${month}`;
-                  }
-                }
-              },
-              y: {
-                grid: { color: "rgba(255,255,255,0.05)", drawBorder: false },
-                ticks: {
-                  color: "#7f98b5",
-                  callback: (value) => formatMoney(value)
-                }
-              }
+              x: { grid: { color: "rgba(255,255,255,0.03)", drawBorder: false }, ticks: { color: "#5a7294", maxRotation: 0,
+                callback: v => { const r = payload.labels[v]||""; if (!r) return ""; const p = r.split("-"); return `${p[2]}/${p[1]}`; } } },
+              y: { grid: { color: "rgba(255,255,255,0.04)", drawBorder: false }, ticks: { color: "#5a7294", callback: v => formatMoney(v) } }
             }
           }
         });
         return;
       }
-
       pnlChartInstance.data.labels = payload.labels;
-      datasets.forEach((dataset, index) => {
-        pnlChartInstance.data.datasets[index].data = dataset.data;
-      });
+      datasets.forEach((ds, i) => { pnlChartInstance.data.datasets[i].data = ds.data; });
       pnlChartInstance.update();
     }
 
+    function createOrUpdateSystemsChart(status) {
+      const canvas = document.getElementById("systemsChart");
+      if (!canvas) return;
+      const rows = (((status.insights||{}).system_leaderboard)||[]).slice(0, 4);
+      const labels = rows.map(r => r.label);
+      const returns = rows.map(r => safeNumber(r.return_pct));
+      const winRates = rows.map(r => safeNumber(r.win_rate));
+
+      const barDS = {
+        type: "bar", label: "Return %", data: returns, yAxisID: "y",
+        borderRadius: 10, borderSkipped: false, borderWidth: 1,
+        borderColor: rows.map(r => withAlpha(r.color, 0.9)),
+        backgroundColor: rows.map(r => withAlpha(r.color, 0.28))
+      };
+      const lineDS = {
+        type: "line", label: "Win Rate 30d", data: winRates, yAxisID: "y1",
+        borderColor: "#eaf2ff", backgroundColor: "#eaf2ff", tension: 0.3, pointRadius: 3, pointHoverRadius: 5
+      };
+
+      if (!systemsChartInstance) {
+        systemsChartInstance = new Chart(canvas.getContext("2d"), {
+          data: { labels, datasets: [barDS, lineDS] },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { labels: chartLegendStyle },
+              tooltip: { ...chartTooltipStyle, callbacks: {
+                afterBody: items => { const idx = items[0]?.dataIndex??0; const r = rows[idx]||{}; return [`Capital: ${formatMoney(r.capital_value)}`, `PF: ${safeNumber(r.profit_factor).toFixed(2)}`, `Trades: ${safeNumber(r.total_trades)}`]; }
+              } }
+            },
+            scales: {
+              x:  { grid: { color: "rgba(255,255,255,0.03)", drawBorder: false }, ticks: { color: "#5a7294" } },
+              y:  { position: "left",  grid: { color: "rgba(255,255,255,0.04)", drawBorder: false }, ticks: { color: "#5a7294", callback: v => `${safeNumber(v).toFixed(1)}%` } },
+              y1: { position: "right", grid: { drawOnChartArea: false, drawBorder: false }, ticks: { color: "#7a92ad", callback: v => `${safeNumber(v).toFixed(0)}%` } }
+            }
+          }
+        });
+        return;
+      }
+      systemsChartInstance.data.labels = labels;
+      systemsChartInstance.data.datasets[0] = barDS;
+      systemsChartInstance.data.datasets[1] = lineDS;
+      systemsChartInstance.update();
+    }
+
+    function createOrUpdateFunnelChart(status) {
+      const canvas = document.getElementById("funnelChart");
+      if (!canvas) return;
+      const funnel = status.scalping_funnel || {};
+      const bd = funnel.breakdown || {};
+      const entries = [
+        { key: "opened",           label: "Opened",     color: "#00ff88" },
+        { key: "confluence_block", label: "Confluence",  color: "#5fb7ff" },
+        { key: "risk_blocked",     label: "Risk",        color: "#ff9f66" },
+        { key: "ai_rejected",      label: "AI",          color: "#ff5a6e" },
+        { key: "cooldown",         label: "Cooldown",    color: "#ffd166" },
+        { key: "in_position",      label: "In Position", color: "#00d4ff" },
+        { key: "error",            label: "Error",       color: "#ffffff" }
+      ].filter(e => safeNumber(bd[e.key]) > 0);
+
+      const labels = entries.length ? entries.map(e => e.label) : ["No data"];
+      const values = entries.length ? entries.map(e => safeNumber(bd[e.key])) : [1];
+      const colors = entries.length ? entries.map(e => withAlpha(e.color, 0.85)) : ["rgba(90,114,148,0.3)"];
+
+      if (!funnelChartInstance) {
+        funnelChartInstance = new Chart(canvas.getContext("2d"), {
+          type: "doughnut",
+          data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: "rgba(10,15,26,0.95)", borderWidth: 2, hoverOffset: 6 }] },
+          options: {
+            responsive: true, maintainAspectRatio: false, cutout: "62%",
+            plugins: {
+              legend: { position: "bottom", labels: chartLegendStyle },
+              tooltip: chartTooltipStyle
+            }
+          }
+        });
+        return;
+      }
+      funnelChartInstance.data.labels = labels;
+      funnelChartInstance.data.datasets[0].data = values;
+      funnelChartInstance.data.datasets[0].backgroundColor = colors;
+      funnelChartInstance.update();
+    }
+
+    function createOrUpdateResearchChart(status) {
+      const canvas = document.getElementById("researchChart");
+      if (!canvas) return;
+      const rc = ((((status.insights||{}).research)||{}).recommendation_counts) || {};
+      const labels = ["Promising", "Watch", "Avoid", "Low Sample"];
+      const values = [safeNumber(rc.promising), safeNumber(rc.watch), safeNumber(rc.avoid), safeNumber(rc.insufficient)];
+      const colors = ["rgba(0,255,136,0.78)", "rgba(0,212,255,0.78)", "rgba(255,90,110,0.78)", "rgba(255,159,102,0.78)"];
+
+      if (!researchChartInstance) {
+        researchChartInstance = new Chart(canvas.getContext("2d"), {
+          type: "bar",
+          data: { labels, datasets: [{ label: "Groups", data: values, borderRadius: 10, borderSkipped: false, backgroundColor: colors }] },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: chartTooltipStyle },
+            scales: {
+              x: { grid: { display: false, drawBorder: false }, ticks: { color: "#7a92ad" } },
+              y: { grid: { color: "rgba(255,255,255,0.04)", drawBorder: false }, ticks: { color: "#5a7294", precision: 0 } }
+            }
+          }
+        });
+        return;
+      }
+      researchChartInstance.data.labels = labels;
+      researchChartInstance.data.datasets[0].data = values;
+      researchChartInstance.data.datasets[0].backgroundColor = colors;
+      researchChartInstance.update();
+    }
+
+    /* ===== Master Apply ===== */
     function applyStatus(status) {
       dashboardState = status;
       renderHeader(status);
       renderHero(status);
       renderStatusSummary(status);
-      renderStrategySpotlights(status);
       renderCapitalGrid(status);
       renderMetrics(status);
       renderSystemLeaderboard(status);
@@ -2394,105 +2279,100 @@
       renderSetupLeaderboard(status);
       renderPositions(status);
       renderSymbolPerformance(status);
+      renderGauges(status);
+      renderProcesses(status);
+      renderCircuitBreakers(status);
       createOrUpdateChart(status);
       createOrUpdateSystemsChart(status);
       createOrUpdateFunnelChart(status);
       createOrUpdateResearchChart(status);
     }
 
+    /* ===== Trade History Loading ===== */
     function setPeriod(days) {
       currentPeriod = days;
-      document.querySelectorAll("#periodBtns .period-btn").forEach(button => {
-        button.classList.toggle("active", safeNumber(button.dataset.days) === days);
+      document.querySelectorAll("#periodBtns .period-btn").forEach(b => {
+        b.classList.toggle("active", safeNumber(b.dataset.days) === days);
       });
-      const activeTab = document.querySelector("#historyTabs .nav-link.active");
-      if (activeTab) {
-        loadTrades(activeTab.dataset.system, days);
-      }
+      const active = document.querySelector("#historyTabs .subtab-btn.active");
+      if (active) loadTrades(active.dataset.system, days);
     }
 
     async function loadTrades(system, days, quiet = false) {
-      const containerId = `hist${system.charAt(0).toUpperCase()}${system.slice(1)}_content`;
-      const container = document.getElementById(containerId);
-      if (!container) return;
-
-      if (!quiet) {
-        container.innerHTML = '<div class="ajax-loading">Carregando trades...</div>';
-      }
-
+      const id = `hist${system.charAt(0).toUpperCase()}${system.slice(1)}_content`;
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!quiet) el.innerHTML = '<div class="ajax-loading">Loading trades...</div>';
       try {
-        const response = await fetch(`/api/trades?system=${encodeURIComponent(system)}&days=${days}`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        container.innerHTML = renderTradeTable(data.trades || [], system);
-      } catch (error) {
-        container.innerHTML = '<div class="empty-state" style="margin:0;">Falha ao carregar trades deste periodo.</div>';
-        console.warn("Falha ao carregar trades:", error.message);
+        const res = await fetch(`/api/trades?system=${encodeURIComponent(system)}&days=${days}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        el.innerHTML = renderTradeTable(data.trades || [], system);
+      } catch (e) {
+        el.innerHTML = '<div class="empty-state">Failed to load trades for this period.</div>';
+        console.warn("Trade load failed:", e.message);
       }
     }
 
+    /* ===== Log Loading ===== */
     async function loadLogs(source, quiet = false) {
-      const containerId = `log${source.charAt(0).toUpperCase()}${source.slice(1)}Content`;
-      const container = document.getElementById(containerId);
-      if (!container) return;
-      if (!quiet) {
-        container.textContent = "Carregando...";
-      }
-
+      const id = `log${source.charAt(0).toUpperCase()}${source.slice(1)}Content`;
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!quiet) el.textContent = "Loading...";
       try {
-        const response = await fetch(`/api/logs?source=${encodeURIComponent(source)}&lines=40`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        renderLogLines(containerId, data.logs || []);
-      } catch (error) {
-        container.textContent = "Falha ao carregar logs.";
-        console.warn("Falha ao carregar logs:", error.message);
+        const res = await fetch(`/api/logs?source=${encodeURIComponent(source)}&lines=40`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        renderLogLines(id, data.logs || []);
+      } catch (e) {
+        el.textContent = "Failed to load logs.";
+        console.warn("Log load failed:", e.message);
       }
     }
 
+    /* ===== Auto-Refresh ===== */
     async function refreshDashboard() {
       if (document.hidden) return;
       try {
-        const response = await fetch("/api/status", { cache: "no-store" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const status = await response.json();
+        const res = await fetch("/api/status", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const status = await res.json();
         applyStatus(status);
-
-        const activeTab = document.querySelector("#historyTabs .nav-link.active");
-        if (activeTab && currentPeriod === 0) {
-          loadTrades(activeTab.dataset.system, 0, true);
-        }
-        if (activeLogSource) {
-          loadLogs(activeLogSource, true);
-        }
-      } catch (error) {
-        console.warn("Falha no refresh incremental:", error.message);
+        const activeHist = document.querySelector("#historyTabs .subtab-btn.active");
+        if (activeHist && currentPeriod === 0) loadTrades(activeHist.dataset.system, 0, true);
+        if (activeLogSource) loadLogs(activeLogSource, true);
+      } catch (e) {
+        console.warn("Refresh failed:", e.message);
       }
     }
 
+    /* ===== Init ===== */
     document.addEventListener("DOMContentLoaded", () => {
+      initTabs();
+
+      // History subtabs
+      initSubtabs("#historyTabs", (btn) => {
+        loadTrades(btn.dataset.system, currentPeriod, currentPeriod === 0);
+      });
+
+      // Log subtabs
+      initSubtabs("#logTabs", (btn) => {
+        activeLogSource = btn.dataset.source;
+        loadLogs(activeLogSource);
+      });
+
+      // Period buttons
+      document.querySelectorAll("#periodBtns .period-btn").forEach(b => {
+        b.addEventListener("click", () => setPeriod(safeNumber(b.dataset.days)));
+      });
+
+      // Initial render
       applyStatus(initialStatus);
       renderTradesFromState(initialStatus);
       renderLogLines("logMainContent", initialStatus.logs || []);
 
-      document.querySelectorAll("#periodBtns .period-btn").forEach(button => {
-        button.addEventListener("click", () => setPeriod(safeNumber(button.dataset.days)));
-      });
-
-      document.querySelectorAll("#historyTabs .nav-link").forEach(tab => {
-        tab.addEventListener("shown.bs.tab", event => {
-          const system = event.target.dataset.system;
-          loadTrades(system, currentPeriod, currentPeriod === 0);
-        });
-      });
-
-      document.querySelectorAll("#logTabs .nav-link").forEach(tab => {
-        tab.addEventListener("shown.bs.tab", event => {
-          activeLogSource = event.target.dataset.source;
-          loadLogs(activeLogSource);
-        });
-      });
-
+      // 25s auto-refresh
       setInterval(refreshDashboard, 25000);
     });
   </script>
