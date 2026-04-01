@@ -28,6 +28,11 @@ def calc_daily_stats(trades):
     if not trades:
         return {"count": 0, "pnl_pct": 0, "pnl_usd": 0, "wins": 0, "losses": 0}
 
+    # Filtrar trades de abertura (exit_reason='open') para nao inflar contagem
+    trades = [t for t in trades if t.get("exit_reason") != "open"]
+    if not trades:
+        return {"count": 0, "pnl_pct": 0, "pnl_usd": 0, "wins": 0, "losses": 0}
+
     pnl_pct = 0
     pnl_usd = 0
     wins = 0

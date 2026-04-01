@@ -32,16 +32,18 @@ def _decorate_message(message: str) -> str:
 
 def _rate_limit():
     """Aguarda se necessario para respeitar rate limit do Telegram."""
-    now = time.time()
+    sleep_time = 0
     with _send_lock:
+        now = time.time()
         # Remove timestamps mais velhos que 1 segundo
         while _msg_timestamps and now - _msg_timestamps[0] > 1.0:
             _msg_timestamps.popleft()
         if len(_msg_timestamps) >= 25:
             sleep_time = 1.0 - (now - _msg_timestamps[0])
-            if sleep_time > 0:
-                time.sleep(sleep_time)
         _msg_timestamps.append(time.time())
+    # Sleep fora do lock para nao bloquear outras threads
+    if sleep_time > 0:
+        time.sleep(sleep_time)
 
 
 def send_telegram_message(message: str, parse_mode: str = "HTML", silent: bool = False, retries: int = 3):

@@ -29,6 +29,15 @@ fi
 if git diff --cached --quiet; then
     echo "  Nenhuma mudanca para commitar."
 else
+    echo ""
+    echo "Arquivos que serao commitados:"
+    git diff --cached --stat
+    echo ""
+    read -p "Continuar com o deploy? (s/n) " CONFIRM
+    if [ "$CONFIRM" != "s" ]; then
+        echo "Deploy cancelado pelo operador."
+        exit 0
+    fi
     MSG="deploy $(date '+%Y-%m-%d %H:%M')"
     git commit -m "$MSG"
     echo "  Commit criado: $MSG"

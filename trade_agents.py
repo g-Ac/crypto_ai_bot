@@ -33,6 +33,7 @@ AGENT_CAPITAL = AGENT_INITIAL_CAPITAL
 AGENT_MAX_RISK_PER_TRADE = 2.0       # % do capital por trade
 AGENT_MAX_POSITIONS = 3               # maximo de posicoes abertas
 AGENT_REWARD_RATIO = 2.0              # TP = SL * reward_ratio
+ROUND_TRIP_FEE_PCT = 0.08             # Binance Futures taker fee (0.04% x 2)
 
 client = None
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -264,6 +265,13 @@ def agent_risk(signal_data, analyst_result):
     price = signal_data["price"]
     direction = signal_data["decision"]  # BUY or SELL
 
+    # Check capital
+    if state["capital"] <= 0:
+        return {
+            "approved": False,
+            "reason": f"Capital esgotado (${state['capital']:.2f})",
+        }
+
     # Check max positions
     if len(state["positions"]) >= AGENT_MAX_POSITIONS:
         return {
@@ -401,21 +409,27 @@ def check_agent_positions(results):
 
         hit = None
 
+        exit_price = price  # default: preco de mercado
+
         if pos["type"] == "LONG":
             pnl_pct = ((price - entry) / entry) * 100
             if price <= pos["sl_price"]:
                 hit = "stop_loss"
+                exit_price = pos["sl_price"]
                 pnl_pct = -abs(((entry - pos["sl_price"]) / entry) * 100)
             elif price >= pos["tp_price"]:
                 hit = "take_profit"
+                exit_price = pos["tp_price"]
                 pnl_pct = abs(((pos["tp_price"] - entry) / entry) * 100)
         else:
             pnl_pct = ((entry - price) / entry) * 100
             if price >= pos["sl_price"]:
                 hit = "stop_loss"
+                exit_price = pos["sl_price"]
                 pnl_pct = -abs(((pos["sl_price"] - entry) / entry) * 100)
             elif price <= pos["tp_price"]:
                 hit = "take_profit"
+                exit_price = pos["tp_price"]
                 pnl_pct = abs(((entry - pos["tp_price"]) / entry) * 100)
 
         # Exit on strong opposite signal only (confidence > 70 or score diff >= 3)
@@ -431,6 +445,7 @@ def check_agent_positions(results):
                     hit = "opposite_signal"
 
         if hit:
+            pnl_pct -= ROUND_TRIP_FEE_PCT  # Descontar fees
             pnl_usd = pos["position_size_usd"] * (pnl_pct / 100)
             state["capital"] += pnl_usd
             state["total_trades"] += 1
@@ -461,7 +476,7 @@ def check_agent_positions(results):
                 "sl_price": pos["sl_price"],
                 "tp_price": pos["tp_price"],
                 "position_size_usd": pos["position_size_usd"],
-                "exit_price": price,
+                "exit_price": exit_price,
                 "pnl_pct": round(pnl_pct, 4),
                 "pnl_usd": pnl_usd,
                 "exit_reason": hit,
@@ -475,7 +490,7 @@ def check_agent_positions(results):
 
             msg = (
                 f"[AGENT] {pos['type']} fechado: {symbol}\n"
-                f"Entrada: {entry:.4f} | Saida: {price:.4f}\n"
+                f"Entrada: {entry:.4f} | Saida: {exit_price:.4f}\n"
                 f"P&L: {pnl_pct:+.2f}% (${pnl_usd:+.2f})\n"
                 f"Motivo: {hit}\n"
                 f"Capital: ${state['capital']:.2f} | "
@@ -573,7 +588,7 @@ Aprove se a confluencia faz sentido. Rejeite se ha risco claro."""
 def validate_scalping_signal(symbol, direction, score, reason, best_signal_source):
     """Quick Claude validation for borderline scalping signals (score 2/3)."""
     if not client:
-        return True, "Claude indisponivel, aprovado automaticamente"
+        return False, "Claude indisponivel, trade rejeitado (fail-safe)"
 
     data_text = (
         f"Ativo: {symbol}\n"
@@ -599,7 +614,7 @@ def validate_scalping_signal(symbol, direction, score, reason, best_signal_sourc
         return result.get("approved", True), result.get("reason", "")
     except Exception as e:
         print(f"  [SCALPING VALIDATION] Erro: {e}")
-        return True, f"Fallback aprovado: {e}"
+        return False, f"Fallback rejeitado (fail-safe): {e}"
 
 
 def get_agent_status():

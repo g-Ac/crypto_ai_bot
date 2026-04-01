@@ -110,9 +110,11 @@ def process_signals(results, open_new=True):
                         ((sl_price - entry) / entry) * 100 if pos["type"] == "LONG"
                         else ((entry - sl_price) / entry) * 100
                     )
+                    exit_price = sl_price
                 else:
                     pnl_pct = -sl_pct
-                msg = close_position(state, symbol, price, pnl_pct, "stop_loss")
+                    exit_price = price
+                msg = close_position(state, symbol, exit_price, pnl_pct, "stop_loss")
                 messages.append(msg)
                 continue
 
@@ -122,7 +124,7 @@ def process_signals(results, open_new=True):
                     ((tp_price - entry) / entry) * 100 if pos["type"] == "LONG"
                     else ((entry - tp_price) / entry) * 100
                 )
-                msg = close_position(state, symbol, price, pnl_pct, "take_profit")
+                msg = close_position(state, symbol, tp_price, pnl_pct, "take_profit")
                 messages.append(msg)
                 # Fall through para abrir nova posicao abaixo
 
@@ -137,6 +139,11 @@ def process_signals(results, open_new=True):
         if not open_new:
             continue
         if decision in ["BUY", "SELL"] and symbol not in state["positions"]:
+            # Capital insuficiente
+            if state["capital"] <= 0:
+                messages.append(f"PAPER: Capital esgotado (${state['capital']:.2f}), ignorando {symbol}")
+                continue
+
             # Limite de posicoes simultaneas
             if len(state["positions"]) >= PAPER_MAX_POSITIONS:
                 continue
@@ -189,9 +196,15 @@ def process_signals(results, open_new=True):
     return messages
 
 
+ROUND_TRIP_FEE_PCT = 0.08  # Binance Futures taker fee (0.04% x 2)
+
+
 def close_position(state, symbol, price, pnl_pct, reason):
     pos = state["positions"].pop(symbol)
     entry = pos["entry_price"]
+
+    # Descontar fees do P&L
+    pnl_pct -= ROUND_TRIP_FEE_PCT
 
     allocation = pos.get("allocation", state["capital"] / max(len(state["positions"]) + 1, 1))
     pnl_usd = allocation * (pnl_pct / 100)
@@ -205,7 +218,7 @@ def close_position(state, symbol, price, pnl_pct, reason):
     else:
         state["losses"] += 1
 
-    if reason in ("stop_loss", "take_profit"):
+    if reason == "stop_loss":
         state.setdefault("cooldowns", {})[symbol] = datetime.now().isoformat()
 
     wr = (state["wins"] / state["total_trades"]) * 100 if state["total_trades"] > 0 else 0

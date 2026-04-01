@@ -387,6 +387,7 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
             pos["tp1_hit"] = True
             pos["sl_price"] = entry_price  # Mover SL para breakeven
             pos["tp1_pnl_pct"] = ((tp1_fill - entry_price) / entry_price) * 100
+            pos["tp1_pnl_pct"] -= 0.04  # Fee de saida parcial (half round-trip)
             realized_pnl = pos["tp1_pnl_pct"] * (pos["position_size_usd"] * 0.5 / 100)
             state["capital"] += realized_pnl
             positions[symbol] = pos
@@ -445,6 +446,7 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
             pos["tp1_hit"] = True
             pos["sl_price"] = entry_price
             pos["tp1_pnl_pct"] = ((entry_price - tp1_fill) / entry_price) * 100
+            pos["tp1_pnl_pct"] -= 0.04  # Fee de saida parcial (half round-trip)
             realized_pnl = pos["tp1_pnl_pct"] * (pos["position_size_usd"] * 0.5 / 100)
             state["capital"] += realized_pnl
             positions[symbol] = pos
@@ -485,6 +487,10 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
 
     # Fechar posicao completa
     if hit:
+        # Descontar fees (half trip se TP1 ja pagou metade da fee na saida parcial)
+        fee_pct = 0.04 if tp1_hit else 0.08  # 0.04% por leg (taker Binance Futures)
+        pnl_pct -= fee_pct
+
         # Ajustar PnL se TP1 ja foi atingido (50% restante)
         remaining_pct = 0.5 if tp1_hit else 1.0
         pnl_usd = pnl_pct * (pos["position_size_usd"] * remaining_pct / 100)
@@ -493,14 +499,9 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
         state["total_pnl_usd"] = state.get("total_pnl_usd", 0.0) + pnl_usd
         state["total_trades"] += 1
 
-        if pnl_pct > 0 or (tp1_hit and hit == "stop_loss"):
-            # Se TP1 foi atingido e SL bateu no breakeven, ainda e win parcial
-            if tp1_hit and hit == "stop_loss":
-                state["wins"] += 1  # TP1 foi lucro, SL no breakeven = win
-            elif pnl_pct > 0:
-                state["wins"] += 1
-            else:
-                state["losses"] += 1
+        # Classificar win/loss pelo P&L real (incluindo fees)
+        if pnl_pct > 0:
+            state["wins"] += 1
         else:
             state["losses"] += 1
 

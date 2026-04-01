@@ -8,13 +8,14 @@ from config import (
     SYMBOLS, INTERVAL, INTERVAL_HTF,
     SMA_SHORT, SMA_LONG, BREAKOUT_WINDOW, VOLUME_WINDOW,
     BACKTEST_DAYS, ATR_SL_MULTIPLIER, ATR_SL_FLOOR_PCT,
+    ATR_TP_MULTIPLIER, PAPER_REWARD_RATIO,
 )
 from indicators import add_indicators
 from strategy import _score_row
 from htf import classify_htf_trend
 
-# Binance Spot fee: 0.1% per side = 0.2% round trip
-ROUND_TRIP_FEE_PCT = 0.2
+# Binance Futures fee: 0.04% per side (maker) = 0.08% round trip
+ROUND_TRIP_FEE_PCT = 0.08
 
 
 def fetch_historical(symbol, interval, days):
@@ -125,6 +126,7 @@ def run_backtest(symbol):
     entry_time = None
     entry_htf = False
     entry_sl_pct = ATR_SL_FLOOR_PCT  # SL for current position (dynamic per trade)
+    entry_tp_pct = ATR_SL_FLOOR_PCT * PAPER_REWARD_RATIO  # TP for current position
     signals = {"BUY": 0, "SELL": 0, "HOLD": 0}
 
     # C5 FIX: Signal generated on candle i-1 (closed), entry on open of candle i.
@@ -145,9 +147,10 @@ def run_backtest(symbol):
         low = row["low"]
         high = row["high"]
 
-        # Check stop loss using candle extremes (more realistic)
+        # Check stop loss and take profit using candle extremes (more realistic)
         if position == "LONG":
             sl_price = entry_price * (1 - entry_sl_pct / 100)
+            tp_price = entry_price * (1 + entry_tp_pct / 100)
             if low <= sl_price:
                 raw_pnl = -entry_sl_pct
                 trades.append({
@@ -161,9 +164,23 @@ def run_backtest(symbol):
                 })
                 position = None
                 continue
+            if high >= tp_price:
+                raw_pnl = entry_tp_pct
+                trades.append({
+                    "type": "LONG", "entry_time": entry_time,
+                    "entry_price": entry_price, "exit_time": row["time"],
+                    "exit_price": round(tp_price, 6),
+                    "pnl_pct": round(raw_pnl - ROUND_TRIP_FEE_PCT, 6),
+                    "exit_reason": "take_profit",
+                    "htf_aligned": entry_htf,
+                    "sl_pct": round(entry_sl_pct, 4),
+                })
+                position = None
+                continue
 
         elif position == "SHORT":
             sl_price = entry_price * (1 + entry_sl_pct / 100)
+            tp_price = entry_price * (1 - entry_tp_pct / 100)
             if high >= sl_price:
                 raw_pnl = -entry_sl_pct
                 trades.append({
@@ -172,6 +189,19 @@ def run_backtest(symbol):
                     "exit_price": round(sl_price, 6),
                     "pnl_pct": round(raw_pnl - ROUND_TRIP_FEE_PCT, 6),
                     "exit_reason": "stop_loss",
+                    "htf_aligned": entry_htf,
+                    "sl_pct": round(entry_sl_pct, 4),
+                })
+                position = None
+                continue
+            if low <= tp_price:
+                raw_pnl = entry_tp_pct
+                trades.append({
+                    "type": "SHORT", "entry_time": entry_time,
+                    "entry_price": entry_price, "exit_time": row["time"],
+                    "exit_price": round(tp_price, 6),
+                    "pnl_pct": round(raw_pnl - ROUND_TRIP_FEE_PCT, 6),
+                    "exit_reason": "take_profit",
                     "htf_aligned": entry_htf,
                     "sl_pct": round(entry_sl_pct, 4),
                 })
@@ -199,15 +229,17 @@ def run_backtest(symbol):
                 entry_price = exec_price
                 entry_time = row["time"]
                 entry_htf = sig["htf_aligned"]
-                # A6 FIX: Dynamic ATR-based SL — mirrors paper_trader.py logic
+                # A6 FIX: Dynamic ATR-based SL/TP — mirrors paper_trader.py logic
                 atr = get_atr_at(prev_row["time"], df_htf)
                 if atr and entry_price > 0:
                     entry_sl_pct = max(
                         (atr * ATR_SL_MULTIPLIER / entry_price) * 100,
                         ATR_SL_FLOOR_PCT,
                     )
+                    entry_tp_pct = (atr * ATR_TP_MULTIPLIER / entry_price) * 100
                 else:
                     entry_sl_pct = ATR_SL_FLOOR_PCT
+                    entry_tp_pct = entry_sl_pct * PAPER_REWARD_RATIO
 
         elif sig["decision"] == "SELL":
             if position == "LONG":
@@ -226,15 +258,17 @@ def run_backtest(symbol):
                 entry_price = exec_price
                 entry_time = row["time"]
                 entry_htf = sig["htf_aligned"]
-                # A6 FIX: Dynamic ATR-based SL — mirrors paper_trader.py logic
+                # A6 FIX: Dynamic ATR-based SL/TP — mirrors paper_trader.py logic
                 atr = get_atr_at(prev_row["time"], df_htf)
                 if atr and entry_price > 0:
                     entry_sl_pct = max(
                         (atr * ATR_SL_MULTIPLIER / entry_price) * 100,
                         ATR_SL_FLOOR_PCT,
                     )
+                    entry_tp_pct = (atr * ATR_TP_MULTIPLIER / entry_price) * 100
                 else:
                     entry_sl_pct = ATR_SL_FLOOR_PCT
+                    entry_tp_pct = entry_sl_pct * PAPER_REWARD_RATIO
 
     # Close open position at end
     if position is not None:
@@ -353,10 +387,13 @@ def print_report(symbol, trades, signals, m):
         ret = sum(t["pnl_pct"] for t in not_aligned)
         print(f"  Contra HTF:       {len(not_aligned)} trades | WR: {wr:.1f}% | Ret: {ret:+.2f}%")
 
-    # Stop loss stats
+    # Stop loss / take profit stats
     sl = [t for t in trades if t["exit_reason"] == "stop_loss"]
+    tp = [t for t in trades if t["exit_reason"] == "take_profit"]
     if sl:
-        print(f"\n  Stop losses: {len(sl)} ({len(sl)/len(trades)*100:.0f}% dos trades)")
+        print(f"\n  Stop losses:  {len(sl)} ({len(sl)/len(trades)*100:.0f}% dos trades)")
+    if tp:
+        print(f"  Take profits: {len(tp)} ({len(tp)/len(trades)*100:.0f}% dos trades)")
 
     # Trade log
     print(f"\n  {'-'*56}")

@@ -21,6 +21,7 @@ from config import (
 from runtime_config import PUMP_STATE_FILE
 
 STATE_FILE = PUMP_STATE_FILE
+ROUND_TRIP_FEE_PCT = 0.08  # Binance Futures taker fee (0.04% x 2)
 
 
 def load_state():
@@ -225,8 +226,17 @@ def check_positions():
         if pos_type == "LONG":
             dump_info = detect_dump(symbol, price, pos["peak_price"])
         else:
-            # Para SHORT, invertemos: detectar pump reverso (alta rapida)
-            dump_info = detect_dump(symbol, pos.get("trough_price", entry), price)
+            # Para SHORT: detectar se preco subiu demais contra a posicao
+            trough = pos.get("trough_price", entry)
+            if trough > 0:
+                rise_pct = ((price - trough) / trough) * 100
+                if rise_pct >= PUMP_DUMP_RETRACE_PCT:
+                    dump_info = {
+                        "detected": True,
+                        "reason": f"PUMP REVERSO: alta {rise_pct:.2f}% do fundo (threshold: {PUMP_DUMP_RETRACE_PCT}%)",
+                        "retrace_pct": rise_pct,
+                        "speed_pct": 0.0,
+                    }
 
         if dump_info and dump_info["detected"]:
             exit_reason = "dump_detected"
@@ -256,6 +266,7 @@ def check_positions():
             print(f"  [TIMEOUT] {symbol} {pos_type}: {duration:.0f}min >= {PUMP_MAX_POSITION_TIME}min")
 
         if exit_reason:
+            pnl_pct -= ROUND_TRIP_FEE_PCT  # Descontar fees
             allocation = pos["allocation"]
             pnl_usd = allocation * (pnl_pct / 100)
             state["capital"] += pnl_usd

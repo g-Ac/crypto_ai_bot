@@ -105,6 +105,8 @@ def main():
     log_files = {}
     restart_counts = {}
     start_times = {}  # quando cada processo foi iniciado (para detectar estabilidade)
+    pending_restart = {}  # {name: (restart_at_timestamp, bot_config)} — non-blocking backoff
+    disabled_bots = set()  # bots que atingiram MAX_RESTARTS
 
     # Iniciar todos os bots
     for bot in BOTS:
@@ -127,6 +129,29 @@ def main():
         while True:
             for bot in BOTS:
                 name = bot["name"]
+
+                # Skip bots desabilitados
+                if name in disabled_bots:
+                    continue
+
+                # Verificar pendencia de restart (non-blocking backoff)
+                if name in pending_restart:
+                    restart_at, bot_cfg = pending_restart[name]
+                    if time.time() >= restart_at:
+                        # Fechar log file antigo antes de reabrir
+                        if name in log_files:
+                            try:
+                                log_files[name].close()
+                            except Exception:
+                                pass
+                        proc, lf = run_bot(bot_cfg)
+                        processes[name] = proc
+                        log_files[name] = lf
+                        start_times[name] = time.time()
+                        del pending_restart[name]
+                        log(f"{name} reiniciado (PID: {proc.pid})")
+                    continue  # Ainda em backoff, nao checar poll
+
                 proc = processes[name]
 
                 # Resetar contador se processo esta rodando estavelmente
@@ -139,22 +164,46 @@ def main():
                 # Verificar se o processo ainda esta rodando
                 ret = proc.poll()
                 if ret is not None:
-                    log_files[name].close()
+                    if name in log_files:
+                        try:
+                            log_files[name].close()
+                        except Exception:
+                            pass
                     restart_counts[name] += 1
 
                     if restart_counts[name] > MAX_RESTARTS:
-                        log(f"{name} atingiu {MAX_RESTARTS} restarts. Parando.")
+                        log(f"{name} atingiu {MAX_RESTARTS} restarts. Desabilitando.")
+                        disabled_bots.add(name)
                         notify_telegram(
                             f"{name} - Limite de Restarts",
-                            f"<b>{name}</b> atingiu <code>{MAX_RESTARTS}</code> restarts e foi parado.\n"
+                            f"<b>{name}</b> atingiu <code>{MAX_RESTARTS}</code> restarts e foi desabilitado.\n"
                             f"Intervencao manual necessaria.",
                             critical=True,
                             bot_name=name,
                         )
+                        # Se main_bot morreu, encerrar tudo (posicoes ficam orfas)
+                        if name == "main_bot":
+                            log("CRITICO: main_bot desabilitado. Encerrando supervisor para evitar posicoes orfas.")
+                            notify_telegram(
+                                "CRITICO: Supervisor Encerrado",
+                                "<b>main_bot</b> atingiu limite de restarts.\n"
+                                "Supervisor encerrado para evitar posicoes sem gerenciamento.",
+                                critical=True,
+                            )
+                            for n, p in processes.items():
+                                if n not in disabled_bots:
+                                    p.terminate()
+                                    log(f"{n} parado")
+                            for lf in log_files.values():
+                                try:
+                                    lf.close()
+                                except Exception:
+                                    pass
+                            sys.exit(1)
                         continue
 
                     delay = _get_backoff_delay(restart_counts[name])
-                    log(f"{name} parou (codigo: {ret}). Reiniciando em {delay}s... (restart #{restart_counts[name]}/{MAX_RESTARTS})")
+                    log(f"{name} parou (codigo: {ret}). Agendando reinicio em {delay}s... (restart #{restart_counts[name]}/{MAX_RESTARTS})")
                     notify_telegram(
                         f"{name} Crashou",
                         f"<b>{name}</b> parou com codigo <code>{ret}</code>.\n"
@@ -162,13 +211,8 @@ def main():
                         critical=restart_counts[name] >= 3,
                         bot_name=name,
                     )
-                    time.sleep(delay)
-
-                    proc, lf = run_bot(bot)
-                    processes[name] = proc
-                    log_files[name] = lf
-                    start_times[name] = time.time()
-                    log(f"{name} reiniciado (PID: {proc.pid})")
+                    # Agendar restart em vez de bloquear com sleep
+                    pending_restart[name] = (time.time() + delay, bot)
 
             time.sleep(5)  # Verificar a cada 5 segundos
 
@@ -176,10 +220,14 @@ def main():
         log("Parando todos os bots...")
         notify_telegram("Supervisor Encerrado", "Todos os bots estao sendo parados.")
         for name, proc in processes.items():
-            proc.terminate()
-            log(f"{name} parado")
+            if name not in disabled_bots:
+                proc.terminate()
+                log(f"{name} parado")
         for lf in log_files.values():
-            lf.close()
+            try:
+                lf.close()
+            except Exception:
+                pass
         log("Supervisor encerrado.")
 
 

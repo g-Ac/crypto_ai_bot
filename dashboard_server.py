@@ -24,7 +24,7 @@ import shutil
 import time
 import functools
 import base64
-from collections import Counter
+from collections import Counter, deque
 import requests
 from datetime import datetime, date, timedelta
 from pathlib import Path
@@ -712,7 +712,7 @@ def _get_market_prices(symbols_needed):
         }
 
     try:
-        resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=5)
+        resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=2)
         if resp.status_code == 200:
             prices = {
                 item["symbol"]: _safe_float(item["price"])
@@ -722,7 +722,12 @@ def _get_market_prices(symbols_needed):
             _PRICE_CACHE["prices"] = prices
             _PRICE_CACHE["fetched_at"] = now
     except Exception:
-        pass
+        # Return stale cache on failure instead of empty dict
+        return {
+            symbol: _PRICE_CACHE["prices"].get(symbol)
+            for symbol in symbols_needed
+            if symbol in _PRICE_CACHE["prices"]
+        }
 
     return {
         symbol: _PRICE_CACHE["prices"].get(symbol)
@@ -923,9 +928,8 @@ def _get_recent_logs(source="main", lines=30):
 
     try:
         with open(log_file, "r", encoding="utf-8", errors="replace") as f:
-            all_lines = f.readlines()
-        # Retorna as ultimas N linhas, stripped
-        return [line.rstrip("\n\r") for line in all_lines[-lines:]]
+            tail = deque(f, maxlen=lines)
+        return [line.rstrip("\n\r") for line in tail]
     except Exception:
         return []
 
@@ -1443,7 +1447,12 @@ def api_logs():
       source — main, scalping, pump (default: main)
       lines  — quantidade de linhas (default: 50)
     """
+    ALLOWED_LOG_SOURCES = {"main", "scalping", "pump", "main_bot", "pump_scanner", "dashboard", "supervisor"}
+
     source = request.args.get("source", "main")
+    if source not in ALLOWED_LOG_SOURCES:
+        return jsonify({"error": f"invalid log source: {source}"}), 400
+
     lines = request.args.get("lines", "50")
 
     try:

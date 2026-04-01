@@ -11,6 +11,7 @@ de uma noticia programada — nao operar."
 Dependencias: apenas stdlib + requests (opcional, para Binance announcements).
 """
 import logging
+import warnings
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass
 from typing import Optional
@@ -60,6 +61,14 @@ FOMC_2026_DATES = (
     (10, 27), (10, 28),  # Oct 27-28
     (12, 15), (12, 16),  # Dec 15-16
 )
+
+if datetime.now().year != 2026:
+    warnings.warn(
+        f"news_filter: datas FOMC hardcoded para 2026, "
+        f"ano atual = {datetime.now().year}. "
+        f"Atualizar FOMC_2026_DATES para o ano correto!",
+        stacklevel=1,
+    )
 
 # Eventos recorrentes com horario tipico UTC
 RECURRING_EVENTS: list[EconomicEvent] = [

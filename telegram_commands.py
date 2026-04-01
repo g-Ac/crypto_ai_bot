@@ -25,6 +25,14 @@ from telegram_notifier import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, send_telegra
 from runtime_config import CONTROL_FILE, DB_FILE
 _last_update_id = 0
 
+# ── USER AUTHORIZATION ────────────────────────────────────────────────────────
+_raw_authorized = os.environ.get("TELEGRAM_AUTHORIZED_USERS", "").strip()
+TELEGRAM_AUTHORIZED_USERS = (
+    {uid.strip() for uid in _raw_authorized.split(",") if uid.strip()}
+    if _raw_authorized
+    else set()
+)
+
 
 # ── PAUSE CONTROL ─────────────────────────────────────────────────────────────
 
@@ -372,10 +380,15 @@ def _poll_loop():
                 _last_update_id = update["update_id"]
                 msg = update.get("message", {})
                 chat_id = str(msg.get("chat", {}).get("id", ""))
+                user_id = str(msg.get("from", {}).get("id", ""))
                 text = msg.get("text", "")
 
                 # Apenas responde ao chat configurado (seguranca)
                 if chat_id != str(TELEGRAM_CHAT_ID):
+                    continue
+
+                # Valida user_id se lista de usuarios autorizados estiver configurada
+                if TELEGRAM_AUTHORIZED_USERS and user_id not in TELEGRAM_AUTHORIZED_USERS:
                     continue
 
                 if text.startswith("/"):

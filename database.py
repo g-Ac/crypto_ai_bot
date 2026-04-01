@@ -273,194 +273,208 @@ def init_db():
 
 def insert_analysis_log(data: dict):
     conn = _get_conn()
-    conn.execute("""
-        INSERT INTO analysis_log (
-            timestamp, symbol, candle_time, price, sma_9, sma_21, trend,
-            rsi, rsi_status, price_position, sma_9_direction, sma_21_direction,
-            breakout_status, buy_score, sell_score, signal_strength,
-            decision, confidence_score, reason
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        data["symbol"],
-        str(data["candle_time"]),
-        round(data["price"], 2),
-        round(data["sma_9"], 2),
-        round(data["sma_21"], 2),
-        data["trend"],
-        round(data["rsi"], 2),
-        data["rsi_status"],
-        data["price_position"],
-        data["sma_9_direction"],
-        data["sma_21_direction"],
-        data["breakout_status"],
-        data["buy_score"],
-        data["sell_score"],
-        data["signal_strength"],
-        data["decision"],
-        data["confidence_score"],
-        data["reason"],
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO analysis_log (
+                timestamp, symbol, candle_time, price, sma_9, sma_21, trend,
+                rsi, rsi_status, price_position, sma_9_direction, sma_21_direction,
+                breakout_status, buy_score, sell_score, signal_strength,
+                decision, confidence_score, reason
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            data["symbol"],
+            str(data["candle_time"]),
+            round(data["price"], 2),
+            round(data["sma_9"], 2),
+            round(data["sma_21"], 2),
+            data["trend"],
+            round(data["rsi"], 2),
+            data["rsi_status"],
+            data["price_position"],
+            data["sma_9_direction"],
+            data["sma_21_direction"],
+            data["breakout_status"],
+            data["buy_score"],
+            data["sell_score"],
+            data["signal_strength"],
+            data["decision"],
+            data["confidence_score"],
+            data["reason"],
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def insert_alert(data: dict, alert_type: str):
     conn = _get_conn()
-    conn.execute("""
-        INSERT INTO alerts (
-            timestamp, symbol, alert_type, price, trend, rsi, rsi_status,
-            buy_score, sell_score, signal_strength, decision, reason
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        data["symbol"],
-        alert_type,
-        round(data["price"], 2),
-        data["trend"],
-        round(data["rsi"], 2),
-        data["rsi_status"],
-        data["buy_score"],
-        data["sell_score"],
-        data["signal_strength"],
-        data["decision"],
-        data["reason"],
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO alerts (
+                timestamp, symbol, alert_type, price, trend, rsi, rsi_status,
+                buy_score, sell_score, signal_strength, decision, reason
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            data["symbol"],
+            alert_type,
+            round(data["price"], 2),
+            data["trend"],
+            round(data["rsi"], 2),
+            data["rsi_status"],
+            data["buy_score"],
+            data["sell_score"],
+            data["signal_strength"],
+            data["decision"],
+            data["reason"],
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def insert_paper_trade(trade: dict):
     conn = _get_conn()
-    conn.execute("""
-        INSERT INTO paper_trades (
-            timestamp, symbol, type, entry_price, exit_price,
-            sl_price, tp_price, pnl_pct, pnl_usd, exit_reason, capital_after
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        trade["timestamp"],
-        trade["symbol"],
-        trade["type"],
-        trade["entry_price"],
-        trade["exit_price"],
-        trade.get("sl_price"),
-        trade.get("tp_price"),
-        round(trade["pnl_pct"], 4),
-        round(trade["pnl_usd"], 2),
-        trade["exit_reason"],
-        round(trade["capital_after"], 2),
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO paper_trades (
+                timestamp, symbol, type, entry_price, exit_price,
+                sl_price, tp_price, pnl_pct, pnl_usd, exit_reason, capital_after
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            trade["timestamp"],
+            trade["symbol"],
+            trade["type"],
+            trade["entry_price"],
+            trade["exit_price"],
+            trade.get("sl_price"),
+            trade.get("tp_price"),
+            round(trade["pnl_pct"], 4),
+            round(trade["pnl_usd"], 2),
+            trade["exit_reason"],
+            round(trade["capital_after"], 2),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def insert_agent_trade(trade: dict):
     conn = _get_conn()
-    conn.execute("""
-        INSERT INTO agent_trades (
-            timestamp, symbol, type, entry_price, sl_price, tp_price,
-            position_size_usd, exit_price, pnl_pct, pnl_usd,
-            exit_reason, analyst_confidence, capital_after
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        trade["timestamp"],
-        trade["symbol"],
-        trade["type"],
-        trade["entry_price"],
-        trade["sl_price"],
-        trade["tp_price"],
-        round(trade["position_size_usd"], 2),
-        trade.get("exit_price", None),
-        trade.get("pnl_pct", None),
-        round(trade.get("pnl_usd", 0), 2),
-        trade.get("exit_reason", "open"),
-        trade.get("analyst_confidence", 0),
-        round(trade.get("capital_after", 0), 2),
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO agent_trades (
+                timestamp, symbol, type, entry_price, sl_price, tp_price,
+                position_size_usd, exit_price, pnl_pct, pnl_usd,
+                exit_reason, analyst_confidence, capital_after
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            trade["timestamp"],
+            trade["symbol"],
+            trade["type"],
+            trade["entry_price"],
+            trade["sl_price"],
+            trade["tp_price"],
+            round(trade["position_size_usd"], 2),
+            trade.get("exit_price", None),
+            trade.get("pnl_pct", None),
+            round(trade.get("pnl_usd", 0), 2),
+            trade.get("exit_reason", "open"),
+            trade.get("analyst_confidence", 0),
+            round(trade.get("capital_after", 0), 2),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def insert_pump_trade(trade: dict):
     conn = _get_conn()
-    conn.execute("""
-        INSERT INTO pump_trades (
-            timestamp, symbol, type, entry_price, exit_price,
-            pnl_pct, pnl_usd, exit_reason, duration_min,
-            peak_price, capital_after
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        trade["timestamp"],
-        trade["symbol"],
-        trade["type"],
-        trade["entry_price"],
-        trade["exit_price"],
-        round(trade["pnl_pct"], 4),
-        round(trade["pnl_usd"], 2),
-        trade["exit_reason"],
-        trade["duration_min"],
-        trade["peak_price"],
-        round(trade["capital_after"], 2),
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO pump_trades (
+                timestamp, symbol, type, entry_price, exit_price,
+                pnl_pct, pnl_usd, exit_reason, duration_min,
+                peak_price, capital_after
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            trade["timestamp"],
+            trade["symbol"],
+            trade["type"],
+            trade["entry_price"],
+            trade["exit_price"],
+            round(trade["pnl_pct"], 4),
+            round(trade["pnl_usd"], 2),
+            trade["exit_reason"],
+            trade["duration_min"],
+            trade["peak_price"],
+            round(trade["capital_after"], 2),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def insert_scalping_trade(trade: dict):
     conn = _get_conn()
-    conn.execute("""
-        INSERT INTO scalping_trades (
-            timestamp, symbol, type, entry_price, exit_price,
-            sl_price, tp_price, position_size_usd, leverage,
-            confluence_score, source, pnl_pct, pnl_usd,
-            exit_reason, capital_after
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        trade["timestamp"],
-        trade["symbol"],
-        trade["type"],
-        trade["entry_price"],
-        trade.get("exit_price"),
-        trade.get("sl_price"),
-        trade.get("tp_price"),
-        trade.get("position_size_usd"),
-        trade.get("leverage"),
-        trade.get("confluence_score"),
-        trade.get("source"),
-        trade.get("pnl_pct"),
-        round(trade.get("pnl_usd", 0), 2),
-        trade.get("exit_reason", "open"),
-        round(trade.get("capital_after", 0), 2),
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO scalping_trades (
+                timestamp, symbol, type, entry_price, exit_price,
+                sl_price, tp_price, position_size_usd, leverage,
+                confluence_score, source, pnl_pct, pnl_usd,
+                exit_reason, capital_after
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            trade["timestamp"],
+            trade["symbol"],
+            trade["type"],
+            trade["entry_price"],
+            trade.get("exit_price"),
+            trade.get("sl_price"),
+            trade.get("tp_price"),
+            trade.get("position_size_usd"),
+            trade.get("leverage"),
+            trade.get("confluence_score"),
+            trade.get("source"),
+            trade.get("pnl_pct"),
+            round(trade.get("pnl_usd", 0), 2),
+            trade.get("exit_reason", "open"),
+            round(trade.get("capital_after", 0), 2),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def insert_scalping_decision(decision: dict):
     conn = _get_conn()
-    conn.execute("""
-        INSERT INTO scalping_decisions (
-            timestamp, cycle_id, symbol, outcome, reason,
-            confluence_score, confluence_direction, best_signal_source,
-            ai_used, ai_approved, risk_approved, rr_ratio, sl_distance_pct
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        decision.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-        decision.get("cycle_id", ""),
-        decision.get("symbol", ""),
-        decision.get("outcome", ""),
-        decision.get("reason", ""),
-        decision.get("confluence_score"),
-        decision.get("confluence_direction"),
-        decision.get("best_signal_source"),
-        int(bool(decision.get("ai_used", False))),
-        int(bool(decision.get("ai_approved", False))),
-        int(bool(decision.get("risk_approved", False))),
-        decision.get("rr_ratio"),
-        decision.get("sl_distance_pct"),
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO scalping_decisions (
+                timestamp, cycle_id, symbol, outcome, reason,
+                confluence_score, confluence_direction, best_signal_source,
+                ai_used, ai_approved, risk_approved, rr_ratio, sl_distance_pct
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            decision.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            decision.get("cycle_id", ""),
+            decision.get("symbol", ""),
+            decision.get("outcome", ""),
+            decision.get("reason", ""),
+            decision.get("confluence_score"),
+            decision.get("confluence_direction"),
+            decision.get("best_signal_source"),
+            int(bool(decision.get("ai_used", False))),
+            int(bool(decision.get("ai_approved", False))),
+            int(bool(decision.get("risk_approved", False))),
+            decision.get("rr_ratio"),
+            decision.get("sl_distance_pct"),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def insert_scalping_audit_log(audit: dict):
@@ -469,31 +483,33 @@ def insert_scalping_audit_log(audit: dict):
         details_json = json.dumps(details_json, ensure_ascii=False)
 
     conn = _get_conn()
-    conn.execute("""
-        INSERT INTO scalping_audit_log (
-            timestamp, cycle_id, symbol, outcome, reason,
-            opportunity_detected, force_entry_enabled, force_entry_applied,
-            ai_used, ai_approved, risk_approved,
-            pnl_pct, pnl_usd, details_json
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        audit.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-        audit.get("cycle_id", ""),
-        audit.get("symbol", ""),
-        audit.get("outcome", ""),
-        audit.get("reason", ""),
-        int(bool(audit.get("opportunity_detected", False))),
-        int(bool(audit.get("force_entry_enabled", False))),
-        int(bool(audit.get("force_entry_applied", False))),
-        int(bool(audit.get("ai_used", False))),
-        int(bool(audit.get("ai_approved", False))),
-        int(bool(audit.get("risk_approved", False))),
-        audit.get("pnl_pct"),
-        audit.get("pnl_usd"),
-        details_json,
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            INSERT INTO scalping_audit_log (
+                timestamp, cycle_id, symbol, outcome, reason,
+                opportunity_detected, force_entry_enabled, force_entry_applied,
+                ai_used, ai_approved, risk_approved,
+                pnl_pct, pnl_usd, details_json
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            audit.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            audit.get("cycle_id", ""),
+            audit.get("symbol", ""),
+            audit.get("outcome", ""),
+            audit.get("reason", ""),
+            int(bool(audit.get("opportunity_detected", False))),
+            int(bool(audit.get("force_entry_enabled", False))),
+            int(bool(audit.get("force_entry_applied", False))),
+            int(bool(audit.get("ai_used", False))),
+            int(bool(audit.get("ai_approved", False))),
+            int(bool(audit.get("risk_approved", False))),
+            audit.get("pnl_pct"),
+            audit.get("pnl_usd"),
+            details_json,
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def upsert_scalping_outcome_label(label: dict):
@@ -502,7 +518,8 @@ def upsert_scalping_outcome_label(label: dict):
         details_json = json.dumps(details_json, ensure_ascii=False)
 
     conn = _get_conn()
-    conn.execute("""
+    try:
+        conn.execute("""
         INSERT INTO scalping_outcome_labels (
             audit_id, labeled_at, audit_timestamp, symbol,
             scenario_type, event_outcome, verdict, reason,
@@ -566,15 +583,17 @@ def upsert_scalping_outcome_label(label: dict):
         int(label.get("max_labeled_horizon", 0)),
         label.get("label_status", "pending"),
         details_json,
-    ))
-    conn.commit()
-    conn.close()
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def insert_ai_decision(decision: dict):
     """Registra uma decisão de IA (modelo, latência, fallback, resultado)."""
     conn = _get_conn()
-    conn.execute("""
+    try:
+        conn.execute("""
         INSERT INTO ai_decisions (
             timestamp, symbol, system, model, prompt_version,
             latency_ms, fallback_used, parse_success,
@@ -593,9 +612,10 @@ def insert_ai_decision(decision: dict):
         decision.get("confidence"),
         decision.get("reasoning", ""),
         decision.get("trade_result"),
-    ))
-    conn.commit()
-    conn.close()
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ── QUERY FUNCTIONS ───────────────────────────────────────────────────────────
@@ -921,6 +941,7 @@ def get_scalping_outcome_labels(
 
 def get_trades_range(table: str, days: int = 7, limit: int = 100) -> list:
     """Trades dos ultimos N dias, limitado a N registros."""
+    _validate_table(table)
     from datetime import timedelta
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     conn = _get_conn()
