@@ -1,6 +1,26 @@
+import pandas as pd
+
 from config import INTERVAL_HTF, LIMIT, SMA_SHORT, SMA_LONG
 from market import get_candles
 from indicators import add_indicators
+
+
+def classify_htf_trend(sma_short_val, sma_long_val):
+    """Classify HTF trend from SMA values.
+
+    Single source of truth for HTF trend classification, used by both
+    the live bot (get_htf_trend) and the backtester (compute_htf_trends).
+
+    Returns 'alta', 'baixa', or 'lateral'.
+    """
+    if pd.isna(sma_short_val) or pd.isna(sma_long_val):
+        return "lateral"
+    if sma_short_val > sma_long_val:
+        return "alta"
+    elif sma_short_val < sma_long_val:
+        return "baixa"
+    else:
+        return "lateral"
 
 
 def get_htf_trend(symbol: str) -> str:
@@ -8,12 +28,7 @@ def get_htf_trend(symbol: str) -> str:
     df = add_indicators(df)
     last = df.iloc[-2]
 
-    sma_short = last[f"sma_{SMA_SHORT}"]
-    sma_long = last[f"sma_{SMA_LONG}"]
-
-    if sma_short > sma_long:
-        return "alta"
-    elif sma_short < sma_long:
-        return "baixa"
-    else:
-        return "lateral"
+    return classify_htf_trend(
+        last[f"sma_{SMA_SHORT}"],
+        last[f"sma_{SMA_LONG}"],
+    )

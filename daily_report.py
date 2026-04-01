@@ -9,11 +9,17 @@ from datetime import datetime, date
 from config import (
     DAILY_LOSS_LIMIT_PCT, DAILY_MAX_TRADES,
     PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL,
+    SCALPING_INITIAL_CAPITAL,
 )
 from telegram_notifier import send_telegram_message, send_circuit_breaker_alert
 import database as db
-
-LAST_REPORT_FILE = "last_report_date.txt"
+from runtime_config import (
+    LAST_REPORT_FILE,
+    PAPER_STATE_FILE,
+    AGENT_STATE_FILE,
+    PUMP_STATE_FILE,
+    SCALPING_STATE_FILE,
+)
 
 
 
@@ -51,15 +57,15 @@ def get_open_positions():
     positions = []
 
     # Paper trader
-    if os.path.isfile("paper_state.json"):
-        with open("paper_state.json", "r") as f:
+    if os.path.isfile(PAPER_STATE_FILE):
+        with open(PAPER_STATE_FILE, "r") as f:
             state = json.load(f)
         for sym, pos in state.get("positions", {}).items():
             positions.append(f"  {sym}: {pos['type']} @ {pos['entry_price']:.4f} (paper)")
 
     # Agent trader
-    if os.path.isfile("agent_state.json"):
-        with open("agent_state.json", "r") as f:
+    if os.path.isfile(AGENT_STATE_FILE):
+        with open(AGENT_STATE_FILE, "r") as f:
             state = json.load(f)
         for sym, pos in state.get("positions", {}).items():
             positions.append(
@@ -68,11 +74,21 @@ def get_open_positions():
             )
 
     # Pump trader
-    if os.path.isfile("pump_positions.json"):
-        with open("pump_positions.json", "r") as f:
+    if os.path.isfile(PUMP_STATE_FILE):
+        with open(PUMP_STATE_FILE, "r") as f:
             state = json.load(f)
         for sym, pos in state.get("positions", {}).items():
             positions.append(f"  {sym}: {pos['type']} @ {pos['entry_price']:.6f} (pump)")
+
+    # Scalping
+    if os.path.isfile(SCALPING_STATE_FILE):
+        with open(SCALPING_STATE_FILE, "r") as f:
+            state = json.load(f)
+        for sym, pos in state.get("positions", {}).items():
+            positions.append(
+                f"  {sym}: {pos['direction']} @ {pos['entry_price']:.4f} "
+                f"SL:{pos['sl_price']:.4f} TP1:{pos['tp1_price']:.4f} (scalping)"
+            )
 
     return positions
 
@@ -81,17 +97,21 @@ def get_capital_status():
     """Get capital from all systems."""
     caps = {}
 
-    if os.path.isfile("paper_state.json"):
-        with open("paper_state.json", "r") as f:
+    if os.path.isfile(PAPER_STATE_FILE):
+        with open(PAPER_STATE_FILE, "r") as f:
             caps["Paper"] = json.load(f).get("capital", 0)
 
-    if os.path.isfile("agent_state.json"):
-        with open("agent_state.json", "r") as f:
+    if os.path.isfile(AGENT_STATE_FILE):
+        with open(AGENT_STATE_FILE, "r") as f:
             caps["Agent"] = json.load(f).get("capital", 0)
 
-    if os.path.isfile("pump_positions.json"):
-        with open("pump_positions.json", "r") as f:
+    if os.path.isfile(PUMP_STATE_FILE):
+        with open(PUMP_STATE_FILE, "r") as f:
             caps["Pump"] = json.load(f).get("capital", 0)
+
+    if os.path.isfile(SCALPING_STATE_FILE):
+        with open(SCALPING_STATE_FILE, "r") as f:
+            caps["Scalping"] = json.load(f).get("capital", 0)
 
     return caps
 
@@ -104,10 +124,12 @@ def generate_report():
     paper_trades = db.get_trades_today("paper_trades")
     agent_trades = db.get_trades_today("agent_trades")
     pump_trades = db.get_trades_today("pump_trades")
+    scalping_trades = db.get_trades_today("scalping_trades")
 
     paper_stats = calc_daily_stats(paper_trades)
     agent_stats = calc_daily_stats(agent_trades)
     pump_stats = calc_daily_stats(pump_trades)
+    scalping_stats = calc_daily_stats(scalping_trades)
 
     capitals = get_capital_status()
     positions = get_open_positions()
@@ -148,11 +170,22 @@ def generate_report():
             f"Capital: ${capitals['Pump']:.2f}"
         )
 
+    # Scalping
+    if "Scalping" in capitals:
+        sc = scalping_stats
+        lines.append(
+            f"Scalping: {sc['count']} trades | "
+            f"{sc['pnl_pct']:+.2f}% (${sc['pnl_usd']:+.2f}) | "
+            f"W:{sc['wins']} L:{sc['losses']} | "
+            f"Capital: ${capitals['Scalping']:.2f}"
+        )
+
     # Total
-    total_trades = paper_stats["count"] + agent_stats["count"] + pump_stats["count"]
-    total_pnl = paper_stats["pnl_usd"] + agent_stats["pnl_usd"] + pump_stats["pnl_usd"]
-    total_wins = paper_stats["wins"] + agent_stats["wins"] + pump_stats["wins"]
-    total_losses = paper_stats["losses"] + agent_stats["losses"] + pump_stats["losses"]
+    all_stats = [paper_stats, agent_stats, pump_stats, scalping_stats]
+    total_trades = sum(s["count"] for s in all_stats)
+    total_pnl = sum(s["pnl_usd"] for s in all_stats)
+    total_wins = sum(s["wins"] for s in all_stats)
+    total_losses = sum(s["losses"] for s in all_stats)
 
     lines.append("")
     lines.append(
@@ -206,10 +239,13 @@ def send_daily_report():
 
 
 def check_daily_report():
-    """Called each cycle - sends report once per day after midnight."""
-    now = datetime.now()
-    if now.hour == 0 and now.minute < 10:
-        send_daily_report()
+    """Called each cycle - sends report once per day.
+
+    Nao depende mais de janela fixa (00:00-00:10). Basta nao ter sido
+    enviado hoje.  Se o bot esteve offline a meia-noite, o relatorio
+    sera enviado no proximo ciclo apos o retorno.
+    """
+    send_daily_report()
 
 
 # ============================================================
@@ -219,14 +255,16 @@ def check_daily_report():
 def _get_current_capital(system):
     """Get current capital from state file for a given system."""
     state_files = {
-        "paper": "paper_state.json",
-        "agent": "agent_state.json",
-        "pump": "pump_positions.json",
+        "paper": PAPER_STATE_FILE,
+        "agent": AGENT_STATE_FILE,
+        "pump": PUMP_STATE_FILE,
+        "scalping": SCALPING_STATE_FILE,
     }
     fallback = {
         "paper": PAPER_INITIAL_CAPITAL,
         "agent": AGENT_INITIAL_CAPITAL,
         "pump": PUMP_INITIAL_CAPITAL,
+        "scalping": SCALPING_INITIAL_CAPITAL,
     }
     path = state_files.get(system)
     if path and os.path.isfile(path):
@@ -238,30 +276,72 @@ def _get_current_capital(system):
     return fallback.get(system, 10000)
 
 
-def is_circuit_broken(system="agent"):
-    """Check if daily loss limit or max trades reached."""
-    if system == "agent":
-        trades = db.get_trades_today("agent_trades")
-    elif system == "pump":
-        trades = db.get_trades_today("pump_trades")
-    elif system == "paper":
-        trades = db.get_trades_today("paper_trades")
-    else:
+def check_circuit_breaker(system="agent"):
+    """Read-only check: daily loss limit or max trades reached. No side effects."""
+    table_map = {
+        "agent": "agent_trades",
+        "pump": "pump_trades",
+        "paper": "paper_trades",
+        "scalping": "scalping_trades",
+    }
+    table = table_map.get(system)
+    if not table:
         return False
 
+    trades = db.get_trades_today(table)
     stats = calc_daily_stats(trades)
 
-    # Check max trades
+    if stats["count"] >= DAILY_MAX_TRADES:
+        return True
+
+    initial_capitals = {
+        "paper": PAPER_INITIAL_CAPITAL,
+        "agent": AGENT_INITIAL_CAPITAL,
+        "pump": PUMP_INITIAL_CAPITAL,
+        "scalping": SCALPING_INITIAL_CAPITAL,
+    }
+    baseline = initial_capitals.get(system, 10000)
+    current_capital = _get_current_capital(system)
+    reference_capital = max(baseline, current_capital)
+    if reference_capital <= 0:
+        reference_capital = baseline
+
+    real_loss_pct = (stats["pnl_usd"] / reference_capital) * 100
+    if real_loss_pct <= -DAILY_LOSS_LIMIT_PCT:
+        return True
+
+    return False
+
+
+def enforce_circuit_breaker(system="agent"):
+    """Check circuit breaker and send Telegram alert if broken.
+
+    Use in main loops where the alert side effect is desired.
+    For read-only checks (dashboard, status), use check_circuit_breaker().
+    """
+    table_map = {
+        "agent": "agent_trades",
+        "pump": "pump_trades",
+        "paper": "paper_trades",
+        "scalping": "scalping_trades",
+    }
+    table = table_map.get(system)
+    if not table:
+        return False
+
+    trades = db.get_trades_today(table)
+    stats = calc_daily_stats(trades)
+
     if stats["count"] >= DAILY_MAX_TRADES:
         print(f"  [CIRCUIT BREAKER] {system}: limite de {DAILY_MAX_TRADES} trades/dia atingido")
         send_circuit_breaker_alert(system, f"Limite de {DAILY_MAX_TRADES} trades/dia atingido ({stats['count']} trades)")
         return True
 
-    # Use max(initial, current) as reference for daily loss %
     initial_capitals = {
         "paper": PAPER_INITIAL_CAPITAL,
         "agent": AGENT_INITIAL_CAPITAL,
         "pump": PUMP_INITIAL_CAPITAL,
+        "scalping": SCALPING_INITIAL_CAPITAL,
     }
     baseline = initial_capitals.get(system, 10000)
     current_capital = _get_current_capital(system)
@@ -280,6 +360,10 @@ def is_circuit_broken(system="agent"):
         return True
 
     return False
+
+
+# DEPRECATED: use enforce_circuit_breaker() (com alerta) ou check_circuit_breaker() (read-only)
+is_circuit_broken = enforce_circuit_breaker
 
 
 if __name__ == "__main__":

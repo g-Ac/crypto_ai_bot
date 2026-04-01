@@ -19,16 +19,15 @@ from typing import Optional, Tuple
 import pandas as pd
 import requests
 
+from config import SCALPING_INITIAL_CAPITAL
 from signal_types import (
     Direction, ConfluenceResult, RiskDecision, ScalpingConfig,
 )
 from scalping_data import get_funding_rate
 from news_filter import is_near_news_event
+from runtime_config import SCALPING_STATE_FILE
 
 logger = logging.getLogger("scalping.risk")
-
-# Arquivo de estado do scalping trader
-SCALPING_STATE_FILE = "scalping_state.json"
 
 
 # ============================================================
@@ -39,7 +38,7 @@ def load_scalping_state() -> dict:
     """Carrega o estado do scalping trader do disco."""
     if not os.path.exists(SCALPING_STATE_FILE):
         return {
-            "capital": 10000.0,
+            "capital": float(SCALPING_INITIAL_CAPITAL),
             "positions": {},
             "cooldowns": {},       # symbol -> {"last_close_time": iso, "candles_remaining": int}
             "total_trades": 0,
@@ -352,6 +351,7 @@ def evaluate_risk(
     symbol: str,
     config: ScalpingConfig,
     df_15m: Optional[pd.DataFrame] = None,
+    state: Optional[dict] = None,
 ) -> RiskDecision:
     """
     Avaliacao completa de risco para uma oportunidade de scalping.
@@ -370,7 +370,8 @@ def evaluate_risk(
     10. RR minimo
     11. Position sizing
     """
-    state = load_scalping_state()
+    if state is None:
+        state = load_scalping_state()
 
     # 0. Verificacao de capital minimo
     capital_ok, capital, capital_reason = check_capital_sufficient(state, config)

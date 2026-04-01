@@ -16,10 +16,11 @@ from config import (
 )
 from telegram_notifier import send_telegram_message, send_pump_alert
 from pump_trader import open_position, check_positions, get_status
-from daily_report import is_circuit_broken
+from daily_report import enforce_circuit_breaker
 from telegram_commands import is_paused
+from runtime_config import PUMP_COOLDOWN_FILE
 
-ALERT_COOLDOWN_FILE = "pump_cooldown.json"
+ALERT_COOLDOWN_FILE = PUMP_COOLDOWN_FILE
 COOLDOWN_MINUTES = 30
 
 
@@ -145,7 +146,15 @@ def analyze_symbol(symbol):
 
 def scan():
     """Run one scan cycle."""
-    if is_circuit_broken("pump"):
+    # C4: Posicoes SEMPRE devem ser gerenciadas, independente do circuit breaker.
+    # Se o check falhar, fallback seguro: so gerencia posicoes, nao abre novas.
+    try:
+        cb_active = enforce_circuit_breaker("pump")
+    except Exception as e:
+        print(f"  [ERRO] Falha ao verificar circuit breaker pump: {e}")
+        cb_active = True  # fallback seguro
+
+    if cb_active:
         print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Circuit breaker ativo - pump trading pausado")
         # Still check existing positions even when circuit breaker is active
         pos_msgs = check_positions()

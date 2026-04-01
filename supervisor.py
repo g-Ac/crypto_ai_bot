@@ -8,10 +8,10 @@ import sys
 import os
 import time
 from datetime import datetime
+from runtime_config import APP_DIR, BOT_ID, BOT_LABEL, LOG_DIR, PYTHON_EXECUTABLE, ensure_runtime_dirs
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_DIR = os.path.join(BOT_DIR, "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
+BOT_DIR = str(APP_DIR)
+ensure_runtime_dirs()
 
 # Adiciona BOT_DIR ao path para imports
 sys.path.insert(0, BOT_DIR)
@@ -22,8 +22,10 @@ BOTS = [
     {"name": "dashboard",   "script": "dashboard_server.py"},
 ]
 
-RESTART_DELAY = 10  # segundos antes de reiniciar um bot que crashou
-MAX_RESTARTS = 50   # maximo de restarts por bot antes de parar
+MAX_RESTARTS = 10   # maximo de restarts por bot antes de parar
+BACKOFF_STEPS = [10, 30, 60, 120, 300]  # backoff exponencial em segundos (cap 5min)
+STABLE_THRESHOLD = 300  # segundos rodando sem crash para resetar contador (5min)
+ALERT_COOLDOWN = 600  # segundos entre alertas Telegram por bot (10 min)
 
 
 def get_log_path(name):
@@ -33,14 +35,28 @@ def get_log_path(name):
 
 def log(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{ts}] {msg}"
+    line = f"[{ts}] [{BOT_ID}] {msg}"
     print(line)
     with open(os.path.join(LOG_DIR, "supervisor.log"), "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
 
-def notify_telegram(title, message, critical=False):
-    """Envia notificacao ao Telegram via telegram_notifier."""
+_last_alert_time = {}  # {bot_name: timestamp} — rate-limit por bot
+
+
+def notify_telegram(title, message, critical=False, bot_name=None):
+    """Envia notificacao ao Telegram via telegram_notifier.
+
+    Rate-limit: no maximo 1 alerta a cada ALERT_COOLDOWN segundos por bot,
+    exceto alertas criticos (critical=True) que sempre passam.
+    """
+    if bot_name and not critical:
+        now = time.time()
+        last = _last_alert_time.get(bot_name, 0)
+        if now - last < ALERT_COOLDOWN:
+            log(f"Alerta suprimido para {bot_name} (cooldown {ALERT_COOLDOWN}s, faltam {int(ALERT_COOLDOWN - (now - last))}s)")
+            return
+        _last_alert_time[bot_name] = now
     try:
         from telegram_notifier import send_system_alert
         send_system_alert(title, message, critical=critical)
@@ -59,25 +75,36 @@ def run_bot(bot):
     log_file.flush()
 
     process = subprocess.Popen(
-        [sys.executable, "-u", script],
+        [PYTHON_EXECUTABLE, "-u", script],
         stdout=log_file,
         stderr=subprocess.STDOUT,
         cwd=BOT_DIR,
+        env=os.environ.copy(),
     )
     return process, log_file
 
 
+def _get_backoff_delay(restart_count):
+    """Retorna delay de backoff baseado no numero de restarts (cap em 5min)."""
+    idx = min(restart_count - 1, len(BACKOFF_STEPS) - 1)
+    idx = max(idx, 0)
+    return BACKOFF_STEPS[idx]
+
+
 def main():
     log("=" * 50)
-    log("SUPERVISOR INICIADO")
+    log(f"SUPERVISOR INICIADO ({BOT_LABEL})")
     log(f"Diretorio: {BOT_DIR}")
-    log(f"Python: {sys.executable}")
+    log(f"Runtime logs: {LOG_DIR}")
+    log(f"Python: {PYTHON_EXECUTABLE}")
     log(f"Bots: {', '.join(b['name'] for b in BOTS)}")
+    log(f"Max restarts: {MAX_RESTARTS} | Backoff: {BACKOFF_STEPS}s | Stable after: {STABLE_THRESHOLD}s | Alert cooldown: {ALERT_COOLDOWN}s")
     log("=" * 50)
 
     processes = {}
     log_files = {}
     restart_counts = {}
+    start_times = {}  # quando cada processo foi iniciado (para detectar estabilidade)
 
     # Iniciar todos os bots
     for bot in BOTS:
@@ -85,6 +112,7 @@ def main():
         processes[bot["name"]] = proc
         log_files[bot["name"]] = lf
         restart_counts[bot["name"]] = 0
+        start_times[bot["name"]] = time.time()
         log(f"{bot['name']} iniciado (PID: {proc.pid})")
 
     # Notificar inicio do supervisor
@@ -101,6 +129,13 @@ def main():
                 name = bot["name"]
                 proc = processes[name]
 
+                # Resetar contador se processo esta rodando estavelmente
+                if proc.poll() is None and restart_counts[name] > 0:
+                    uptime = time.time() - start_times[name]
+                    if uptime >= STABLE_THRESHOLD:
+                        log(f"{name} estavel por {int(uptime)}s - resetando contador de restarts ({restart_counts[name]} -> 0)")
+                        restart_counts[name] = 0
+
                 # Verificar se o processo ainda esta rodando
                 ret = proc.poll()
                 if ret is not None:
@@ -114,21 +149,25 @@ def main():
                             f"<b>{name}</b> atingiu <code>{MAX_RESTARTS}</code> restarts e foi parado.\n"
                             f"Intervencao manual necessaria.",
                             critical=True,
+                            bot_name=name,
                         )
                         continue
 
-                    log(f"{name} parou (codigo: {ret}). Reiniciando em {RESTART_DELAY}s... (restart #{restart_counts[name]})")
+                    delay = _get_backoff_delay(restart_counts[name])
+                    log(f"{name} parou (codigo: {ret}). Reiniciando em {delay}s... (restart #{restart_counts[name]}/{MAX_RESTARTS})")
                     notify_telegram(
                         f"{name} Crashou",
                         f"<b>{name}</b> parou com codigo <code>{ret}</code>.\n"
-                        f"Reiniciando em {RESTART_DELAY}s... (restart #{restart_counts[name]}/{MAX_RESTARTS})",
+                        f"Reiniciando em {delay}s (backoff)... (restart #{restart_counts[name]}/{MAX_RESTARTS})",
                         critical=restart_counts[name] >= 3,
+                        bot_name=name,
                     )
-                    time.sleep(RESTART_DELAY)
+                    time.sleep(delay)
 
                     proc, lf = run_bot(bot)
                     processes[name] = proc
                     log_files[name] = lf
+                    start_times[name] = time.time()
                     log(f"{name} reiniciado (PID: {proc.pid})")
 
             time.sleep(5)  # Verificar a cada 5 segundos

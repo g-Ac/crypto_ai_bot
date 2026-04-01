@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from runtime_config import TECHNICAL_ANALYSIS_FILE
 
 
 def export_analysis(results: list):
@@ -8,5 +9,5 @@ def export_analysis(results: list):
         "symbols": results
     }
 
-    with open("technical_analysis.json", "w", encoding="utf-8") as file:
+    with open(TECHNICAL_ANALYSIS_FILE, "w", encoding="utf-8") as file:
         json.dump(payload, file, ensure_ascii=False, indent=4, default=str)

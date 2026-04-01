@@ -6,13 +6,14 @@ import pandas as pd
 import ta
 from datetime import datetime, timedelta
 from config import (
-    STOP_LOSS_MAP, STOP_LOSS_PCT, PAPER_INITIAL_CAPITAL,
+    PAPER_INITIAL_CAPITAL,
     PAPER_MAX_POSITIONS, PAPER_REWARD_RATIO, COOLDOWN_MINUTES,
     ATR_SL_MULTIPLIER, ATR_TP_MULTIPLIER, ATR_SL_FLOOR_PCT,
 )
 import database as db
+from runtime_config import PAPER_STATE_FILE
 
-STATE_FILE = "paper_state.json"
+STATE_FILE = PAPER_STATE_FILE
 
 
 def load_state():
@@ -75,7 +76,7 @@ def log_trade(trade):
     db.insert_paper_trade(trade)
 
 
-def process_signals(results):
+def process_signals(results, open_new=True):
     """Process all signals from a cycle and manage paper positions."""
     state = load_state()
     messages = []
@@ -91,7 +92,7 @@ def process_signals(results):
             entry = pos["entry_price"]
             sl_price = pos.get("sl_price")
             tp_price = pos.get("tp_price")
-            sl_pct = pos.get("sl_pct", STOP_LOSS_MAP.get(symbol, STOP_LOSS_PCT))
+            sl_pct = pos.get("sl_pct", ATR_SL_FLOOR_PCT)
 
             if pos["type"] == "LONG":
                 pnl_pct = ((price - entry) / entry) * 100
@@ -133,6 +134,8 @@ def process_signals(results):
                 # Fall through para abrir nova posicao abaixo
 
         # ── Abrir nova posicao ─────────────────────────────────────────
+        if not open_new:
+            continue
         if decision in ["BUY", "SELL"] and symbol not in state["positions"]:
             # Limite de posicoes simultaneas
             if len(state["positions"]) >= PAPER_MAX_POSITIONS:
@@ -155,7 +158,7 @@ def process_signals(results):
                 sl_pct = max((atr * ATR_SL_MULTIPLIER / price) * 100, ATR_SL_FLOOR_PCT)
                 tp_pct = (atr * ATR_TP_MULTIPLIER / price) * 100
             else:
-                sl_pct = max(STOP_LOSS_MAP.get(symbol, STOP_LOSS_PCT), ATR_SL_FLOOR_PCT)
+                sl_pct = ATR_SL_FLOOR_PCT
                 tp_pct = sl_pct * PAPER_REWARD_RATIO
 
             if pos_type == "LONG":
@@ -202,7 +205,7 @@ def close_position(state, symbol, price, pnl_pct, reason):
     else:
         state["losses"] += 1
 
-    if reason == "stop_loss":
+    if reason in ("stop_loss", "take_profit"):
         state.setdefault("cooldowns", {})[symbol] = datetime.now().isoformat()
 
     wr = (state["wins"] / state["total_trades"]) * 100 if state["total_trades"] > 0 else 0
@@ -220,7 +223,10 @@ def close_position(state, symbol, price, pnl_pct, reason):
         "exit_reason": reason,
         "capital_after": state["capital"],
     }
-    log_trade(trade)
+    try:
+        log_trade(trade)
+    except Exception as db_err:
+        print(f"  [ERRO] Falha ao salvar trade no banco (paper): {db_err}")
 
     return (
         f"PAPER {pos['type']} fechado: {symbol}\n"

@@ -19,6 +19,7 @@ technical_analysis.json
 
 # === LOGS E DADOS HISTORICOS ===
 logs/
+runtime/
 *.log
 log.csv
 *.csv

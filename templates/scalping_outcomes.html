@@ -1,0 +1,494 @@
+{% set payload = outcomes or {} %}
+{% set query = payload.query or {} %}
+{% set summary = payload.summary or {} %}
+{% set instance = payload.instance or {} %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crypto AI Bot | Outcomes Scalping</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: rgba(11, 24, 42, 0.94);
+      --soft: rgba(15, 29, 47, 0.84);
+      --border: rgba(130, 168, 214, 0.2);
+      --text: #edf5ff;
+      --muted: #a6bdd8;
+      --good: #35d08f;
+      --bad: #ff6b7f;
+      --warn: #ffca6a;
+      --cyan: #69f0ff;
+      --shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(95, 183, 255, 0.18), transparent 30%),
+        radial-gradient(circle at top right, rgba(53, 208, 143, 0.12), transparent 25%),
+        linear-gradient(180deg, #07111f 0%, #040b14 100%);
+    }
+    .topbar, .panel, .stat, .control, .row-card, .mini-card {
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 1.4rem;
+      background: rgba(4, 10, 18, 0.88);
+      backdrop-filter: blur(18px);
+    }
+    h1, h2, h3, p, pre { margin: 0; }
+    .kicker {
+      color: var(--cyan);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-weight: 600;
+    }
+    h1 { margin-top: 0.25rem; font-size: clamp(1.5rem, 2vw, 2rem); }
+    .subtitle { margin-top: 0.3rem; color: var(--muted); font-size: 0.9rem; }
+    .nav-links, .controls, .stats, .mini-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      align-items: center;
+    }
+    .chip, .control, .metric-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.55rem 0.85rem;
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.82rem;
+    }
+    .chip strong, .metric-chip strong { color: var(--text); }
+    .shell {
+      width: min(1600px, calc(100% - 2rem));
+      margin: 1.4rem auto 2rem;
+      display: grid;
+      gap: 1rem;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(12, 24, 42, 0.96), rgba(8, 17, 31, 0.94));
+      border-radius: 26px;
+      overflow: hidden;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1.3rem 1.4rem 0;
+    }
+    .hero-note { color: var(--muted); max-width: 82ch; line-height: 1.55; margin-top: 0.55rem; }
+    .controls { padding: 0 1.4rem 1.4rem; margin-top: 1rem; }
+    .control {
+      flex-direction: column;
+      align-items: flex-start;
+      border-radius: 18px;
+      padding: 0.8rem 0.95rem;
+      min-width: 150px;
+    }
+    .control label {
+      color: var(--muted);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .control select {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      outline: none;
+      padding: 0;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .apply-btn {
+      border: none;
+      border-radius: 999px;
+      padding: 0.95rem 1.2rem;
+      background: linear-gradient(135deg, #2c88ff, #1d5bd8);
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 1rem;
+      padding: 0 1.4rem 1.4rem;
+    }
+    .stat, .mini-card {
+      background: var(--soft);
+      border-radius: 22px;
+      padding: 1rem 1.1rem;
+    }
+    .stat .label, .mini-card .label {
+      display: block;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-size: 0.68rem;
+      margin-bottom: 0.45rem;
+    }
+    .stat .value, .mini-card .value {
+      font-size: clamp(1.2rem, 2vw, 1.85rem);
+      font-weight: 700;
+      line-height: 1.1;
+    }
+    .good { color: var(--good); }
+    .bad { color: var(--bad); }
+    .warn { color: var(--warn); }
+    .muted { color: var(--muted); }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      padding: 0 1.4rem 1.4rem;
+    }
+    .stack {
+      display: grid;
+      gap: 0.8rem;
+      padding: 0 1.4rem 1.4rem;
+    }
+    .row-card {
+      background: rgba(13, 27, 47, 0.72);
+      border-radius: 22px;
+      padding: 1rem;
+      display: grid;
+      gap: 0.9rem;
+    }
+    .row-head, .row-meta, .row-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.7rem;
+      align-items: center;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.38rem 0.7rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      font-size: 0.75rem;
+    }
+    .title {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    .reason {
+      color: var(--text);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    .mono, pre {
+      font-family: "IBM Plex Mono", monospace;
+    }
+    details {
+      border-top: 1px solid var(--border);
+      padding-top: 0.8rem;
+    }
+    details summary {
+      cursor: pointer;
+      color: var(--cyan);
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    pre {
+      padding: 0.9rem;
+      border-radius: 18px;
+      background: rgba(4, 10, 18, 0.72);
+      color: #dcecff;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.8rem;
+      line-height: 1.55;
+      overflow-x: auto;
+    }
+    @media (max-width: 1280px) {
+      .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .mini-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      .topbar, .controls { flex-direction: column; align-items: stretch; }
+      .stats { grid-template-columns: 1fr; }
+      .apply-btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="topbar">
+    <div>
+      <p class="kicker">Crypto AI Bot / Outcome Lab</p>
+      <h1>Outcomes do Scalping</h1>
+      <p class="subtitle">Replay rotulado para medir o que teria funcionado, o que falhou e onde a estrategia pode melhorar.</p>
+    </div>
+    <div class="nav-links">
+      <a class="chip" href="/">Dashboard atual</a>
+      <a class="chip" href="/scalping/audit?days=1&limit=100">Auditoria bruta</a>
+      <a class="chip" href="/scalping/scorer?days=30&limit=5000">Scorer historico</a>
+      {% for item in payload.runtime_links or [] %}
+      <a class="chip" href="{{ item.url }}">{{ item.label }} <strong>:{{ item.dashboard_port or "?" }}</strong></a>
+      {% endfor %}
+    </div>
+  </nav>
+
+  <main class="shell">
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <p class="kicker">Forward Labels</p>
+          <h2>{{ instance.label or "Instancia" }} / {{ instance.version_tag or "-" }}</h2>
+          <p class="hero-note">
+            Aqui o bot revisita cada evento do scalping e olha o que aconteceu depois. A leitura mais valiosa agora e:
+            quantos bloqueados teriam sido gain, quantos forced entries funcionaram, e quais motivos aparecem de novo
+            nos casos bons e ruins. Isso e a base para ajustar a estrategia e, depois, treinar um scorer ou uma camada de IA.
+          </p>
+        </div>
+        <div class="nav-links">
+          <span class="chip">Polling <strong>25s</strong></span>
+          <span class="chip">Labels <strong id="labelsCount">{{ payload.count or 0 }}</strong></span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="control">
+          <label for="daysSelect">Dias</label>
+          <select id="daysSelect">
+            {% for option in [1, 2, 3, 7, 14, 30] %}
+            <option value="{{ option }}" {% if query.days == option %}selected{% endif %}>{{ option }}d</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="control">
+          <label for="limitSelect">Limite</label>
+          <select id="limitSelect">
+            {% for option in [25, 50, 100, 150, 250, 500] %}
+            <option value="{{ option }}" {% if query.limit == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="control">
+          <label for="scenarioSelect">Cenario</label>
+          <select id="scenarioSelect">
+            {% for option in ["", "blocked", "forced", "executed", "rejected", "observed"] %}
+            <option value="{{ option }}" {% if query.scenario_type == option %}selected{% endif %}>{{ option or "todos" }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="control">
+          <label for="verdictSelect">Verdict</label>
+          <select id="verdictSelect">
+            {% for option in ["", "winner", "loser", "partial", "no_setup", "open_positive", "open_negative", "flat"] %}
+            <option value="{{ option }}" {% if query.verdict == option %}selected{% endif %}>{{ option or "todos" }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="apply-btn" id="applyOutcomesBtn">Atualizar</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <span class="label">Rotulados</span>
+          <div class="value" id="statLabeled">{{ summary.labeled_events or 0 }}</div>
+        </div>
+        <div class="stat">
+          <span class="label">Actionable</span>
+          <div class="value" id="statActionable">{{ summary.actionable or 0 }}</div>
+        </div>
+        <div class="stat">
+          <span class="label">Winners</span>
+          <div class="value good" id="statWinners">{{ summary.winners or 0 }}</div>
+        </div>
+        <div class="stat">
+          <span class="label">Losers</span>
+          <div class="value bad" id="statLosers">{{ summary.losers or 0 }}</div>
+        </div>
+        <div class="stat">
+          <span class="label">Avg 60m</span>
+          <div class="value" id="statAvg60">{{ summary.avg_close_return_60m_pct or 0 }}</div>
+        </div>
+        <div class="stat">
+          <span class="label">Completos</span>
+          <div class="value" id="statComplete">{{ summary.complete_labels or 0 }}</div>
+        </div>
+      </div>
+
+      <div class="mini-grid">
+        <article class="mini-card">
+          <span class="label">Bloqueados</span>
+          <div class="value"><span class="good" id="blockedWinners">{{ summary.blocked_winners or 0 }}</span> / <span class="bad" id="blockedLosers">{{ summary.blocked_losers or 0 }}</span></div>
+        </article>
+        <article class="mini-card">
+          <span class="label">Forced</span>
+          <div class="value"><span class="good" id="forcedWinners">{{ summary.forced_winners or 0 }}</span> / <span class="bad" id="forcedLosers">{{ summary.forced_losers or 0 }}</span></div>
+        </article>
+        <article class="mini-card">
+          <span class="label">Executados</span>
+          <div class="value"><span class="good" id="executedWinners">{{ summary.executed_winners or 0 }}</span> / <span class="bad" id="executedLosers">{{ summary.executed_losers or 0 }}</span></div>
+        </article>
+      </div>
+
+      <div class="stack" id="outcomeRows"></div>
+    </section>
+  </main>
+
+  <script>
+    const initialPayload = {{ payload|tojson }};
+
+    function safeNumber(value, digits = 2) {
+      const number = Number(value || 0);
+      if (!Number.isFinite(number)) return "-";
+      return number.toLocaleString("pt-BR", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function toneClass(value) {
+      const number = Number(value || 0);
+      if (number > 0) return "good";
+      if (number < 0) return "bad";
+      return "muted";
+    }
+
+    function verdictClass(verdict) {
+      if (verdict === "winner") return "good";
+      if (verdict === "loser") return "bad";
+      if (verdict === "partial") return "warn";
+      return "";
+    }
+
+    function horizonChip(label, value) {
+      const css = toneClass(value);
+      return `<span class="metric-chip ${css}">${label} <strong>${safeNumber(value)}</strong></span>`;
+    }
+
+    function renderRows(rows) {
+      const container = document.getElementById("outcomeRows");
+      if (!rows || !rows.length) {
+        container.innerHTML = '<article class="row-card"><p class="muted">Nenhum label encontrado nessa janela.</p></article>';
+        return;
+      }
+
+      container.innerHTML = rows.map(row => {
+        const details = row.details || {};
+        const horizons = details.horizons || {};
+        const metrics = ["5", "15", "30", "60"]
+          .filter(key => horizons[key])
+          .map(key => horizonChip(`${key}m`, horizons[key].close_return_pct))
+          .join("");
+        const prettyJson = escapeHtml(JSON.stringify(details, null, 2));
+        return `
+          <article class="row-card">
+            <div class="row-head">
+              <span class="badge mono">${escapeHtml(row.audit_timestamp || "-")}</span>
+              <span class="badge mono">${escapeHtml(row.symbol || "-")}</span>
+              <span class="badge">${escapeHtml(row.scenario_type || "-")}</span>
+              <span class="badge ${verdictClass(row.verdict)}">${escapeHtml(row.verdict || "-")}</span>
+              <span class="badge">first_touch <strong>${escapeHtml(row.first_touch || "-")}</strong></span>
+              <span class="badge">horizon <strong>${escapeHtml(row.max_labeled_horizon || "-")}m</strong></span>
+            </div>
+            <div class="row-meta">
+              <div class="title">${escapeHtml(row.reason || "Sem motivo registrado")}</div>
+              <span class="badge">entry <strong>${safeNumber(row.entry_price, 6)}</strong></span>
+              <span class="badge">sl <strong>${safeNumber(row.sl_price, 6)}</strong></span>
+              <span class="badge">tp1 <strong>${safeNumber(row.tp1_price, 6)}</strong></span>
+              <span class="badge">tp2 <strong>${safeNumber(row.tp2_price, 6)}</strong></span>
+            </div>
+            <div class="row-metrics">${metrics || '<span class="muted">Sem horizontes disponiveis ainda.</span>'}</div>
+            <p class="reason">
+              direction=<span class="mono">${escapeHtml(row.direction || "-")}</span> |
+              status=<span class="mono">${escapeHtml(row.label_status || "-")}</span> |
+              tp1_t=${escapeHtml(row.time_to_tp1_minutes || "-")}m |
+              sl_t=${escapeHtml(row.time_to_sl_minutes || "-")}m
+            </p>
+            <details>
+              <summary>Ver contexto do label</summary>
+              <pre>${prettyJson}</pre>
+            </details>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderOutcomes(payload) {
+      const summary = payload.summary || {};
+      document.getElementById("labelsCount").textContent = payload.count || 0;
+      document.getElementById("statLabeled").textContent = safeNumber(summary.labeled_events || 0, 0);
+      document.getElementById("statActionable").textContent = safeNumber(summary.actionable || 0, 0);
+      document.getElementById("statWinners").textContent = safeNumber(summary.winners || 0, 0);
+      document.getElementById("statLosers").textContent = safeNumber(summary.losers || 0, 0);
+      document.getElementById("statAvg60").textContent = safeNumber(summary.avg_close_return_60m_pct || 0);
+      document.getElementById("statAvg60").className = `value ${toneClass(summary.avg_close_return_60m_pct || 0)}`;
+      document.getElementById("statComplete").textContent = safeNumber(summary.complete_labels || 0, 0);
+      document.getElementById("blockedWinners").textContent = safeNumber(summary.blocked_winners || 0, 0);
+      document.getElementById("blockedLosers").textContent = safeNumber(summary.blocked_losers || 0, 0);
+      document.getElementById("forcedWinners").textContent = safeNumber(summary.forced_winners || 0, 0);
+      document.getElementById("forcedLosers").textContent = safeNumber(summary.forced_losers || 0, 0);
+      document.getElementById("executedWinners").textContent = safeNumber(summary.executed_winners || 0, 0);
+      document.getElementById("executedLosers").textContent = safeNumber(summary.executed_losers || 0, 0);
+      renderRows(payload.rows || []);
+    }
+
+    async function loadOutcomes(pushUrl = false) {
+      const days = document.getElementById("daysSelect").value;
+      const limit = document.getElementById("limitSelect").value;
+      const scenarioType = document.getElementById("scenarioSelect").value;
+      const verdict = document.getElementById("verdictSelect").value;
+      const params = new URLSearchParams({ days, limit });
+      if (scenarioType) params.set("scenario_type", scenarioType);
+      if (verdict) params.set("verdict", verdict);
+      const pageUrl = `/scalping/outcomes?${params.toString()}`;
+
+      try {
+        const response = await fetch(`/api/scalping/outcomes?${params.toString()}`, { cache: "no-store" });
+        const payload = await response.json();
+        renderOutcomes(payload);
+        if (pushUrl) {
+          window.history.replaceState({}, "", pageUrl);
+        }
+      } catch (error) {
+        const container = document.getElementById("outcomeRows");
+        container.innerHTML = `<article class="row-card"><p class="bad">Falha ao carregar outcomes: ${escapeHtml(error.message)}</p></article>`;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      renderOutcomes(initialPayload);
+      document.getElementById("applyOutcomesBtn").addEventListener("click", () => loadOutcomes(true));
+      setInterval(() => {
+        if (!document.hidden) loadOutcomes(false);
+      }, 25000);
+    });
+  </script>
+</body>
+</html>

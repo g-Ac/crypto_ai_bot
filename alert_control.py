@@ -1,9 +1,10 @@
 import json
 import os
 import tempfile
+from runtime_config import LAST_ALERT_FILE
 
 
-FILE_PATH = "last_alert.json"
+FILE_PATH = LAST_ALERT_FILE
 
 
 def load_last_alert():
@@ -34,10 +35,12 @@ def should_send_alert(current):
         return True
 
     # compara pontos importantes
+    last_priority = last.get("priority_score", 0)
+    current_priority = current["priority_score"]
     if (
         current["symbol"] != last.get("symbol")
         or current["opportunity_type"] != last.get("opportunity_type")
-        or current["priority_score"] > last.get("priority_score", 0)
+        or current_priority > last_priority + 5
     ):
         save_last_alert(current)
         return True

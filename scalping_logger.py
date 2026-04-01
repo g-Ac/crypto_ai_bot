@@ -8,9 +8,9 @@ em arquivo e console. Otimizado para Raspberry Pi
 import os
 import logging
 from logging.handlers import RotatingFileHandler
+from runtime_config import LOG_DIR, ensure_runtime_dirs
 
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
+ensure_runtime_dirs()
 
 _initialized = False
 

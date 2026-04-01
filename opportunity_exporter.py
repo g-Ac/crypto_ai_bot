@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from runtime_config import RELEVANT_OPPORTUNITIES_FILE
 
 
 def export_relevant_opportunities(results: list):
@@ -14,5 +15,5 @@ def export_relevant_opportunities(results: list):
         "opportunities": relevant
     }
 
-    with open("relevant_opportunities.json", "w", encoding="utf-8") as file:
+    with open(RELEVANT_OPPORTUNITIES_FILE, "w", encoding="utf-8") as file:
         json.dump(payload, file, ensure_ascii=False, indent=4, default=str)

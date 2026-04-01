@@ -18,9 +18,10 @@ import database as db
 from dotenv import load_dotenv
 from anthropic import Anthropic
 from config import (
-    STOP_LOSS_MAP, STOP_LOSS_PCT, AGENT_INITIAL_CAPITAL, COOLDOWN_MINUTES,
+    AGENT_INITIAL_CAPITAL, COOLDOWN_MINUTES,
     ATR_SL_MULTIPLIER, ATR_SL_FLOOR_PCT,
 )
+from runtime_config import AGENT_STATE_FILE
 
 load_dotenv()
 
@@ -32,7 +33,6 @@ AGENT_CAPITAL = AGENT_INITIAL_CAPITAL
 AGENT_MAX_RISK_PER_TRADE = 2.0       # % do capital por trade
 AGENT_MAX_POSITIONS = 3               # maximo de posicoes abertas
 AGENT_REWARD_RATIO = 2.0              # TP = SL * reward_ratio
-AGENT_STATE_FILE = "agent_state.json"
 
 client = None
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -168,9 +168,15 @@ def agent_analyst(signal_data):
         for h in recent:
             data_text += f"  {h['symbol']} {h['type']} -> {h['pnl_pct']:+.2f}%\n"
 
+    import time as _time
+    _t0 = _time.time()
+    _fallback_used = False
+    _parse_success = True
+    _model = "claude-haiku-4-5-20251001"
+
     try:
         response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=_model,
             max_tokens=150,
             system=_build_analyst_prompt(state),
             messages=[{"role": "user", "content": data_text}],
@@ -182,14 +188,33 @@ def agent_analyst(signal_data):
             if text.endswith("```"):
                 text = text[:-3].strip()
         result = json.loads(text)
-        return result
     except Exception as e:
         print(f"  Erro no Agente Analista: {e}")
-        return {
-            "approved": signal_data["decision"] in ["BUY", "SELL"],
-            "confidence": signal_data.get("confidence_score", 50),
-            "reasoning": f"Fallback automatico: {e}",
+        _fallback_used = True
+        _parse_success = False
+        result = {
+            "approved": False,
+            "confidence": 0,
+            "reasoning": f"Fallback conservador (API erro): {e}",
         }
+
+    _latency = (_time.time() - _t0) * 1000
+    try:
+        db.insert_ai_decision({
+            "symbol": signal_data.get("symbol", ""),
+            "system": "agent",
+            "model": _model,
+            "latency_ms": round(_latency, 1),
+            "fallback_used": _fallback_used,
+            "parse_success": _parse_success,
+            "approved": result.get("approved", False),
+            "confidence": result.get("confidence", 0),
+            "reasoning": result.get("reasoning", "")[:500],
+        })
+    except Exception:
+        pass
+
+    return result
 
 
 # ============================================================
@@ -266,14 +291,13 @@ def agent_risk(signal_data, analyst_result):
 
     # Calculate SL based on ATR or config
     atr = get_atr(symbol)
-    sl_pct = STOP_LOSS_MAP.get(symbol, STOP_LOSS_PCT)
-
     if atr:
         # ATR-based SL (1h): ATR_SL_MULTIPLIER x ATR, minimo de ATR_SL_FLOOR_PCT
         atr_sl_pct = (atr * ATR_SL_MULTIPLIER / price) * 100
         sl_pct = max(atr_sl_pct, ATR_SL_FLOOR_PCT)
     else:
-        sl_pct = max(sl_pct, ATR_SL_FLOOR_PCT)
+        # Sem ATR disponivel: fallback universal
+        sl_pct = ATR_SL_FLOOR_PCT
 
     # SL and TP prices
     if direction == "BUY":
@@ -345,7 +369,10 @@ def agent_executor(signal_data, risk_params, analyst_result):
         "analyst_confidence": analyst_result.get("confidence", 0),
         "capital_after": state["capital"],
     }
-    log_trade(trade)
+    try:
+        log_trade(trade)
+    except Exception as db_err:
+        print(f"  [ERRO] Falha ao salvar trade no banco: {db_err}")
 
     return (
         f"[AGENT] {direction} executado: {symbol}\n"
@@ -441,7 +468,10 @@ def check_agent_positions(results):
                 "analyst_confidence": pos.get("analyst_confidence", 0),
                 "capital_after": state["capital"],
             }
-            log_trade(trade)
+            try:
+                log_trade(trade)
+            except Exception as db_err:
+                print(f"  [ERRO] Falha ao salvar trade no banco: {db_err}")
 
             msg = (
                 f"[AGENT] {pos['type']} fechado: {symbol}\n"
@@ -462,13 +492,16 @@ def check_agent_positions(results):
 #  ORQUESTRADOR
 # ============================================================
 
-def orchestrate(results):
+def orchestrate(results, open_new=True):
     """Main orchestrator: runs the 3-agent pipeline for each signal."""
     messages = []
 
-    # Step 0: check existing positions for SL/TP
+    # Step 0: check existing positions for SL/TP (always runs)
     exit_msgs = check_agent_positions(results)
     messages.extend(exit_msgs)
+
+    if not open_new:
+        return messages
 
     # Step 1-3: process new signals
     for result in results:

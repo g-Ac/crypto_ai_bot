@@ -197,7 +197,8 @@ crypto_ai_bot/
 | `PAPER_INITIAL_CAPITAL` | $10.000 | Capital inicial paper trader |
 | `AGENT_INITIAL_CAPITAL` | $10.000 | Capital inicial agent trader |
 | `PUMP_INITIAL_CAPITAL` | $5.000 | Capital inicial pump trader |
-| `STOP_LOSS_PCT` | 1.5% | Stop loss padrao |
+| `ATR_SL_MULTIPLIER` | 1.5 | Multiplicador do ATR para stop loss dinamico |
+| `ATR_SL_FLOOR_PCT` | 2.0% | Stop loss minimo universal (fallback) |
 | `DAILY_LOSS_LIMIT_PCT` | 5% | Circuit breaker: limite de perda diaria |
 | `DAILY_MAX_TRADES` | 20 | Circuit breaker: maximo de trades/dia |
 | `PUMP_VOLUME_MULTIPLIER` | 5x | Multiplo de volume para detectar pump |
@@ -205,15 +206,11 @@ crypto_ai_bot/
 | `PUMP_TRAILING_STOP` | 3% | Trailing stop do pump |
 | `PUMP_MAX_POSITION_TIME` | 30 min | Tempo max em posicao pump |
 
-### Stop Loss por ativo (STOP_LOSS_MAP)
-| Ativo | Stop Loss |
-|---|---|
-| BTCUSDT | 3.0% |
-| ETHUSDT | 3.0% |
-| SOLUSDT | 1.0% |
-| BNBUSDT | 2.5% |
-| XRPUSDT | 2.5% |
-| DOGEUSDT | 1.0% |
+### Stop Loss dinamico (ATR-based)
+O SL e calculado dinamicamente para cada trade usando ATR do timeframe 1h:
+- `SL% = max(ATR_1h * ATR_SL_MULTIPLIER / preco_entrada * 100, ATR_SL_FLOOR_PCT)`
+- Se ATR nao estiver disponivel, usa `ATR_SL_FLOOR_PCT` como fallback universal
+- Nao ha mais SL fixo por ativo (STOP_LOSS_MAP foi removido para evitar overfitting)
 
 ---
 

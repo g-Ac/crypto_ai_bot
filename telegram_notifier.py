@@ -7,6 +7,7 @@ import threading
 import requests
 from collections import deque
 from dotenv import load_dotenv
+from runtime_config import ENABLE_TELEGRAM_NOTIFICATIONS, TELEGRAM_INSTANCE_TAG
 
 load_dotenv()
 
@@ -20,6 +21,13 @@ _send_lock = threading.Lock()
 # Dedup circuit breaker alerts (evita spam)
 _last_cb_alert = {}
 CB_ALERT_COOLDOWN = 3600  # 1 hora entre alertas do mesmo circuit breaker
+
+
+def _decorate_message(message: str) -> str:
+    tag = TELEGRAM_INSTANCE_TAG.strip()
+    if not tag:
+        return message
+    return f"<b>[{tag}]</b>\n{message}"
 
 
 def _rate_limit():
@@ -46,9 +54,15 @@ def send_telegram_message(message: str, parse_mode: str = "HTML", silent: bool =
         silent: Se True, envia sem notificacao sonora
         retries: Numero de tentativas em caso de falha
     """
+    if not ENABLE_TELEGRAM_NOTIFICATIONS:
+        print("[TELEGRAM] Notificacoes desabilitadas para esta instancia.")
+        return False
+
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("[TELEGRAM] Token/chat_id nao configurados no .env")
         return False
+
+    message = _decorate_message(message)
 
     _rate_limit()
 

@@ -294,8 +294,8 @@ SQLite com WAL mode — permite escrita simultanea segura de multiplos processos
 | `PAPER_INITIAL_CAPITAL` | $10.000 | Capital inicial paper trader |
 | `AGENT_INITIAL_CAPITAL` | $10.000 | Capital inicial agent trader |
 | `PUMP_INITIAL_CAPITAL` | $5.000 | Capital inicial pump trader |
-| `STOP_LOSS_PCT` | 1.5% | Stop loss padrao |
-| `STOP_LOSS_MAP` | por ativo | Stop loss otimizado por backtesting |
+| `ATR_SL_MULTIPLIER` | 1.5 | Multiplicador do ATR para stop loss dinamico |
+| `ATR_SL_FLOOR_PCT` | 2.0% | Stop loss minimo universal (fallback quando ATR indisponivel) |
 | `DAILY_LOSS_LIMIT_PCT` | 5% | Circuit breaker: limite de perda diaria |
 | `DAILY_MAX_TRADES` | 20 | Circuit breaker: maximo de trades/dia |
 | `PUMP_VOLUME_MULTIPLIER` | 5x | Multiplo de volume para detectar pump |

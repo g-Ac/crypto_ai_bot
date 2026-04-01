@@ -1,12 +1,14 @@
 {% set health = dashboard.health or {} %}
 {% set bot_status = dashboard.bot_status or {} %}
 {% set summary = dashboard.summary or {} %}
+{% set instance = dashboard.instance or {} %}
+{% set runtime_links = runtime_links or [] %}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Crypto AI Bot | Control Room</title>
+  <title>Crypto AI Bot | {{ instance.label or "Control Room" }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -133,6 +135,23 @@
     .mode-badge strong {
       color: var(--text-primary);
       font-weight: 600;
+    }
+
+    a.chip,
+    a.mode-badge,
+    a.status-pill {
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .chip-link {
+      transition: transform 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+    }
+
+    .chip-link:hover {
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
     }
 
     .status-pill .dot,
@@ -746,13 +765,214 @@
       font-size: 0.84rem;
     }
 
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.95fr);
+      gap: 1.2rem;
+    }
+
+    .chart-panel {
+      overflow: hidden;
+    }
+
+    .panel-chart-wrap {
+      position: relative;
+      padding: 0 1.2rem;
+    }
+
+    .panel-chart-wrap.medium {
+      height: 320px;
+      margin-top: 0.9rem;
+    }
+
+    .panel-chart-wrap.compact {
+      height: 250px;
+      min-height: 220px;
+    }
+
+    .leaderboard-list,
+    .setup-list,
+    .reason-list {
+      padding: 1rem 1.2rem 1.2rem;
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .leaderboard-row,
+    .setup-card,
+    .reason-row,
+    .stack-card {
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+        rgba(8, 18, 32, 0.9);
+    }
+
+    .leaderboard-row,
+    .setup-card,
+    .stack-card {
+      padding: 0.95rem 1rem;
+    }
+
+    .leaderboard-head,
+    .setup-head,
+    .reason-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .leaderboard-title,
+    .setup-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .leaderboard-subline,
+    .setup-subline,
+    .reason-subline {
+      color: var(--text-secondary);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    .leaderboard-meter {
+      margin-top: 0.8rem;
+      height: 8px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    .leaderboard-meter span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(95, 183, 255, 0.94), rgba(105, 240, 255, 0.88));
+      box-shadow: 0 0 20px rgba(105, 240, 255, 0.24);
+    }
+
+    .leaderboard-meta,
+    .setup-meta,
+    .mini-metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.8rem;
+    }
+
+    .mini-stat {
+      border-radius: 16px;
+      border: 1px solid rgba(130, 168, 214, 0.14);
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.8rem 0.9rem;
+    }
+
+    .mini-stat-label {
+      color: var(--text-secondary);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+    }
+
+    .mini-stat strong {
+      display: block;
+      margin-top: 0.34rem;
+      font-size: 1.02rem;
+      color: var(--text-primary);
+    }
+
+    .radar-grid {
+      display: grid;
+      grid-template-columns: minmax(220px, 0.95fr) minmax(0, 1fr);
+      gap: 1rem;
+      align-items: center;
+      padding: 0.9rem 1.2rem 1.2rem;
+    }
+
+    .stat-stack {
+      display: grid;
+      gap: 0.8rem;
+    }
+
+    .stack-label {
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.75rem;
+      margin-bottom: 0.3rem;
+    }
+
+    .stack-card strong {
+      display: block;
+      font-size: 1.16rem;
+      color: var(--text-primary);
+    }
+
+    .stack-subline {
+      margin-top: 0.35rem;
+      color: var(--text-secondary);
+      font-size: 0.81rem;
+      line-height: 1.45;
+    }
+
+    .setup-card {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .setup-pill {
+      border-radius: 999px;
+      padding: 0.32rem 0.68rem;
+      font-size: 0.71rem;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      border: 1px solid rgba(130, 168, 214, 0.18);
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .setup-pill.promising {
+      border-color: rgba(53, 208, 143, 0.42);
+      background: rgba(53, 208, 143, 0.12);
+      color: #8df0be;
+    }
+
+    .setup-pill.watch {
+      border-color: rgba(105, 240, 255, 0.42);
+      background: rgba(105, 240, 255, 0.12);
+      color: #9ff7ff;
+    }
+
+    .setup-pill.avoid {
+      border-color: rgba(255, 107, 127, 0.42);
+      background: rgba(255, 107, 127, 0.12);
+      color: #ffb0bc;
+    }
+
+    .setup-pill.insufficient {
+      border-color: rgba(255, 159, 102, 0.42);
+      background: rgba(255, 159, 102, 0.12);
+      color: #ffc49c;
+    }
+
+    .reason-row {
+      padding: 0.9rem 1rem;
+    }
+
     @media (max-width: 1400px) {
       .hero-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .analytics-grid { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 1180px) {
       .hero-grid,
-      .split-grid {
+      .split-grid,
+      .analytics-grid,
+      .radar-grid {
         grid-template-columns: 1fr;
       }
 
@@ -794,6 +1014,9 @@
       .resource-grid,
       .spotlight-grid,
       .position-grid,
+      .leaderboard-meta,
+      .setup-meta,
+      .mini-metric-grid,
       .capital-grid,
       .symbol-meta-grid,
       .capital-stats,
@@ -808,12 +1031,18 @@
 <body>
   <nav class="top-navbar">
     <div class="brand-block">
-      <p class="brand-kicker">Crypto AI Bot / Control Room</p>
+      <p class="brand-kicker">Crypto AI Bot / {{ instance.label or "Control Room" }}</p>
       <h1 class="brand-title">Crypto AI Bot</h1>
-      <p class="brand-subtitle">Painel tatico com curva protagonista e refresh incremental.</p>
+      <p class="brand-subtitle">Instancia {{ instance.bot_id or "baseline" }} · porta {{ instance.dashboard_port or "5000" }}</p>
     </div>
 
     <div class="status-ribbon">
+      <span class="chip">
+        Runtime <strong>{{ instance.bot_id or "baseline" }}</strong>
+      </span>
+      <span class="chip">
+        Versao <strong>{{ instance.version_tag or instance.git_sha or "unknown" }}</strong>
+      </span>
       <span class="status-pill {% if health.cpu_usage_pct|default(0)|float >= 70 %}tone-warn{% else %}tone-good{% endif %}" id="cpuBadge">
         <span class="dot"></span>
         CPU <strong id="cpuValue">{{ "%.0f"|format(health.cpu_usage_pct|default(0)|float) }}%</strong>
@@ -865,6 +1094,31 @@
       <span class="chip">
         Atualizado <strong id="refreshStamp">{{ dashboard.last_update }}</strong>
       </span>
+      {% if comparison_url %}
+      <a class="chip chip-link" href="{{ comparison_url }}">
+        Comparacao <strong>{{ comparison_pair_label }}</strong>
+      </a>
+      {% endif %}
+      {% if audit_url %}
+      <a class="chip chip-link" href="{{ audit_url }}">
+        Auditoria <strong>Scalping</strong>
+      </a>
+      {% endif %}
+      {% if outcomes_url %}
+      <a class="chip chip-link" href="{{ outcomes_url }}">
+        Outcomes <strong>Scalping</strong>
+      </a>
+      {% endif %}
+      {% if scorer_url %}
+      <a class="chip chip-link" href="{{ scorer_url }}">
+        Scorer <strong>Scalping</strong>
+      </a>
+      {% endif %}
+      {% for link in runtime_links %}
+      <a class="chip chip-link {% if link.is_current %}tone-good{% endif %}" href="{{ link.url }}">
+        {{ link.label }} <strong>:{{ link.dashboard_port or "?" }}</strong>
+      </a>
+      {% endfor %}
     </div>
   </nav>
 
@@ -933,6 +1187,75 @@
 
     <section class="section-block">
       <div class="metric-grid" id="metricsGrid"></div>
+    </section>
+
+    <section class="section-block">
+      <div class="section-heading">
+        <div>
+          <p class="section-eyebrow">Decision Intelligence</p>
+          <h2>Quem esta performando melhor e como o scalping esta decidindo</h2>
+        </div>
+        <span class="chip" id="researchStampChip">Research --</span>
+      </div>
+      <div class="analytics-grid">
+        <section class="panel chart-panel">
+          <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+            <div>
+              <p class="section-eyebrow">System Leaderboard</p>
+              <h2>Motores em perspectiva</h2>
+            </div>
+            <span class="chip">Retorno e win rate</span>
+          </div>
+          <div class="panel-chart-wrap medium">
+            <canvas id="systemsChart"></canvas>
+          </div>
+          <div class="leaderboard-list" id="systemLeaderboard"></div>
+        </section>
+
+        <section class="panel chart-panel">
+          <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+            <div>
+              <p class="section-eyebrow">Scalping Radar</p>
+              <h2>Funil operacional</h2>
+            </div>
+            <span class="chip">Ultimas 24h</span>
+          </div>
+          <div class="radar-grid">
+            <div class="panel-chart-wrap compact">
+              <canvas id="funnelChart"></canvas>
+            </div>
+            <div class="stat-stack" id="funnelSummary"></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="split-grid">
+      <section class="panel chart-panel">
+        <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+          <div>
+            <p class="section-eyebrow">Research Lab</p>
+            <h2>Qualidade dos sinais observados</h2>
+          </div>
+          <span class="chip">Outcomes + scorer</span>
+        </div>
+        <div class="panel-chart-wrap medium">
+          <canvas id="researchChart"></canvas>
+        </div>
+        <div class="mini-metric-grid" id="researchSummary"></div>
+        <div class="reason-list" id="topReasonsList"></div>
+      </section>
+
+      <section class="panel chart-panel">
+        <div class="panel-title-row" style="padding:1.25rem 1.2rem 0;">
+          <div>
+            <p class="section-eyebrow">Best Strategy Families</p>
+            <h2>Setups mais fortes vistos no laboratorio</h2>
+          </div>
+          <span class="chip">Scorer 30d</span>
+        </div>
+        <div class="setup-list" id="setupLeaderboard"></div>
+      </section>
     </section>
 
     <section class="split-grid">
@@ -1034,6 +1357,9 @@
 
     let dashboardState = initialStatus;
     let pnlChartInstance = null;
+    let systemsChartInstance = null;
+    let funnelChartInstance = null;
+    let researchChartInstance = null;
     let currentPeriod = 0;
     let activeLogSource = "main";
 
@@ -1065,6 +1391,33 @@
       if (num > 0) return "tone-positive";
       if (num < 0) return "tone-negative";
       return "tone-neutral";
+    }
+
+    function withAlpha(color, alpha = 1) {
+      const hex = String(color || "").replace("#", "");
+      if (hex.length === 6) {
+        const red = parseInt(hex.slice(0, 2), 16);
+        const green = parseInt(hex.slice(2, 4), 16);
+        const blue = parseInt(hex.slice(4, 6), 16);
+        return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+      }
+      return color;
+    }
+
+    function recommendationLabel(value) {
+      const normalized = String(value || "").toLowerCase();
+      if (normalized === "promising") return "Promissora";
+      if (normalized === "watch") return "Monitorar";
+      if (normalized === "avoid") return "Evitar";
+      return "Amostra curta";
+    }
+
+    function recommendationClass(value) {
+      const normalized = String(value || "").toLowerCase();
+      if (["promising", "watch", "avoid", "insufficient"].includes(normalized)) {
+        return normalized;
+      }
+      return "insufficient";
     }
 
     function levelClass(value, warn, crit) {
@@ -1156,6 +1509,14 @@
       const summary = status.summary || {};
       const best = summary.best_system || {};
       const bestMeta = systemMeta[best.key] || systemMeta.paper;
+      const experiment = (status.instance || {}).scalping_experiment || {};
+      const experimentFlags = [
+        experiment.force_entries ? "force entries" : "",
+        experiment.ignore_risk_filters ? "risk off" : "",
+        experiment.disable_ai_gate ? "IA off" : "",
+        experiment.disable_cooldown ? "cooldown off" : "",
+        experiment.audit_enabled ? "audit on" : ""
+      ].filter(Boolean);
       const resources = [
         { label: "CPU", value: safeNumber(health.cpu_usage_pct), suffix: "%" },
         { label: "RAM", value: safeNumber(health.ram_usage_pct), suffix: "%" },
@@ -1190,6 +1551,11 @@
             <div class="resource-label">Uptime</div>
             <strong>${escapeHtml(health.uptime || "N/A")}</strong>
             <div class="resource-subline">Bot supervisor + motores ativos</div>
+          </div>
+          <div class="resource-card">
+            <div class="resource-label">Modo Scalping</div>
+            <strong>${experimentFlags.length ? "Experimental" : "Padrao"}</strong>
+            <div class="resource-subline">${escapeHtml(experimentFlags.slice(0, 4).join(" · ") || "Gates normais ativos")}</div>
           </div>
         </div>
       `;
@@ -1361,6 +1727,187 @@
       `;
     }
 
+    function renderSystemLeaderboard(status) {
+      const container = document.getElementById("systemLeaderboard");
+      if (!container) return;
+      const rows = (((status.insights || {}).system_leaderboard) || []).slice(0, 4);
+
+      if (!rows.length) {
+        container.innerHTML = '<div class="empty-state" style="margin:0;">Ainda nao ha dados suficientes para comparar os motores.</div>';
+        return;
+      }
+
+      const maxAbsReturn = Math.max(...rows.map(item => Math.abs(safeNumber(item.return_pct))), 1);
+      container.innerHTML = rows.map(item => {
+        const meterWidth = Math.max(10, (Math.abs(safeNumber(item.return_pct)) / maxAbsReturn) * 100);
+        return `
+          <article class="leaderboard-row">
+            <div class="leaderboard-head">
+              <div>
+                <div class="leaderboard-title" style="color:${item.color};">${escapeHtml(item.label)}</div>
+                <div class="leaderboard-subline">${safeNumber(item.total_trades)} trades 30d · PF ${safeNumber(item.profit_factor).toFixed(2)} · DD ${safeNumber(item.max_drawdown_pct).toFixed(2)}%</div>
+              </div>
+              <div class="${toneClass(item.return_pct)}"><strong>${formatPct(item.return_pct)}</strong></div>
+            </div>
+            <div class="leaderboard-meter">
+              <span style="width:${meterWidth}%; background:linear-gradient(90deg, ${withAlpha(item.color, 0.96)}, rgba(105, 240, 255, 0.9));"></span>
+            </div>
+            <div class="leaderboard-meta">
+              <div class="mini-stat">
+                <div class="mini-stat-label">Capital</div>
+                <strong>${formatMoney(item.capital_value)}</strong>
+              </div>
+              <div class="mini-stat">
+                <div class="mini-stat-label">Win Rate</div>
+                <strong>${safeNumber(item.win_rate).toFixed(1)}%</strong>
+              </div>
+              <div class="mini-stat">
+                <div class="mini-stat-label">Hoje</div>
+                <strong class="${toneClass(item.today_pnl_usd)}">${formatMoney(item.today_pnl_usd)}</strong>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderFunnelSummary(status) {
+      const container = document.getElementById("funnelSummary");
+      if (!container) return;
+
+      const funnel = status.scalping_funnel || {};
+      const breakdown = funnel.breakdown || {};
+      const outcomes = ((((status.insights || {}).research) || {}).outcomes_summary) || {};
+      const total = safeNumber(funnel.total);
+      const opened = safeNumber(breakdown.opened);
+      const confluenceBlocked = safeNumber(breakdown.confluence_block);
+      const extraBlocks = safeNumber(breakdown.ai_rejected) + safeNumber(breakdown.risk_blocked) + safeNumber(breakdown.cooldown) + safeNumber(breakdown.in_position) + safeNumber(breakdown.error);
+
+      container.innerHTML = `
+        <div class="stack-card">
+          <div class="stack-label">Observados</div>
+          <strong>${total}</strong>
+          <div class="stack-subline">${opened} entradas abertas e ${confluenceBlocked} barradas por confluencia.</div>
+        </div>
+        <div class="stack-card">
+          <div class="stack-label">Bloqueios extras</div>
+          <strong>${extraBlocks}</strong>
+          <div class="stack-subline">IA, risco, cooldown, posicao em aberto e erros somados.</div>
+        </div>
+        <div class="stack-card">
+          <div class="stack-label">Eventos rotulados</div>
+          <strong>${safeNumber(outcomes.labeled_events)}</strong>
+          <div class="stack-subline">${safeNumber(outcomes.complete_labels)} completos · ${safeNumber(outcomes.partial_labels)} parciais.</div>
+        </div>
+        <div class="stack-card">
+          <div class="stack-label">Actionable</div>
+          <strong>${safeNumber(outcomes.actionable)}</strong>
+          <div class="stack-subline">${safeNumber(outcomes.winners)} vencedores e ${safeNumber(outcomes.losers)} perdedores ja identificados.</div>
+        </div>
+      `;
+    }
+
+    function renderResearchSummary(status) {
+      const research = (((status.insights || {}).research) || {});
+      const outcomes = research.outcomes_summary || {};
+      const scorer = research.scorer_summary || {};
+      const reasons = research.top_reasons || [];
+      const summaryContainer = document.getElementById("researchSummary");
+      const reasonsContainer = document.getElementById("topReasonsList");
+      const stamp = document.getElementById("researchStampChip");
+
+      if (stamp) {
+        stamp.innerHTML = `Research <strong>${escapeHtml(research.generated_at || "--")}</strong>`;
+      }
+
+      if (summaryContainer) {
+        summaryContainer.innerHTML = `
+          <div class="mini-stat">
+            <div class="mini-stat-label">Labels</div>
+            <strong>${safeNumber(outcomes.labeled_events)}</strong>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-label">Completos</div>
+            <strong>${safeNumber(outcomes.complete_labels)}</strong>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-label">Actionable</div>
+            <strong>${safeNumber(outcomes.actionable)}</strong>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-label">Media 60m</div>
+            <strong class="${toneClass(outcomes.avg_close_return_60m_pct)}">${formatPct(outcomes.avg_close_return_60m_pct, 2)}</strong>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-label">Grupos</div>
+            <strong>${safeNumber(scorer.groups_total)}</strong>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-label">Promissoras</div>
+            <strong>${safeNumber(scorer.promising_groups)}</strong>
+          </div>
+        `;
+      }
+
+      if (!reasonsContainer) return;
+      if (!reasons.length) {
+        reasonsContainer.innerHTML = '<div class="empty-state" style="margin:0;">Sem motivos dominantes suficientes ainda. O bloco fica mais rico conforme o dataset amadurece.</div>';
+        return;
+      }
+
+      reasonsContainer.innerHTML = reasons.map(item => `
+        <article class="reason-row">
+          <div>
+            <div class="leaderboard-title">${escapeHtml(item.reason || "Sem motivo")}</div>
+            <div class="reason-subline">Motivo mais frequente dentro dos eventos rotulados recentes.</div>
+          </div>
+          <span class="chip"><strong>${safeNumber(item.count)}</strong>x</span>
+        </article>
+      `).join("");
+    }
+
+    function renderSetupLeaderboard(status) {
+      const container = document.getElementById("setupLeaderboard");
+      if (!container) return;
+      const setups = ((((status.insights || {}).research) || {}).top_setups) || [];
+
+      if (!setups.length) {
+        container.innerHTML = '<div class="empty-state" style="margin:0;">Ainda nao ha familias de setup suficientes para classificar. Assim que o scorer ganhar amostra, este painel passa a mostrar as melhores leituras.</div>';
+        return;
+      }
+
+      container.innerHTML = setups.map(item => `
+        <article class="setup-card">
+          <div class="setup-head">
+            <div>
+              <div class="setup-title">${escapeHtml(String(item.best_signal_source || "no_signal").replace(/_/g, " "))} · ${escapeHtml(item.direction || "NEUTRAL")}</div>
+              <div class="setup-subline">${escapeHtml(item.scenario_type || "unknown")} / ${escapeHtml(item.event_outcome || "unknown")}</div>
+            </div>
+            <span class="setup-pill ${recommendationClass(item.recommendation)}">${recommendationLabel(item.recommendation)}</span>
+          </div>
+          <div class="setup-subline">${escapeHtml(item.top_reason || "Sem motivo dominante mapeado ainda.")}</div>
+          <div class="setup-meta">
+            <div class="mini-stat">
+              <div class="mini-stat-label">Edge</div>
+              <strong class="${toneClass(item.edge_score)}">${safeNumber(item.edge_score).toFixed(2)}</strong>
+            </div>
+            <div class="mini-stat">
+              <div class="mini-stat-label">Win Rate</div>
+              <strong>${safeNumber(item.win_rate).toFixed(1)}%</strong>
+            </div>
+            <div class="mini-stat">
+              <div class="mini-stat-label">60m</div>
+              <strong class="${toneClass(item.avg_close_return_60m_pct)}">${formatPct(item.avg_close_return_60m_pct, 2)}</strong>
+            </div>
+            <div class="mini-stat">
+              <div class="mini-stat-label">Amostra</div>
+              <strong>${safeNumber(item.complete_actionable)}/${safeNumber(item.total)}</strong>
+            </div>
+          </div>
+        </article>
+      `).join("");
+    }
+
     function renderConfidenceBadge(value) {
       if (value == null) return "--";
       const numeric = safeNumber(value);
@@ -1467,6 +2014,241 @@
         pump: getFilledSeries(chart.pump || [], labels),
         scalping: getFilledSeries(chart.scalping || [], labels)
       };
+    }
+
+    function createOrUpdateSystemsChart(status) {
+      const canvas = document.getElementById("systemsChart");
+      if (!canvas) return;
+
+      const rows = (((status.insights || {}).system_leaderboard) || []).slice(0, 4);
+      const labels = rows.map(item => item.label);
+      const returns = rows.map(item => safeNumber(item.return_pct));
+      const winRates = rows.map(item => safeNumber(item.win_rate));
+
+      const barDataset = {
+        type: "bar",
+        label: "Retorno %",
+        data: returns,
+        yAxisID: "y",
+        borderRadius: 14,
+        borderSkipped: false,
+        borderWidth: 1.2,
+        borderColor: rows.map(item => withAlpha(item.color, 0.95)),
+        backgroundColor: rows.map(item => withAlpha(item.color, 0.32)),
+      };
+
+      const lineDataset = {
+        type: "line",
+        label: "Win Rate 30d",
+        data: winRates,
+        yAxisID: "y1",
+        borderColor: "#edf5ff",
+        backgroundColor: "#edf5ff",
+        tension: 0.34,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+      };
+
+      if (!systemsChartInstance) {
+        systemsChartInstance = new Chart(canvas.getContext("2d"), {
+          data: { labels, datasets: [barDataset, lineDataset] },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: {
+                  color: "#edf5ff",
+                  usePointStyle: true,
+                  padding: 18,
+                  font: { family: "IBM Plex Sans", size: 11, weight: "600" }
+                }
+              },
+              tooltip: {
+                backgroundColor: "rgba(9, 19, 34, 0.95)",
+                titleColor: "#edf5ff",
+                bodyColor: "#edf5ff",
+                borderColor: "rgba(130, 168, 214, 0.24)",
+                borderWidth: 1,
+                callbacks: {
+                  afterBody: (items) => {
+                    const index = items[0]?.dataIndex ?? 0;
+                    const row = rows[index] || {};
+                    return [
+                      `Capital: ${formatMoney(row.capital_value)}`,
+                      `PF: ${safeNumber(row.profit_factor).toFixed(2)}`,
+                      `Trades: ${safeNumber(row.total_trades)}`
+                    ];
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { color: "rgba(255,255,255,0.04)", drawBorder: false },
+                ticks: { color: "#7f98b5" }
+              },
+              y: {
+                position: "left",
+                grid: { color: "rgba(255,255,255,0.05)", drawBorder: false },
+                ticks: {
+                  color: "#7f98b5",
+                  callback: value => `${safeNumber(value).toFixed(1)}%`
+                }
+              },
+              y1: {
+                position: "right",
+                grid: { drawOnChartArea: false, drawBorder: false },
+                ticks: {
+                  color: "#9eb2c9",
+                  callback: value => `${safeNumber(value).toFixed(0)}%`
+                }
+              }
+            }
+          }
+        });
+        return;
+      }
+
+      systemsChartInstance.data.labels = labels;
+      systemsChartInstance.data.datasets[0] = barDataset;
+      systemsChartInstance.data.datasets[1] = lineDataset;
+      systemsChartInstance.update();
+    }
+
+    function createOrUpdateFunnelChart(status) {
+      const canvas = document.getElementById("funnelChart");
+      if (!canvas) return;
+
+      const funnel = status.scalping_funnel || {};
+      const breakdown = funnel.breakdown || {};
+      const entries = [
+        { key: "opened", label: "Opened", color: "#35d08f" },
+        { key: "confluence_block", label: "Confluence", color: "#5fb7ff" },
+        { key: "risk_blocked", label: "Risk", color: "#ff9f66" },
+        { key: "ai_rejected", label: "IA", color: "#ff6b7f" },
+        { key: "cooldown", label: "Cooldown", color: "#ffd166" },
+        { key: "in_position", label: "In Position", color: "#69f0ff" },
+        { key: "error", label: "Error", color: "#ffffff" }
+      ].filter(item => safeNumber(breakdown[item.key]) > 0);
+
+      const labels = entries.length ? entries.map(item => item.label) : ["Sem dados"];
+      const values = entries.length ? entries.map(item => safeNumber(breakdown[item.key])) : [1];
+      const colors = entries.length ? entries.map(item => withAlpha(item.color, 0.88)) : ["rgba(127, 152, 181, 0.4)"];
+
+      if (!funnelChartInstance) {
+        funnelChartInstance = new Chart(canvas.getContext("2d"), {
+          type: "doughnut",
+          data: {
+            labels,
+            datasets: [{
+              data: values,
+              backgroundColor: colors,
+              borderColor: "rgba(5, 11, 20, 0.95)",
+              borderWidth: 2,
+              hoverOffset: 6
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "62%",
+            plugins: {
+              legend: {
+                position: "bottom",
+                labels: {
+                  color: "#edf5ff",
+                  usePointStyle: true,
+                  padding: 16,
+                  font: { family: "IBM Plex Sans", size: 11, weight: "600" }
+                }
+              },
+              tooltip: {
+                backgroundColor: "rgba(9, 19, 34, 0.95)",
+                titleColor: "#edf5ff",
+                bodyColor: "#edf5ff",
+                borderColor: "rgba(130, 168, 214, 0.24)",
+                borderWidth: 1,
+              }
+            }
+          }
+        });
+        return;
+      }
+
+      funnelChartInstance.data.labels = labels;
+      funnelChartInstance.data.datasets[0].data = values;
+      funnelChartInstance.data.datasets[0].backgroundColor = colors;
+      funnelChartInstance.update();
+    }
+
+    function createOrUpdateResearchChart(status) {
+      const canvas = document.getElementById("researchChart");
+      if (!canvas) return;
+
+      const recommendationCounts = ((((status.insights || {}).research) || {}).recommendation_counts) || {};
+      const labels = ["Promissoras", "Monitorar", "Evitar", "Amostra curta"];
+      const values = [
+        safeNumber(recommendationCounts.promising),
+        safeNumber(recommendationCounts.watch),
+        safeNumber(recommendationCounts.avoid),
+        safeNumber(recommendationCounts.insufficient)
+      ];
+      const colors = [
+        "rgba(53, 208, 143, 0.82)",
+        "rgba(105, 240, 255, 0.82)",
+        "rgba(255, 107, 127, 0.82)",
+        "rgba(255, 159, 102, 0.82)"
+      ];
+
+      if (!researchChartInstance) {
+        researchChartInstance = new Chart(canvas.getContext("2d"), {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [{
+              label: "Grupos",
+              data: values,
+              borderRadius: 14,
+              borderSkipped: false,
+              backgroundColor: colors,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: "rgba(9, 19, 34, 0.95)",
+                titleColor: "#edf5ff",
+                bodyColor: "#edf5ff",
+                borderColor: "rgba(130, 168, 214, 0.24)",
+                borderWidth: 1,
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false, drawBorder: false },
+                ticks: { color: "#9eb2c9" }
+              },
+              y: {
+                grid: { color: "rgba(255,255,255,0.05)", drawBorder: false },
+                ticks: {
+                  color: "#7f98b5",
+                  precision: 0
+                }
+              }
+            }
+          }
+        });
+        return;
+      }
+
+      researchChartInstance.data.labels = labels;
+      researchChartInstance.data.datasets[0].data = values;
+      researchChartInstance.data.datasets[0].backgroundColor = colors;
+      researchChartInstance.update();
     }
 
     function buildGradient(ctx, area) {
@@ -1606,9 +2388,16 @@
       renderStrategySpotlights(status);
       renderCapitalGrid(status);
       renderMetrics(status);
+      renderSystemLeaderboard(status);
+      renderFunnelSummary(status);
+      renderResearchSummary(status);
+      renderSetupLeaderboard(status);
       renderPositions(status);
       renderSymbolPerformance(status);
       createOrUpdateChart(status);
+      createOrUpdateSystemsChart(status);
+      createOrUpdateFunnelChart(status);
+      createOrUpdateResearchChart(status);
     }
 
     function setPeriod(days) {

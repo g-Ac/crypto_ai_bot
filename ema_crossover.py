@@ -125,8 +125,6 @@ def _is_in_retest_zone(row: pd.Series, direction: Direction) -> bool:
         zone_bottom = min(ema9, ema21)
         return high >= zone_bottom and close <= ema9
 
-    return False
-
 
 def analyze(
     symbol: str,
@@ -199,6 +197,7 @@ def analyze(
     # ============================================================
     ema9_cross = cross["ema9_at_cross"]
     ema21_cross = cross["ema21_at_cross"]
+    gap_pct = 0.0
     if ema21_cross > 0:
         gap_pct = abs(ema9_cross - ema21_cross) / ema21_cross * 100
         if gap_pct > config.ema_max_gap_pct:
@@ -371,7 +370,7 @@ def analyze(
             "ema9": round(last["ema9"], 8),
             "ema21": round(ema21, 8),
             "ema21_slope_up": direction == Direction.LONG,
-            "cross_gap_pct": round(gap_pct, 4) if 'gap_pct' in dir() else 0,
+            "cross_gap_pct": round(gap_pct, 4),
         },
     )
 

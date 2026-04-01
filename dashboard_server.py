@@ -4,7 +4,15 @@ Acesso: http://<ip-do-pi>:5000
 
 Rotas:
   GET  /            — painel principal
+  GET  /comparison  — comparador visual entre runtimes
+  GET  /scalping/outcomes — replay rotulado do scalping
+  GET  /scalping/scorer — scorer historico de setups
   GET  /api/status  — JSON com todos os dados (auto-refresh AJAX)
+  GET  /api/compare — JSON com comparacao entre runtimes
+  GET  /api/scalping/audit — trilha detalhada do scalping
+  GET  /api/scalping/outcomes — labels forward do scalping
+  GET  /api/scalping/scorer — score historico por familia de setup
+  GET  /api/scalping/outcomes/export — gera dataset JSON/JSONL/CSV
   POST /pause       — pausa o bot
   POST /resume      — retoma o bot
   GET  /api/trades  — historico de trades com filtro de periodo
@@ -14,20 +22,88 @@ import os
 import json
 import shutil
 import time
+import functools
+import base64
+from collections import Counter
 import requests
 from datetime import datetime, date, timedelta
-from flask import Flask, render_template, redirect, url_for, jsonify, request
+from pathlib import Path
+from flask import Flask, render_template, redirect, url_for, jsonify, request, Response
 import database as db
-from database import get_all_time_stats, get_stats_by_symbol, get_trades_range
+from compare_instances import build_snapshot, compare_snapshots
+from database import (
+    get_all_time_stats,
+    get_scalping_audit_log,
+    get_scalping_funnel_stats,
+    get_scalping_outcome_labels,
+    get_stats_by_symbol,
+    get_trades_range,
+)
 from telegram_commands import is_paused, _set_paused
 from daily_report import calc_daily_stats, get_capital_status
-from config import PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL
+from config import PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL, SCALPING_INITIAL_CAPITAL, DASHBOARD_USER, DASHBOARD_PASS
+from scalping_research import build_scalping_scorer_report, export_outcomes_dataset
 from signal_types import ScalpingConfig
+from runtime_config import (
+    APP_DIR,
+    BOT_ID,
+    BOT_LABEL,
+    DASHBOARD_PORT,
+    LOG_DIR,
+    PAPER_STATE_FILE,
+    AGENT_STATE_FILE,
+    PUMP_STATE_FILE,
+    RUNTIME_BASE_DIR,
+    SCALPING_STATE_FILE,
+    runtime_metadata,
+)
 
-SCALPING_INITIAL_CAPITAL = 10000
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-app = Flask(__name__, template_folder=os.path.join(BOT_DIR, "templates"))
+APP_ROOT = str(APP_DIR)
+app = Flask(__name__, template_folder=os.path.join(APP_ROOT, "templates"))
+
+# ── HTTP Basic Auth para rotas POST (controle) ──────────────────────────────
+# Protege endpoints que mudam estado (pause/resume).
+# Credenciais vem de config.py (que le env vars DASHBOARD_USER / DASHBOARD_PASS).
+# Se ambas estiverem vazias, auth fica desabilitada — WARNING e' logado na inicializacao.
+_DASHBOARD_USER = DASHBOARD_USER
+_DASHBOARD_PASS = DASHBOARD_PASS
+_AUTH_ENABLED = bool(_DASHBOARD_USER and _DASHBOARD_PASS)
+
+
+def _check_basic_auth(auth_header):
+    """Valida header Authorization: Basic <base64(user:pass)>."""
+    if not auth_header or not auth_header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+        user, password = decoded.split(":", 1)
+        return user == _DASHBOARD_USER and password == _DASHBOARD_PASS
+    except Exception:
+        return False
+
+
+def require_post_auth(fn):
+    """Decorator: exige HTTP Basic Auth em rotas POST quando credenciais estao configuradas."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        if _AUTH_ENABLED and not _check_basic_auth(request.headers.get("Authorization", "")):
+            return Response(
+                "Autenticacao necessaria para esta operacao.\n",
+                status=401,
+                headers={"WWW-Authenticate": 'Basic realm="Dashboard Control"'},
+            )
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 _PRICE_CACHE = {"fetched_at": 0.0, "prices": {}}
+_RESEARCH_CACHE = {"fetched_at": 0.0, "payload": None}
+SYSTEM_META = {
+    "paper": {"label": "Paper Trading", "color": "#5fb7ff"},
+    "agent": {"label": "Multi-Agent", "color": "#35d08f"},
+    "pump": {"label": "Pump Scanner", "color": "#ff9f66"},
+    "scalping": {"label": "Scalping", "color": "#b592ff"},
+}
 
 
 def _safe_float(value, default=0.0):
@@ -54,6 +130,420 @@ def _read_json(path, default=None):
             return json.load(f)
     except Exception:
         return default
+
+
+def _build_system_leaderboard(capital: dict, stats_today: dict, metrics_per_system: dict) -> list[dict]:
+    rows = []
+    for key, meta in SYSTEM_META.items():
+        capital_row = capital.get(key) or {}
+        day_row = stats_today.get(key) or {}
+        metrics_row = metrics_per_system.get(key) or {}
+        rows.append({
+            "key": key,
+            "label": meta["label"],
+            "color": meta["color"],
+            "capital_value": round(_safe_float(capital_row.get("value")), 2),
+            "return_pct": round(_safe_float(capital_row.get("ret")), 2),
+            "today_pnl_usd": round(_safe_float(day_row.get("pnl_usd")), 2),
+            "today_trades": _safe_int(day_row.get("count")),
+            "today_wins": _safe_int(day_row.get("wins")),
+            "today_losses": _safe_int(day_row.get("losses")),
+            "win_rate": round(_safe_float(metrics_row.get("win_rate")), 2),
+            "profit_factor": round(_safe_float(metrics_row.get("profit_factor")), 2),
+            "avg_pnl_pct": round(_safe_float(metrics_row.get("avg_pnl_pct")), 2),
+            "max_drawdown_pct": round(_safe_float(metrics_row.get("max_drawdown_pct")), 2),
+            "total_trades": _safe_int(metrics_row.get("total_trades")),
+            "circuit_breaker": bool(capital_row.get("cb")),
+        })
+
+    rows.sort(
+        key=lambda item: (
+            item["return_pct"],
+            item["today_pnl_usd"],
+            item["profit_factor"],
+            item["win_rate"],
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def _collect_top_setup_candidates(report: dict, limit: int = 6) -> list[dict]:
+    ordered_buckets = (
+        ("promising", report.get("top_promising") or []),
+        ("watch", report.get("watchlist") or []),
+        ("insufficient", report.get("insufficient") or []),
+        ("avoid", report.get("top_avoid") or []),
+    )
+    results = []
+    seen = set()
+
+    for recommendation, rows in ordered_buckets:
+        for row in rows:
+            setup_key = row.get("setup_key") or f"{recommendation}:{len(results)}"
+            if setup_key in seen:
+                continue
+            seen.add(setup_key)
+            results.append({
+                "setup_key": setup_key,
+                "recommendation": recommendation,
+                "scenario_type": row.get("scenario_type") or "unknown",
+                "event_outcome": row.get("event_outcome") or "unknown",
+                "best_signal_source": row.get("best_signal_source") or "unknown",
+                "direction": row.get("direction") or "UNKNOWN",
+                "complete_actionable": _safe_int(row.get("complete_actionable")),
+                "total": _safe_int(row.get("total")),
+                "win_rate": round(_safe_float(row.get("win_rate")), 2),
+                "avg_close_return_60m_pct": round(_safe_float(row.get("avg_close_return_60m_pct")), 4),
+                "profit_gap_60m_vs_5m_pct": round(_safe_float(row.get("profit_gap_60m_vs_5m_pct")), 4),
+                "edge_score": round(_safe_float(row.get("edge_score")), 2),
+                "top_reason": row.get("top_reason") or "",
+            })
+            if len(results) >= limit:
+                return results
+
+    return results
+
+
+def _build_strategy_research_snapshot() -> dict:
+    outcomes_payload = _build_scalping_outcomes_payload(days=7, limit=250)
+    scorer_report = build_scalping_scorer_report(days=30, limit=5000)
+
+    outcomes_summary = outcomes_payload.get("summary") or {}
+    scorer_summary = scorer_report.get("summary") or {}
+
+    return {
+        "generated_at": scorer_report.get("generated_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "outcomes_summary": outcomes_summary,
+        "scorer_summary": scorer_summary,
+        "top_reasons": (outcomes_summary.get("top_reasons") or [])[:6],
+        "top_setups": _collect_top_setup_candidates(scorer_report, limit=6),
+        "recommendation_counts": {
+            "promising": _safe_int(scorer_summary.get("promising_groups")),
+            "watch": _safe_int(scorer_summary.get("watch_groups")),
+            "avoid": _safe_int(scorer_summary.get("avoid_groups")),
+            "insufficient": _safe_int(scorer_summary.get("insufficient_groups")),
+        },
+    }
+
+
+def _get_strategy_research_snapshot(max_age_seconds: int = 180) -> dict:
+    now = time.time()
+    cached_payload = _RESEARCH_CACHE.get("payload")
+    cached_at = _safe_float(_RESEARCH_CACHE.get("fetched_at"))
+    if cached_payload and (now - cached_at) < max_age_seconds:
+        return cached_payload
+
+    try:
+        payload = _build_strategy_research_snapshot()
+    except Exception:
+        return cached_payload or {
+            "generated_at": "",
+            "outcomes_summary": {},
+            "scorer_summary": {},
+            "top_reasons": [],
+            "top_setups": [],
+            "recommendation_counts": {
+                "promising": 0,
+                "watch": 0,
+                "avoid": 0,
+                "insufficient": 0,
+            },
+        }
+
+    _RESEARCH_CACHE["payload"] = payload
+    _RESEARCH_CACHE["fetched_at"] = now
+    return payload
+
+
+def _extract_host_name(host_value: str | None) -> str:
+    if not host_value:
+        return "127.0.0.1"
+    if host_value.startswith("[") and "]" in host_value:
+        return host_value.split("]", 1)[0].strip("[")
+    if ":" in host_value:
+        return host_value.rsplit(":", 1)[0]
+    return host_value
+
+
+def _discover_runtime_instances():
+    base_dir = Path(RUNTIME_BASE_DIR)
+    if not base_dir.exists():
+        return []
+
+    instances = []
+    for child in sorted(base_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        manifest = _read_json(child / "runtime_manifest.json", {})
+        bot_id = manifest.get("bot_id") or child.name
+        label = manifest.get("label") or str(bot_id).upper()
+        port = _safe_int(manifest.get("dashboard_port"), 0)
+        version_tag = manifest.get("version_tag") or "unknown"
+        instances.append({
+            "bot_id": bot_id,
+            "label": label,
+            "dashboard_port": port,
+            "version_tag": version_tag,
+            "runtime_dir": str(child),
+            "is_current": bot_id == BOT_ID,
+        })
+    return instances
+
+
+def _default_compare_pair(instances, left=None, right=None):
+    bot_ids = [item["bot_id"] for item in instances]
+
+    if left and right:
+        return left, right
+
+    if "baseline" in bot_ids and "v2" in bot_ids:
+        return left or "baseline", right or "v2"
+
+    if BOT_ID in bot_ids and len(bot_ids) > 1:
+        peer_id = next((item for item in bot_ids if item != BOT_ID), BOT_ID)
+        return left or BOT_ID, right or peer_id
+
+    if len(bot_ids) >= 2:
+        return left or bot_ids[0], right or bot_ids[1]
+
+    if len(bot_ids) == 1:
+        only = bot_ids[0]
+        return left or only, right or only
+
+    return left or BOT_ID, right or BOT_ID
+
+
+def _build_runtime_links(host_value=None, scheme="http"):
+    host_name = _extract_host_name(host_value)
+    links = []
+    for item in _discover_runtime_instances():
+        port = item.get("dashboard_port")
+        if port:
+            url = f"{scheme}://{host_name}:{port}/"
+        else:
+            url = "/"
+        links.append({**item, "url": url})
+    return links
+
+
+def _build_comparison_payload(left=None, right=None, days=1):
+    instances = _discover_runtime_instances()
+    left, right = _default_compare_pair(instances, left=left, right=right)
+    days = max(1, min(_safe_int(days, 1), 30))
+    known_ids = {item["bot_id"] for item in instances}
+
+    payload = {
+        "ok": False,
+        "instances": instances,
+        "query": {
+            "left": left,
+            "right": right,
+            "days": days,
+        },
+    }
+
+    if len(instances) < 2:
+        payload["error"] = "Ainda nao existem dois runtimes prontos para comparacao."
+        return payload
+
+    if left not in known_ids:
+        payload["error"] = f"Runtime esquerdo nao encontrado: {left}"
+        return payload
+
+    if right not in known_ids:
+        payload["error"] = f"Runtime direito nao encontrado: {right}"
+        return payload
+
+    if left == right:
+        payload["error"] = "Escolha duas instancias diferentes para comparar."
+        return payload
+
+    left_dir = Path(RUNTIME_BASE_DIR) / left
+    right_dir = Path(RUNTIME_BASE_DIR) / right
+    payload["report"] = compare_snapshots(
+        build_snapshot(left_dir, days),
+        build_snapshot(right_dir, days),
+    )
+    payload["ok"] = True
+    return payload
+
+
+def _build_scalping_audit_payload(days=1, limit=100, outcome=""):
+    days = max(1, min(_safe_int(days, 1), 30))
+    limit = max(1, min(_safe_int(limit, 100), 500))
+    outcome = (outcome or "").strip()
+
+    rows = get_scalping_audit_log(limit=limit, days=days, outcome=outcome)
+    outcome_counter = Counter()
+    reason_counter = Counter()
+    summary = {
+        "events": len(rows),
+        "opened": 0,
+        "closed": 0,
+        "wins": 0,
+        "losses": 0,
+        "blocked": 0,
+        "realized_pnl_usd": 0.0,
+        "forced_entries": 0,
+    }
+
+    for row in rows:
+        event_outcome = row.get("outcome") or "unknown"
+        outcome_counter[event_outcome] += 1
+
+        reason = (row.get("reason") or "").strip()
+        if reason:
+            reason_counter[reason] += 1
+
+        if event_outcome == "opened":
+            summary["opened"] += 1
+
+        if event_outcome.startswith("closed_"):
+            summary["closed"] += 1
+            pnl_usd = _safe_float(row.get("pnl_usd"), 0.0)
+            summary["realized_pnl_usd"] += pnl_usd
+            if pnl_usd > 0:
+                summary["wins"] += 1
+            elif pnl_usd < 0:
+                summary["losses"] += 1
+
+        if "block" in event_outcome or event_outcome in {"cooldown", "in_position", "ai_rejected", "risk_blocked"}:
+            summary["blocked"] += 1
+
+        if row.get("force_entry_applied"):
+            summary["forced_entries"] += 1
+
+    return {
+        "ok": True,
+        "query": {
+            "days": days,
+            "limit": limit,
+            "outcome": outcome,
+        },
+        "summary": {
+            **summary,
+            "realized_pnl_usd": round(summary["realized_pnl_usd"], 2),
+            "outcome_breakdown": dict(outcome_counter),
+            "top_reasons": [{"reason": key, "count": value} for key, value in reason_counter.most_common(8)],
+        },
+        "rows": rows,
+        "count": len(rows),
+    }
+
+
+def _build_scalping_outcomes_payload(days=7, limit=100, scenario_type="", verdict=""):
+    days = max(1, min(_safe_int(days, 7), 30))
+    limit = max(1, min(_safe_int(limit, 100), 500))
+    scenario_type = (scenario_type or "").strip()
+    verdict = (verdict or "").strip()
+
+    rows = get_scalping_outcome_labels(
+        limit=limit,
+        days=days,
+        scenario_type=scenario_type,
+        verdict=verdict,
+    )
+
+    scenario_counter = Counter()
+    verdict_counter = Counter()
+    reason_counter = Counter()
+    summary = {
+        "labeled_events": len(rows),
+        "complete_labels": 0,
+        "partial_labels": 0,
+        "actionable": 0,
+        "winners": 0,
+        "losers": 0,
+        "blocked_winners": 0,
+        "blocked_losers": 0,
+        "forced_winners": 0,
+        "forced_losers": 0,
+        "executed_winners": 0,
+        "executed_losers": 0,
+    }
+    close_ret_60 = []
+
+    for row in rows:
+        scenario = row.get("scenario_type") or "unknown"
+        label_verdict = row.get("verdict") or "unknown"
+        scenario_counter[scenario] += 1
+        verdict_counter[label_verdict] += 1
+
+        reason = (row.get("reason") or "").strip()
+        if reason:
+            reason_counter[reason] += 1
+
+        if row.get("label_status") == "complete":
+            summary["complete_labels"] += 1
+        else:
+            summary["partial_labels"] += 1
+
+        if row.get("is_actionable"):
+            summary["actionable"] += 1
+
+        if row.get("winner_flag"):
+            summary["winners"] += 1
+            if scenario == "blocked":
+                summary["blocked_winners"] += 1
+            elif scenario == "forced":
+                summary["forced_winners"] += 1
+            elif scenario == "executed":
+                summary["executed_winners"] += 1
+
+        if row.get("loser_flag"):
+            summary["losers"] += 1
+            if scenario == "blocked":
+                summary["blocked_losers"] += 1
+            elif scenario == "forced":
+                summary["forced_losers"] += 1
+            elif scenario == "executed":
+                summary["executed_losers"] += 1
+
+        horizons = (row.get("details") or {}).get("horizons") or {}
+        close_60 = ((horizons.get("60") or {}).get("close_return_pct"))
+        if close_60 is not None:
+            close_ret_60.append(_safe_float(close_60))
+
+    summary["avg_close_return_60m_pct"] = round(
+        sum(item for item in close_ret_60 if item is not None) / len(close_ret_60), 4
+    ) if close_ret_60 else 0.0
+
+    return {
+        "ok": True,
+        "query": {
+            "days": days,
+            "limit": limit,
+            "scenario_type": scenario_type,
+            "verdict": verdict,
+        },
+        "summary": {
+            **summary,
+            "scenario_breakdown": dict(scenario_counter),
+            "verdict_breakdown": dict(verdict_counter),
+            "top_reasons": [{"reason": key, "count": value} for key, value in reason_counter.most_common(8)],
+        },
+        "rows": rows,
+        "count": len(rows),
+    }
+
+
+def _build_scalping_scorer_payload(days=30, limit=5000):
+    days = max(1, min(_safe_int(days, 30), 90))
+    limit = max(1, min(_safe_int(limit, 5000), 20000))
+
+    report = build_scalping_scorer_report(days=days, limit=limit)
+    export_info = export_outcomes_dataset(days=days, limit=limit)
+
+    return {
+        "ok": True,
+        "query": {
+            "days": days,
+            "limit": limit,
+        },
+        "report": report,
+        "export": export_info,
+    }
 
 
 def _extract_trade_timestamp(trade):
@@ -102,7 +592,7 @@ def _normalize_scalping_trade(trade):
 
 
 def _get_scalping_history(days=None, limit=100):
-    scalping_state = _read_json(os.path.join(BOT_DIR, "scalping_state.json"), {})
+    scalping_state = _read_json(SCALPING_STATE_FILE, {})
     history = scalping_state.get("history", [])
     if not history:
         return []
@@ -256,26 +746,9 @@ def _get_bot_status():
         "overall": "offline",  # offline, degraded, healthy
     }
 
-    # Check processes via supervisor (Linux) or log file timestamps
-    try:
-        result = subprocess.run(
-            ["pgrep", "-f", "main.py"], capture_output=True, timeout=3
-        )
-        status["main_bot"] = result.returncode == 0
-    except Exception:
-        # Windows fallback: check log file modification time
-        pass
-
-    try:
-        result = subprocess.run(
-            ["pgrep", "-f", "pump_scanner.py"], capture_output=True, timeout=3
-        )
-        status["pump_scanner"] = result.returncode == 0
-    except Exception:
-        pass
-
-    # Check last cycle timestamp from main log
-    log_dir = os.path.join(BOT_DIR, "logs")
+    # Em modo multi-instancia, os logs do runtime isolado sao a melhor fonte.
+    # pgrep fica apenas como fallback quando os logs nao existem.
+    log_dir = str(LOG_DIR)
     today = datetime.now().strftime("%Y-%m-%d")
     main_log = os.path.join(log_dir, f"main_bot_{today}.log")
     if os.path.isfile(main_log):
@@ -306,6 +779,24 @@ def _get_bot_status():
             age_seconds = (datetime.now() - datetime.fromtimestamp(mtime)).total_seconds()
             if age_seconds < 120:  # pump runs every 60s
                 status["pump_scanner"] = True
+        except Exception:
+            pass
+
+    if not status["main_bot"]:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "main.py"], capture_output=True, timeout=3
+            )
+            status["main_bot"] = result.returncode == 0
+        except Exception:
+            pass
+
+    if not status["pump_scanner"]:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "pump_scanner.py"], capture_output=True, timeout=3
+            )
+            status["pump_scanner"] = result.returncode == 0
         except Exception:
             pass
 
@@ -415,7 +906,7 @@ def _get_recent_logs(source="main", lines=30):
     source="scalping"  → logs/scalping.log
     source="pump"      → logs/pump_scanner_YYYY-MM-DD.log
     """
-    logs_dir = os.path.join(BOT_DIR, "logs")
+    logs_dir = str(LOG_DIR)
     today = date.today().isoformat()
 
     if source == "main":
@@ -444,17 +935,16 @@ def _get_recent_logs(source="main", lines=30):
 def _get_live_positions():
     """Le posicoes abertas dos arquivos de estado e adiciona P&L ao vivo via Binance."""
     state_files = [
-        ("paper_state.json",    "Paper"),
-        ("agent_state.json",    "Agent"),
-        ("pump_positions.json", "Pump"),
+        (PAPER_STATE_FILE, "Paper"),
+        (AGENT_STATE_FILE, "Agent"),
+        (PUMP_STATE_FILE, "Pump"),
     ]
 
     raw = []
     symbols_needed = set()
 
     # --- Paper, Agent, Pump positions ---
-    for fname, system in state_files:
-        path = os.path.join(BOT_DIR, fname)
+    for path, system in state_files:
         state = _read_json(path, {})
         for sym, pos in state.get("positions", {}).items():
             symbols_needed.add(sym)
@@ -471,8 +961,7 @@ def _get_live_positions():
             raw.append(entry)
 
     # --- Scalping positions (different field names) ---
-    scalping_path = os.path.join(BOT_DIR, "scalping_state.json")
-    scalping_state = _read_json(scalping_path, {})
+    scalping_state = _read_json(SCALPING_STATE_FILE, {})
     for sym, pos in scalping_state.get("positions", {}).items():
         symbols_needed.add(sym)
         raw.append({
@@ -528,8 +1017,7 @@ def _build_status(include_logs=True, include_trades=True):
 
     # Scalping capital (from scalping_state.json)
     scalping_cap = SCALPING_INITIAL_CAPITAL
-    scalping_path = os.path.join(BOT_DIR, "scalping_state.json")
-    scalping_state = _read_json(scalping_path, {})
+    scalping_state = _read_json(SCALPING_STATE_FILE, {})
     scalping_cap = _safe_float(
         scalping_state.get("capital", SCALPING_INITIAL_CAPITAL),
         SCALPING_INITIAL_CAPITAL,
@@ -592,11 +1080,12 @@ def _build_status(include_logs=True, include_trades=True):
         acc += daily_pnl[day]
         scalping_chart.append({"day": day, "pnl": round(acc, 2)})
 
-    # Circuit breaker status
-    from daily_report import is_circuit_broken
-    cb_paper = is_circuit_broken("paper")
-    cb_agent = is_circuit_broken("agent")
-    cb_pump  = is_circuit_broken("pump")
+    # Circuit breaker status (read-only, no Telegram alerts)
+    from daily_report import check_circuit_breaker
+    cb_paper = check_circuit_breaker("paper")
+    cb_agent = check_circuit_breaker("agent")
+    cb_pump  = check_circuit_breaker("pump")
+    cb_scalping = check_circuit_breaker("scalping")
 
     # Advanced metrics (30 days) -- per system
     metrics_per_system = {
@@ -682,7 +1171,7 @@ def _build_status(include_logs=True, include_trades=True):
         "paper": {"value": round(paper_cap, 2), "ret": _ret(paper_cap, PAPER_INITIAL_CAPITAL), "cb": cb_paper},
         "agent": {"value": round(agent_cap, 2), "ret": _ret(agent_cap, AGENT_INITIAL_CAPITAL), "cb": cb_agent},
         "pump": {"value": round(pump_cap, 2), "ret": _ret(pump_cap, PUMP_INITIAL_CAPITAL), "cb": cb_pump},
-        "scalping": {"value": round(scalping_cap, 2), "ret": _ret(scalping_cap, SCALPING_INITIAL_CAPITAL), "cb": False},
+        "scalping": {"value": round(scalping_cap, 2), "ret": _ret(scalping_cap, SCALPING_INITIAL_CAPITAL), "cb": cb_scalping},
     }
     stats_today = {
         "paper": paper_stats,
@@ -722,12 +1211,16 @@ def _build_status(include_logs=True, include_trades=True):
 
     # Bot operational status -- checks if processes are alive and last cycle was recent
     bot_status = _get_bot_status()
+    scalping_funnel = get_scalping_funnel_stats(days=1)
+    strategy_leaderboard = _build_system_leaderboard(capital, stats_today, metrics_per_system)
+    strategy_research = _get_strategy_research_snapshot()
 
     logs = _get_recent_logs(source="main", lines=20) if include_logs else []
 
     status = {
         "paused": paused,
         "last_update": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "instance": runtime_metadata(),
         "capital": capital,
         "stats_today": stats_today,
         "summary": summary,
@@ -737,6 +1230,11 @@ def _build_status(include_logs=True, include_trades=True):
         "by_symbol": by_symbol,
         "health": health,
         "bot_status": bot_status,
+        "scalping_funnel": scalping_funnel,
+        "insights": {
+            "system_leaderboard": strategy_leaderboard,
+            "research": strategy_research,
+        },
         "logs": logs,
     }
 
@@ -758,7 +1256,22 @@ def _build_status(include_logs=True, include_trades=True):
 @app.route("/")
 def index():
     status = _build_status(include_logs=True, include_trades=True)
-    return render_template("index.html", dashboard=status)
+    runtime_links = _build_runtime_links(request.host, request.scheme)
+    default_left, default_right = _default_compare_pair(runtime_links)
+    comparison_url = url_for("comparison_page", left=default_left, right=default_right, days=1)
+    audit_url = url_for("scalping_audit_page", days=1, limit=100)
+    outcomes_url = url_for("scalping_outcomes_page", days=7, limit=100)
+    scorer_url = url_for("scalping_scorer_page", days=30, limit=5000)
+    return render_template(
+        "index.html",
+        dashboard=status,
+        runtime_links=runtime_links,
+        comparison_url=comparison_url,
+        audit_url=audit_url,
+        outcomes_url=outcomes_url,
+        scorer_url=scorer_url,
+        comparison_pair_label=f"{default_left} x {default_right}",
+    )
 
 
 @app.route("/api/status")
@@ -766,13 +1279,124 @@ def api_status():
     return jsonify(_build_status(include_logs=False, include_trades=False))
 
 
+@app.route("/api/version")
+def api_version():
+    return jsonify(runtime_metadata())
+
+
+@app.route("/comparison")
+def comparison_page():
+    payload = _build_comparison_payload(
+        left=request.args.get("left"),
+        right=request.args.get("right"),
+        days=request.args.get("days", "1"),
+    )
+    payload["runtime_links"] = _build_runtime_links(request.host, request.scheme)
+    return render_template("comparison.html", comparison=payload)
+
+
+@app.route("/scalping/audit")
+def scalping_audit_page():
+    payload = _build_scalping_audit_payload(
+        days=request.args.get("days", "1"),
+        limit=request.args.get("limit", "100"),
+        outcome=request.args.get("outcome", ""),
+    )
+    payload["runtime_links"] = _build_runtime_links(request.host, request.scheme)
+    payload["instance"] = runtime_metadata()
+    return render_template("scalping_audit.html", audit=payload)
+
+
+@app.route("/scalping/outcomes")
+def scalping_outcomes_page():
+    payload = _build_scalping_outcomes_payload(
+        days=request.args.get("days", "7"),
+        limit=request.args.get("limit", "100"),
+        scenario_type=request.args.get("scenario_type", ""),
+        verdict=request.args.get("verdict", ""),
+    )
+    payload["runtime_links"] = _build_runtime_links(request.host, request.scheme)
+    payload["instance"] = runtime_metadata()
+    return render_template("scalping_outcomes.html", outcomes=payload)
+
+
+@app.route("/scalping/scorer")
+def scalping_scorer_page():
+    payload = _build_scalping_scorer_payload(
+        days=request.args.get("days", "30"),
+        limit=request.args.get("limit", "5000"),
+    )
+    payload["runtime_links"] = _build_runtime_links(request.host, request.scheme)
+    payload["instance"] = runtime_metadata()
+    return render_template("scalping_scorer.html", scorer=payload)
+
+
+@app.route("/api/compare")
+def api_compare():
+    payload = _build_comparison_payload(
+        left=request.args.get("left"),
+        right=request.args.get("right"),
+        days=request.args.get("days", "1"),
+    )
+    payload["runtime_links"] = _build_runtime_links(request.host, request.scheme)
+    status_code = 200 if payload.get("ok") else 400
+    return jsonify(payload), status_code
+
+
+@app.route("/api/scalping/audit")
+def api_scalping_audit():
+    payload = _build_scalping_audit_payload(
+        days=request.args.get("days", "1"),
+        limit=request.args.get("limit", "100"),
+        outcome=request.args.get("outcome", ""),
+    )
+    return jsonify(payload)
+
+
+@app.route("/api/scalping/outcomes")
+def api_scalping_outcomes():
+    payload = _build_scalping_outcomes_payload(
+        days=request.args.get("days", "7"),
+        limit=request.args.get("limit", "100"),
+        scenario_type=request.args.get("scenario_type", ""),
+        verdict=request.args.get("verdict", ""),
+    )
+    return jsonify(payload)
+
+
+@app.route("/api/scalping/scorer")
+def api_scalping_scorer():
+    payload = _build_scalping_scorer_payload(
+        days=request.args.get("days", "30"),
+        limit=request.args.get("limit", "5000"),
+    )
+    return jsonify(payload)
+
+
+@app.route("/api/scalping/outcomes/export")
+def api_scalping_outcomes_export():
+    days = max(1, min(_safe_int(request.args.get("days", "30"), 30), 90))
+    limit = max(1, min(_safe_int(request.args.get("limit", "5000"), 5000), 20000))
+    payload = {
+        "ok": True,
+        "query": {
+            "days": days,
+            "limit": limit,
+        },
+        "export": export_outcomes_dataset(days=days, limit=limit),
+    }
+    return jsonify(payload)
+
+
 @app.route("/pause", methods=["POST"])
+@require_post_auth
 def pause():
     _set_paused(True)
     return redirect(url_for("index"))
 
 
 @app.route("/resume", methods=["POST"])
+@require_post_auth
 def resume():
     _set_paused(False)
     return redirect(url_for("index"))
@@ -838,6 +1462,14 @@ def api_logs():
 
 if __name__ == "__main__":
     db.init_db()
-    print("Dashboard disponivel em http://0.0.0.0:5000")
+    if not _AUTH_ENABLED:
+        print(
+            "WARNING: Dashboard rodando SEM autenticacao nas rotas POST (pause/resume).\n"
+            "         Qualquer dispositivo na rede pode controlar o bot.\n"
+            "         Defina DASHBOARD_USER e DASHBOARD_PASS para proteger."
+        )
+    else:
+        print(f"Dashboard auth habilitada (user: {_DASHBOARD_USER})")
+    print(f"Dashboard {BOT_ID} ({BOT_LABEL}) disponivel em http://0.0.0.0:{DASHBOARD_PORT}")
     # host=0.0.0.0 permite acesso pela rede local (celular no mesmo Wi-Fi)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=DASHBOARD_PORT, debug=False)

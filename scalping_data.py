@@ -11,6 +11,7 @@ import requests
 import pandas as pd
 import ta
 from typing import Optional, Dict, Tuple
+from config import BINANCE_KLINES_URL, BINANCE_FUNDING_RATE_URL
 
 logger = logging.getLogger("scalping.data")
 
@@ -39,7 +40,7 @@ def _backoff_delay(attempt: int, response: Optional[requests.Response] = None) -
 
 def fetch_candles(symbol: str, interval: str, limit: int = 100) -> Optional[pd.DataFrame]:
     """
-    Busca candles OHLCV da Binance Spot API.
+    Busca candles OHLCV da Binance (Futures ou Spot conforme USE_FUTURES_API).
 
     Usa cache para evitar chamadas duplicadas no mesmo ciclo.
     Retorna DataFrame com colunas: time, open, high, low, close, volume.
@@ -54,10 +55,7 @@ def fetch_candles(symbol: str, interval: str, limit: int = 100) -> Optional[pd.D
         if now - cached_time < _CACHE_TTL_SECONDS:
             return cached_df.copy()
 
-    url = (
-        f"https://api.binance.com/api/v3/klines"
-        f"?symbol={symbol}&interval={interval}&limit={limit}"
-    )
+    url = f"{BINANCE_KLINES_URL}?symbol={symbol}&interval={interval}&limit={limit}"
 
     for attempt in range(3):
         try:
@@ -102,6 +100,65 @@ def fetch_candles(symbol: str, interval: str, limit: int = 100) -> Optional[pd.D
     return None
 
 
+def fetch_candles_range(
+    symbol: str,
+    interval: str,
+    limit: int = 500,
+    start_time_ms: Optional[int] = None,
+    end_time_ms: Optional[int] = None,
+) -> Optional[pd.DataFrame]:
+    """Busca candles em uma janela temporal especifica, sem usar cache."""
+    params = [
+        f"symbol={symbol}",
+        f"interval={interval}",
+        f"limit={max(1, min(limit, 1000))}",
+    ]
+    if start_time_ms is not None:
+        params.append(f"startTime={int(start_time_ms)}")
+    if end_time_ms is not None:
+        params.append(f"endTime={int(end_time_ms)}")
+
+    url = f"{BINANCE_KLINES_URL}?{'&'.join(params)}"
+
+    for attempt in range(3):
+        try:
+            response = requests.get(url, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                if not data:
+                    return pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume"])
+
+                df = pd.DataFrame(data, columns=[
+                    "time", "open", "high", "low", "close", "volume",
+                    "close_time", "qav", "trades", "tbbav", "tbqav", "ignore"
+                ])
+
+                for col in ["open", "high", "low", "close", "volume"]:
+                    df[col] = df[col].astype(float)
+
+                df["time"] = pd.to_datetime(df["time"], unit="ms", utc=True)
+                return df[["time", "open", "high", "low", "close", "volume"]].copy()
+
+            delay = _backoff_delay(attempt, response)
+            logger.warning(
+                "HTTP %d para range %s/%s (retry %d em %.1fs)",
+                response.status_code, symbol, interval, attempt + 1, delay
+            )
+            time.sleep(delay)
+
+        except Exception as e:
+            delay = _backoff_delay(attempt)
+            logger.warning(
+                "Erro ao buscar range %s/%s (tentativa %d): %s",
+                symbol, interval, attempt + 1, e
+            )
+            time.sleep(delay)
+
+    logger.error("Falha ao buscar candles em range %s/%s apos 3 tentativas", symbol, interval)
+    return None
+
+
 def get_funding_rate(symbol: str) -> Optional[float]:
     """
     Busca o funding rate atual de um par de futuros na Binance.
@@ -109,8 +166,7 @@ def get_funding_rate(symbol: str) -> Optional[float]:
     Retorna o funding rate como percentual (ex: 0.01 = 0.01%).
     Retorna None em caso de falha.
     """
-    # Converter symbol para formato futures se necessario
-    url = f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}&limit=1"
+    url = f"{BINANCE_FUNDING_RATE_URL}?symbol={symbol}&limit=1"
 
     try:
         response = requests.get(url, timeout=10)

@@ -15,10 +15,12 @@ import database as db
 from config import (
     PUMP_TRAILING_STOP, PUMP_MAX_POSITION_TIME,
     PUMP_POSITION_SIZE_PCT, PUMP_RSI_EXHAUSTION,
-    PUMP_DUMP_RETRACE_PCT, PUMP_CAPITAL,
+    PUMP_DUMP_RETRACE_PCT, PUMP_CAPITAL, PUMP_MAX_POSITIONS,
+    PUMP_DUMP_SPEED_PCT, PUMP_DUMP_SPEED_CANDLES,
 )
+from runtime_config import PUMP_STATE_FILE
 
-STATE_FILE = "pump_positions.json"
+STATE_FILE = PUMP_STATE_FILE
 
 
 def load_state():
@@ -78,12 +80,72 @@ def get_rsi(symbol, period=6):
         return None
 
 
+def get_recent_closes(symbol, num_candles=5):
+    """Retorna lista de precos de fechamento dos ultimos N candles de 5m."""
+    try:
+        resp = requests.get(
+            f"https://api.binance.com/api/v3/klines"
+            f"?symbol={symbol}&interval=5m&limit={num_candles}",
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        return [float(c[4]) for c in data]
+    except Exception:
+        return None
+
+
+def detect_dump(symbol, current_price, peak_price):
+    """Detecta dump por magnitude E velocidade de queda.
+
+    Retorna dict com detalhes se dump detectado, None caso contrario.
+    Dois criterios (qualquer um dispara):
+      1. Magnitude: retrace >= PUMP_DUMP_RETRACE_PCT do pico
+      2. Velocidade: queda >= PUMP_DUMP_SPEED_PCT em PUMP_DUMP_SPEED_CANDLES candles
+    """
+    result = {"detected": False, "reason": None, "retrace_pct": 0.0, "speed_pct": 0.0}
+
+    # Criterio 1: Magnitude de retrace do pico
+    if peak_price > 0:
+        retrace_pct = ((peak_price - current_price) / peak_price) * 100
+        result["retrace_pct"] = retrace_pct
+        if retrace_pct >= PUMP_DUMP_RETRACE_PCT:
+            result["detected"] = True
+            result["reason"] = (
+                f"DUMP magnitude: retrace {retrace_pct:.2f}% do pico "
+                f"(threshold: {PUMP_DUMP_RETRACE_PCT}%)"
+            )
+            return result
+
+    # Criterio 2: Velocidade de queda (queda rapida em poucos candles)
+    closes = get_recent_closes(symbol, num_candles=PUMP_DUMP_SPEED_CANDLES + 1)
+    if closes and len(closes) >= 2:
+        recent_high = max(closes[:-1])  # maior preco nos candles anteriores
+        if recent_high > 0:
+            speed_drop = ((recent_high - current_price) / recent_high) * 100
+            result["speed_pct"] = speed_drop
+            if speed_drop >= PUMP_DUMP_SPEED_PCT:
+                result["detected"] = True
+                result["reason"] = (
+                    f"DUMP velocidade: queda {speed_drop:.2f}% em "
+                    f"{PUMP_DUMP_SPEED_CANDLES} candles "
+                    f"(threshold: {PUMP_DUMP_SPEED_PCT}%)"
+                )
+                return result
+
+    return result
+
+
 def open_position(symbol, direction, price, volume_ratio):
     """Open a new pump/dump position."""
     state = load_state()
 
     if symbol in state["positions"]:
         return None  # ja tem posicao
+
+    if len(state["positions"]) >= PUMP_MAX_POSITIONS:
+        return None  # limite de posicoes simultaneas
 
     allocation = state["capital"] * (PUMP_POSITION_SIZE_PCT / 100)
 
@@ -111,7 +173,13 @@ def open_position(symbol, direction, price, volume_ratio):
 
 
 def check_positions():
-    """Check all open positions for exits."""
+    """Check all open positions for exits.
+
+    Ordem de prioridade de saida:
+      1. Dump detection (saida de emergencia - mais agressivo)
+      2. Trailing stop (protecao normal de lucro)
+      3. Timeout (tempo maximo em posicao)
+    """
     state = load_state()
     messages = []
     closed = []
@@ -130,30 +198,62 @@ def check_positions():
         if pos_type == "LONG":
             if price > pos["peak_price"]:
                 pos["peak_price"] = price
-            # P&L from entry
             pnl_pct = ((price - entry) / entry) * 100
-            # Trailing: distance from peak
             drop_from_peak = ((pos["peak_price"] - price) / pos["peak_price"]) * 100
             trailing_hit = drop_from_peak >= pos["trailing_stop"]
-
         else:  # SHORT
             if price < pos.get("trough_price", entry):
                 pos["trough_price"] = price
             pnl_pct = ((entry - price) / entry) * 100
-            rise_from_trough = ((price - pos.get("trough_price", entry)) / pos.get("trough_price", entry)) * 100
+            rise_from_trough = (
+                ((price - pos.get("trough_price", entry))
+                 / pos.get("trough_price", entry)) * 100
+            )
             trailing_hit = rise_from_trough >= pos["trailing_stop"]
 
-        # Update pump high for dump detection later
+        # Update pump high
         if price > pos.get("pump_high", 0):
             pos["pump_high"] = price
 
-        # Exit conditions
+        # --- Exit conditions (ordem de prioridade) ---
         exit_reason = None
+        dump_info = None
 
-        if trailing_hit:
+        # 1. DUMP DETECTION -- saida de emergencia, checada ANTES do trailing
+        #    Para LONG: detecta dump no ativo (preco caindo rapido)
+        #    Para SHORT: detecta pump reverso (preco subindo rapido)
+        if pos_type == "LONG":
+            dump_info = detect_dump(symbol, price, pos["peak_price"])
+        else:
+            # Para SHORT, invertemos: detectar pump reverso (alta rapida)
+            dump_info = detect_dump(symbol, pos.get("trough_price", entry), price)
+
+        if dump_info and dump_info["detected"]:
+            exit_reason = "dump_detected"
+            print(
+                f"  [DUMP] {symbol} {pos_type}: {dump_info['reason']} | "
+                f"retrace={dump_info['retrace_pct']:.2f}% "
+                f"speed={dump_info['speed_pct']:.2f}%"
+            )
+
+        # 2. TRAILING STOP -- protecao normal de lucro
+        if not exit_reason and trailing_hit:
             exit_reason = "trailing_stop"
-        elif duration >= PUMP_MAX_POSITION_TIME:
+            if pos_type == "LONG":
+                print(
+                    f"  [TRAILING] {symbol} LONG: drop_from_peak={drop_from_peak:.2f}% "
+                    f">= trailing={pos['trailing_stop']}%"
+                )
+            else:
+                print(
+                    f"  [TRAILING] {symbol} SHORT: rise_from_trough="
+                    f"{rise_from_trough:.2f}% >= trailing={pos['trailing_stop']}%"
+                )
+
+        # 3. TIMEOUT
+        if not exit_reason and duration >= PUMP_MAX_POSITION_TIME:
             exit_reason = "timeout"
+            print(f"  [TIMEOUT] {symbol} {pos_type}: {duration:.0f}min >= {PUMP_MAX_POSITION_TIME}min")
 
         if exit_reason:
             allocation = pos["allocation"]
@@ -179,30 +279,46 @@ def check_positions():
                 "peak_price": pos.get("peak_price", entry),
                 "capital_after": state["capital"],
             }
-            log_trade(trade)
+
+            # Flag de dump com detalhes extras no trade log
+            if exit_reason == "dump_detected" and dump_info:
+                trade["dump_retrace_pct"] = round(dump_info["retrace_pct"], 2)
+                trade["dump_speed_pct"] = round(dump_info["speed_pct"], 2)
+                trade["dump_reason"] = dump_info["reason"]
+
+            try:
+                log_trade(trade)
+            except Exception as db_err:
+                print(f"  [ERRO] Falha ao salvar trade no banco (pump): {db_err}")
 
             wr = (state["wins"] / state["total_trades"]) * 100
+
+            # Mensagem diferenciada para dump vs trailing
+            if exit_reason == "dump_detected":
+                exit_label = f"DUMP DETECTADO ({dump_info['reason']})"
+            elif exit_reason == "trailing_stop":
+                exit_label = "trailing_stop"
+            else:
+                exit_label = exit_reason
 
             msg = (
                 f"[PUMP TRADE] {pos_type} fechado: {symbol}\n"
                 f"Entrada: {entry:.6f} | Saida: {price:.6f}\n"
                 f"P&L: {pnl_pct:+.2f}% (${pnl_usd:+.2f})\n"
-                f"Motivo: {exit_reason} | Duracao: {duration:.0f}min\n"
+                f"Motivo: {exit_label} | Duracao: {duration:.0f}min\n"
                 f"Capital: ${state['capital']:.2f} | "
                 f"Trades: {state['total_trades']} | WR: {wr:.1f}%"
             )
             messages.append(msg)
 
-            # Check if we should enter dump after closing a pump long
-            if pos_type == "LONG" and exit_reason == "trailing_stop" and pnl_pct > 5:
-                pump_high = pos.get("pump_high", entry)
-                retrace = ((pump_high - price) / pump_high) * 100
-                if retrace >= PUMP_DUMP_RETRACE_PCT * 0.5:
-                    # Potential dump starting - check RSI
-                    rsi = get_rsi(symbol)
-                    if rsi and rsi > PUMP_RSI_EXHAUSTION * 0.9:
-                        closed.append({"symbol": symbol, "action": "SHORT", "price": price,
-                                       "volume_ratio": pos["volume_ratio_at_entry"]})
+            # Apos fechar LONG por trailing com lucro > 5%, considerar SHORT
+            if pos_type == "LONG" and exit_reason in ("trailing_stop", "dump_detected") and pnl_pct > 5:
+                rsi = get_rsi(symbol)
+                if rsi and rsi > PUMP_RSI_EXHAUSTION:
+                    closed.append({
+                        "symbol": symbol, "action": "SHORT", "price": price,
+                        "volume_ratio": pos["volume_ratio_at_entry"],
+                    })
 
             del state["positions"][symbol]
 

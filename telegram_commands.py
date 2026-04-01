@@ -22,8 +22,7 @@ import time
 from datetime import datetime
 import requests
 from telegram_notifier import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, send_telegram_message
-
-CONTROL_FILE = "bot_control.json"
+from runtime_config import CONTROL_FILE, DB_FILE
 _last_update_id = 0
 
 
@@ -89,13 +88,17 @@ def _cmd_posicoes():
 
 def _cmd_capital():
     from daily_report import get_capital_status
-    from config import PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL
+    from config import (
+        PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL,
+        PUMP_INITIAL_CAPITAL, SCALPING_INITIAL_CAPITAL,
+    )
 
     capitals = get_capital_status()
     initials = {
         "Paper": PAPER_INITIAL_CAPITAL,
         "Agent": AGENT_INITIAL_CAPITAL,
         "Pump": PUMP_INITIAL_CAPITAL,
+        "Scalping": SCALPING_INITIAL_CAPITAL,
     }
 
     lines = ["\U0001f4b0 <b>Capital por Sistema</b>\n"]
@@ -129,6 +132,7 @@ def _cmd_performance():
         "Paper": "paper_trades",
         "Agent": "agent_trades",
         "Pump": "pump_trades",
+        "Scalping": "scalping_trades",
     }
 
     total_trades = 0
@@ -244,9 +248,8 @@ def _cmd_saude():
 
     # DB size
     try:
-        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_data.db")
-        if os.path.isfile(db_path):
-            size_mb = os.path.getsize(db_path) / (1024 * 1024)
+        if os.path.isfile(DB_FILE):
+            size_mb = os.path.getsize(DB_FILE) / (1024 * 1024)
             health["db"] = f"{size_mb:.1f} MB"
         else:
             health["db"] = "N/A"

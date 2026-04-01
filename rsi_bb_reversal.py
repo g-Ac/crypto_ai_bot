@@ -118,10 +118,10 @@ def analyze(
         logger.warning("RSI_BB %s: %s", symbol, neutral.reason)
         return neutral
 
-    # Candle de sinal (penultimo = ultimo fechado) e candle atual (ultimo, possivelmente aberto)
-    signal_candle = df_5m.iloc[-3]   # candle que tocou a banda
-    confirm_candle = df_5m.iloc[-2]  # candle seguinte (confirmacao de pullback)
-    prev_candle = df_5m.iloc[-4]     # candle anterior ao sinal (para comparar RSI)
+    # Candle de sinal (ultimo fechado) e candle de confirmacao
+    signal_candle = df_5m.iloc[-2]   # candle que tocou a banda (ultimo fechado)
+    confirm_candle = df_5m.iloc[-1]  # candle atual (confirmacao)
+    prev_candle = df_5m.iloc[-3]     # candle anterior ao sinal (para comparar RSI)
 
     price = confirm_candle["close"]
     neutral.price = price
@@ -254,6 +254,7 @@ def analyze(
     # Filtro: BB bandwidth < 0.8% (bandas comprimidas)
     bb_bandwidth = df_5m["bb_bandwidth"].iloc[-2]
     bb_middle = df_5m["bb_middle"].iloc[-2]
+    bandwidth_pct = 0.0
     if not pd.isna(bb_bandwidth) and not pd.isna(bb_middle) and bb_middle > 0:
         bandwidth_pct = bb_bandwidth * 100
         if bandwidth_pct < config.rsi_bb_bandwidth_min:
