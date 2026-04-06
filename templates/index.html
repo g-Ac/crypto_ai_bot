@@ -653,6 +653,123 @@
     .confidence-mid { color: var(--yellow); background: rgba(255,209,102,0.1); }
     .confidence-low { color: var(--red); background: rgba(255,90,110,0.1); }
 
+    /* ---------- AI BRAIN ---------- */
+    .review-item {
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: rgba(10,20,35,0.85);
+      margin-bottom: 10px;
+    }
+
+    .review-item:last-child { margin-bottom: 0; }
+
+    .review-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .review-header strong {
+      font-size: 13px;
+    }
+
+    .classification-badge {
+      display: inline-flex;
+      padding: 3px 10px;
+      border-radius: var(--radius-pill);
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .classification-badge.good-good { color: var(--green); background: rgba(0,255,136,0.1); }
+    .classification-badge.bad-bad { color: var(--red); background: rgba(255,90,110,0.1); }
+    .classification-badge.good-bad { color: var(--yellow); background: rgba(255,209,102,0.1); }
+    .classification-badge.bad-good { color: var(--orange); background: rgba(255,159,102,0.1); }
+
+    .review-detail {
+      font-size: 12px;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    .review-detail strong { color: var(--text); }
+
+    .pattern-section {
+      margin-bottom: 16px;
+    }
+
+    .pattern-section:last-child { margin-bottom: 0; }
+
+    .pattern-section h4 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-3);
+      margin-bottom: 8px;
+    }
+
+    .pattern-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .pattern-bar-label {
+      min-width: 120px;
+      max-width: 200px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-2);
+    }
+
+    .pattern-bar-fill {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.06);
+      overflow: hidden;
+    }
+
+    .pattern-bar-fill > span {
+      display: block;
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    .pattern-bar-count {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-3);
+      min-width: 24px;
+      text-align: right;
+    }
+
+    .ai-reviews-scroll {
+      max-height: 480px;
+      overflow-y: auto;
+    }
+
+    .ai-approved { color: var(--green); }
+    .ai-rejected { color: var(--red); }
+
+    .sys-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+
     /* ---------- SUBTABS (history / logs / trade systems) ---------- */
     .subtab-row {
       display: flex;
@@ -1126,6 +1243,9 @@
       <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-system" id="btn-system" data-tab="system">
         <span class="tab-icon">&#9881;</span><span>System</span>
       </button>
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-aibrain" id="btn-aibrain" data-tab="aibrain">
+        <span class="tab-icon">&#9733;</span><span>AI Brain</span>
+      </button>
     </div>
 
     <div class="topbar-status" id="overallBadge">
@@ -1393,6 +1513,124 @@
           <div class="log-terminal" id="logSupervisorContent">Loading...</div>
         </div>
       </div>
+    </section>
+
+    <!-- ========== TAB 5: AI BRAIN ========== -->
+    <section class="tab-panel" id="tab-aibrain" role="tabpanel" aria-labelledby="btn-aibrain">
+
+      <!-- KPI Bar -->
+      <div class="kpi-bar" id="aiBrainKpis">
+        <div class="kpi-card">
+          <div class="kpi-label">Total AI Decisions</div>
+          <div class="kpi-value" id="aiKpiTotal">--</div>
+          <div class="kpi-sub" id="aiKpiTotalSub">30 days</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Approval Rate</div>
+          <div class="kpi-value" id="aiKpiApproval" style="color:var(--green)">--</div>
+          <div class="kpi-sub" id="aiKpiApprovalSub">approved / total</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Confidence</div>
+          <div class="kpi-value" id="aiKpiConfidence" style="color:var(--cyan)">--</div>
+          <div class="kpi-sub">model confidence score</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Latency</div>
+          <div class="kpi-value" id="aiKpiLatency" style="color:var(--purple)">--</div>
+          <div class="kpi-sub">ms per decision</div>
+        </div>
+      </div>
+
+      <!-- AI Decisions Table -->
+      <div class="card mb-16">
+        <div class="card-header">
+          <div>
+            <span class="eyebrow">Decision Log</span>
+            <h3>Recent AI Decisions</h3>
+          </div>
+          <span class="badge-sm" id="aiDecisionCount">0 records</span>
+        </div>
+        <div class="card-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Symbol</th>
+                  <th>System</th>
+                  <th>Model</th>
+                  <th>Approved</th>
+                  <th>Confidence</th>
+                  <th>Latency</th>
+                  <th>Reasoning</th>
+                </tr>
+              </thead>
+              <tbody id="aiDecisionsBody">
+                <tr><td colspan="8" class="empty-state">Loading AI decisions...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Two column: Trade Reviews + Pattern Memory -->
+      <div class="grid-2 mb-16">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="eyebrow">Offline Learning</span>
+              <h3>Trade Reviews</h3>
+            </div>
+            <span class="badge-sm" id="tradeReviewCount">0 reviews</span>
+          </div>
+          <div class="card-body" id="tradeReviewsContainer">
+            <div class="empty-state">No trade reviews yet.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="eyebrow">Memory Bank</span>
+              <h3>Pattern Memory</h3>
+            </div>
+          </div>
+          <div class="card-body" id="patternMemoryContainer">
+            <div class="empty-state">No pattern memory data.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Validation Audit (full width) -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <span class="eyebrow">Quality Assurance</span>
+            <h3>Validation Audit</h3>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>System</th>
+                  <th>Total Trades</th>
+                  <th>Win Rate</th>
+                  <th>Profit Factor</th>
+                  <th>Expectancy</th>
+                  <th>Max Drawdown</th>
+                </tr>
+              </thead>
+              <tbody id="validationAuditBody">
+                <tr><td colspan="6" class="empty-state">No validation audit data.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </section>
 
   </main>
@@ -2265,6 +2503,172 @@
       researchChartInstance.update();
     }
 
+    /* ===== AI Brain Renders ===== */
+    function renderAiBrainKpis(status) {
+      const brain = status.ai_brain || {};
+      const s = brain.summary || {};
+      const el = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+      el("aiKpiTotal", safeNumber(s.total).toLocaleString());
+      el("aiKpiTotalSub", `${safeNumber(s.approvals)} approved / ${safeNumber(s.total)} total (30d)`);
+      el("aiKpiApproval", formatPct(safeNumber(s.approval_rate)));
+      el("aiKpiApprovalSub", `${safeNumber(s.approvals)} of ${safeNumber(s.total)}`);
+      el("aiKpiConfidence", safeNumber(s.avg_confidence).toFixed(1));
+      el("aiKpiLatency", `${safeNumber(s.avg_latency_ms).toFixed(0)} ms`);
+    }
+
+    function renderAiDecisionsTable(status) {
+      const brain = status.ai_brain || {};
+      const decisions = (brain.decisions || []).slice(0, 30);
+      const tbody = document.getElementById("aiDecisionsBody");
+      if (!tbody) return;
+
+      const countEl = document.getElementById("aiDecisionCount");
+      if (countEl) countEl.textContent = `${decisions.length} records`;
+
+      if (!decisions.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No AI decisions recorded yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = decisions.map(d => {
+        const approved = !!d.approved;
+        const cls = approved ? "ai-approved" : "ai-rejected";
+        const label = approved ? "YES" : "NO";
+        const reasoning = escapeHtml(String(d.reasoning || "").substring(0, 80));
+        const ts = escapeHtml(d.timestamp || "--");
+        const shortTs = ts.length > 16 ? ts.substring(5, 16) : ts;
+        return `<tr>
+          <td class="text-mono">${shortTs}</td>
+          <td><strong>${escapeHtml(d.symbol || "--")}</strong></td>
+          <td>${escapeHtml(d.system || "--")}</td>
+          <td class="text-mono" style="font-size:11px">${escapeHtml(d.model || "--")}</td>
+          <td><span class="${cls}" style="font-weight:700">${label}</span></td>
+          <td class="text-mono">${safeNumber(d.confidence)}</td>
+          <td class="text-mono">${safeNumber(d.latency_ms).toFixed(0)} ms</td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-2)" title="${reasoning}">${reasoning || "--"}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    function renderTradeReviews(status) {
+      const brain = status.ai_brain || {};
+      const reviews = brain.trade_reviews || [];
+      const container = document.getElementById("tradeReviewsContainer");
+      if (!container) return;
+
+      const countEl = document.getElementById("tradeReviewCount");
+      if (countEl) countEl.textContent = `${reviews.length} reviews`;
+
+      if (!reviews.length) {
+        container.innerHTML = '<div class="empty-state">No trade reviews yet. The offline learning loop generates these after each trade.</div>';
+        return;
+      }
+
+      const classMap = {
+        "good_trade_good_outcome": { cls: "good-good", label: "Good/Good" },
+        "bad_trade_bad_outcome": { cls: "bad-bad", label: "Bad/Bad" },
+        "good_trade_bad_outcome": { cls: "good-bad", label: "Good/Bad" },
+        "bad_trade_good_outcome": { cls: "bad-good", label: "Bad/Good" },
+      };
+
+      container.innerHTML = `<div class="ai-reviews-scroll">${reviews.slice(0, 20).map(r => {
+        const c = classMap[r.classification] || { cls: "", label: r.classification || "unknown" };
+        const causes = (r.root_causes || []).slice(0, 3).map(x => escapeHtml(x)).join(", ");
+        return `<div class="review-item">
+          <div class="review-header">
+            <strong>${escapeHtml(r.symbol || "--")} (${escapeHtml(r.system || "--")})</strong>
+            <span class="classification-badge ${c.cls}">${c.label}</span>
+          </div>
+          <div class="review-detail">
+            ${causes ? `<div><strong>Root causes:</strong> ${causes}</div>` : ""}
+            ${r.lesson_learned ? `<div><strong>Lesson:</strong> ${escapeHtml(String(r.lesson_learned).substring(0, 150))}</div>` : ""}
+          </div>
+        </div>`;
+      }).join("")}</div>`;
+    }
+
+    function renderPatternMemory(status) {
+      const brain = status.ai_brain || {};
+      const pm = brain.pattern_memory || {};
+      const container = document.getElementById("patternMemoryContainer");
+      if (!container) return;
+
+      const mistakes = pm.top_mistakes || pm.mistakes || [];
+      const lessons = pm.top_lessons || pm.lessons || [];
+      const causes = pm.top_root_causes || pm.root_causes || [];
+
+      if (!mistakes.length && !lessons.length && !causes.length) {
+        container.innerHTML = '<div class="empty-state">No pattern memory data available yet. This builds over time as the system learns from trades.</div>';
+        return;
+      }
+
+      function renderBars(items, color, maxItems) {
+        if (!items || !items.length) return '<div style="font-size:12px;color:var(--text-3)">None recorded</div>';
+        const maxVal = Math.max(...items.slice(0, maxItems).map(i => safeNumber(i.count || i.frequency || 1)));
+        return items.slice(0, maxItems).map(item => {
+          const label = item.pattern || item.lesson || item.cause || item.label || item.name || "unknown";
+          const count = safeNumber(item.count || item.frequency || 1);
+          const pct = maxVal > 0 ? (count / maxVal * 100) : 0;
+          return `<div class="pattern-bar">
+            <span class="pattern-bar-label" title="${escapeHtml(label)}">${escapeHtml(String(label).substring(0, 40))}</span>
+            <span class="pattern-bar-fill"><span style="width:${pct}%;background:${color}"></span></span>
+            <span class="pattern-bar-count">${count}</span>
+          </div>`;
+        }).join("");
+      }
+
+      let html = "";
+      if (mistakes.length) {
+        html += `<div class="pattern-section"><h4>Top Mistakes</h4>${renderBars(mistakes, "var(--red)", 5)}</div>`;
+      }
+      if (lessons.length) {
+        html += `<div class="pattern-section"><h4>Top Lessons</h4>${renderBars(lessons, "var(--green)", 5)}</div>`;
+      }
+      if (causes.length) {
+        html += `<div class="pattern-section"><h4>Top Root Causes</h4>${renderBars(causes, "var(--yellow)", 5)}</div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function renderValidationAudit(status) {
+      const brain = status.ai_brain || {};
+      const audit = brain.validation_audit || {};
+      const tbody = document.getElementById("validationAuditBody");
+      if (!tbody) return;
+
+      const systems = audit.per_system || audit.systems || {};
+      const entries = Object.entries(systems);
+
+      if (!entries.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No validation audit data available. Run the validation audit to generate this report.</td></tr>';
+        return;
+      }
+
+      const sysColors = {
+        paper: "#5fb7ff", agent: "#00ff88", pump: "#ff9f66", scalping: "#a78bfa"
+      };
+
+      tbody.innerHTML = entries.map(([key, s]) => {
+        const color = sysColors[key] || "var(--cyan)";
+        return `<tr>
+          <td><span class="sys-indicator" style="background:${color}"></span><strong>${escapeHtml(key)}</strong></td>
+          <td class="text-mono">${safeNumber(s.total_trades || s.total)}</td>
+          <td class="text-mono ${toneClass(safeNumber(s.win_rate) - 50)}">${formatPct(s.win_rate)}</td>
+          <td class="text-mono">${safeNumber(s.profit_factor).toFixed(2)}</td>
+          <td class="text-mono">${safeNumber(s.expectancy).toFixed(4)}</td>
+          <td class="text-mono" style="color:var(--red)">${formatPct(s.max_drawdown || s.max_drawdown_pct)}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    function renderAiBrain(status) {
+      renderAiBrainKpis(status);
+      renderAiDecisionsTable(status);
+      renderTradeReviews(status);
+      renderPatternMemory(status);
+      renderValidationAudit(status);
+    }
+
     /* ===== Master Apply ===== */
     function applyStatus(status) {
       dashboardState = status;
@@ -2286,6 +2690,7 @@
       createOrUpdateSystemsChart(status);
       createOrUpdateFunnelChart(status);
       createOrUpdateResearchChart(status);
+      renderAiBrain(status);
     }
 
     /* ===== Trade History Loading ===== */

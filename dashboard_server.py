@@ -1007,6 +1007,142 @@ def _get_live_positions():
     return raw
 
 
+# ── AI BRAIN ────────────────────────────────────────────────────────────────
+
+def _get_raw_ai_decisions(limit: int = 50) -> list[dict]:
+    """Fetch most recent raw AI decisions from the database."""
+    try:
+        conn = db._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM ai_decisions ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def _collect_trade_reviews(limit: int = 30) -> list[dict]:
+    """Scan runtime trade_reviews/ for trade_review_report.json files."""
+    reviews = []
+    reviews_dir = Path(RUNTIME_BASE_DIR) / BOT_ID / "trade_reviews"
+    if not reviews_dir.exists():
+        return reviews
+
+    try:
+        dirs = sorted(reviews_dir.iterdir(), key=lambda d: d.stat().st_mtime, reverse=True)
+    except Exception:
+        return reviews
+
+    for child in dirs[:limit]:
+        report_path = child / "trade_review_report.json"
+        data = _read_json(str(report_path), None)
+        if data is None:
+            continue
+        # Fields may be at top level or inside trade_identity
+        identity = data.get("trade_identity") or {}
+        reviews.append({
+            "folder": child.name,
+            "system": identity.get("system") or data.get("system", "unknown"),
+            "symbol": identity.get("symbol") or data.get("symbol", "unknown"),
+            "classification": data.get("classification", "unknown"),
+            "root_causes": data.get("root_causes", []),
+            "things_done_well": data.get("things_done_well", []),
+            "mistakes": data.get("mistakes", []),
+            "lesson_learned": data.get("lesson") or data.get("lesson_learned", ""),
+            "timestamp": identity.get("timestamp") or data.get("timestamp", ""),
+            "tags": data.get("tags", []),
+        })
+    return reviews
+
+
+def _read_pattern_memory() -> dict:
+    """Read the latest pattern_memory_report.json from runtime.
+
+    Normalizes Counter.most_common() tuples into dicts for JSON/JS.
+    """
+    path = Path(RUNTIME_BASE_DIR) / BOT_ID / "pattern_memory_report.json"
+    raw = _read_json(str(path), {})
+    summary = raw.get("summary") or raw
+
+    def _normalize_counter_list(items):
+        """Convert [(label, count), ...] or [{"name":..., "count":...}] to uniform dicts."""
+        result = []
+        for item in (items or []):
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                result.append({"label": str(item[0]), "count": int(item[1])})
+            elif isinstance(item, dict):
+                result.append(item)
+        return result
+
+    return {
+        "top_mistakes": _normalize_counter_list(summary.get("top_mistakes", [])),
+        "top_root_causes": _normalize_counter_list(summary.get("top_root_causes", [])),
+        "top_lessons": _normalize_counter_list(summary.get("top_lessons", [])),
+        "top_things_done_well": _normalize_counter_list(summary.get("top_things_done_well", [])),
+        "top_tags": _normalize_counter_list(summary.get("top_tags", [])),
+        "top_classifications": _normalize_counter_list(summary.get("top_classifications", [])),
+        "synthesis": raw.get("synthesis"),
+    }
+
+
+def _read_validation_audit() -> dict:
+    """Read the latest validation_audit_report.json from runtime.
+
+    Normalizes the per-system data into a flat dict the JS can render.
+    """
+    path = Path(RUNTIME_BASE_DIR) / BOT_ID / "validation_audit_report.json"
+    raw = _read_json(str(path), {})
+    systems_raw = raw.get("systems") or {}
+
+    per_system = {}
+    for key, data in systems_raw.items():
+        m = data.get("metrics") or {}
+        exp = data.get("expectancy") or {}
+        per_system[key] = {
+            "total_trades": _safe_int(m.get("total_trades")),
+            "win_rate": _safe_float(m.get("win_rate")),
+            "profit_factor": _safe_float(m.get("profit_factor")),
+            "expectancy": _safe_float(exp.get("per_trade")),
+            "max_drawdown_pct": _safe_float(m.get("max_drawdown_pct")),
+            "total_pnl_usd": _safe_float(m.get("total_pnl_usd")),
+            "verdict": data.get("verdict", "unknown"),
+        }
+
+    return {
+        "generated_at": raw.get("generated_at", ""),
+        "days": _safe_int(raw.get("days")),
+        "portfolio_summary": raw.get("portfolio_summary") or {},
+        "per_system": per_system,
+    }
+
+
+def _build_ai_brain_payload() -> dict:
+    """Collect all AI Brain data for the dashboard."""
+    try:
+        ai_summary = db.get_ai_decisions_summary(days=30)
+    except Exception:
+        ai_summary = {
+            "total": 0, "approvals": 0, "approval_rate": 0,
+            "avg_confidence": 0, "avg_latency_ms": 0,
+            "by_system": {}, "by_prompt_version": {},
+            "fallbacks": 0, "parse_failures": 0,
+        }
+
+    raw_decisions = _get_raw_ai_decisions(limit=50)
+    trade_reviews = _collect_trade_reviews(limit=30)
+    pattern_memory = _read_pattern_memory()
+    validation_audit = _read_validation_audit()
+
+    return {
+        "summary": ai_summary,
+        "decisions": raw_decisions,
+        "trade_reviews": trade_reviews,
+        "pattern_memory": pattern_memory,
+        "validation_audit": validation_audit,
+    }
+
+
 # ── HELPERS ──────────────────────────────────────────────────────────────────
 
 def _build_status(include_logs=True, include_trades=True):
@@ -1239,6 +1375,7 @@ def _build_status(include_logs=True, include_trades=True):
             "system_leaderboard": strategy_leaderboard,
             "research": strategy_research,
         },
+        "ai_brain": _build_ai_brain_payload(),
         "logs": logs,
     }
 
@@ -1281,6 +1418,11 @@ def index():
 @app.route("/api/status")
 def api_status():
     return jsonify(_build_status(include_logs=False, include_trades=False))
+
+
+@app.route("/api/ai-brain")
+def api_ai_brain():
+    return jsonify(_build_ai_brain_payload())
 
 
 @app.route("/api/version")
