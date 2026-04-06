@@ -1103,7 +1103,7 @@ def _read_validation_audit() -> dict:
             "total_trades": _safe_int(m.get("total_trades")),
             "win_rate": _safe_float(m.get("win_rate")),
             "profit_factor": _safe_float(m.get("profit_factor")),
-            "expectancy": _safe_float(exp.get("per_trade")),
+            "expectancy": _safe_float(exp.get("expectancy_pct") or exp.get("per_trade")),
             "max_drawdown_pct": _safe_float(m.get("max_drawdown_pct")),
             "total_pnl_usd": _safe_float(m.get("total_pnl_usd")),
             "verdict": data.get("verdict", "unknown"),
