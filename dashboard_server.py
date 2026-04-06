@@ -1091,7 +1091,7 @@ def _read_validation_audit() -> dict:
 
     Normalizes the per-system data into a flat dict the JS can render.
     """
-    path = Path(RUNTIME_BASE_DIR) / BOT_ID / "validation_audit_report.json"
+    path = Path(RUNTIME_BASE_DIR) / BOT_ID / "strategy_validation_report.json"
     raw = _read_json(str(path), {})
     systems_raw = raw.get("systems") or {}
 
