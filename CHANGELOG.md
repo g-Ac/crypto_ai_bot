@@ -4,7 +4,72 @@ Registro de alteracoes por sessao. Mais recente no topo.
 
 ---
 
-## 2026-04-06 — Dashboard AI Brain + Roadmap
+## 2026-04-06 — Sessao completa: AI Brain + Capital Reset + Scalping Ativado
+
+### Resumo da sessao
+Sessao longa com 3 frentes: nova tab dashboard, ajuste de capital, ativacao do scalping.
+
+### 1. Dashboard — Nova tab "AI Brain"
+- **5 funcoes backend** novas em dashboard_server.py
+- **Rota GET /api/ai-brain** + integrado ao AJAX polling
+- **Tab com 4 secoes**: KPI bar, Decision Log, Trade Reviews + Pattern Memory, Validation Audit
+- **Fix 1**: nome do arquivo validation → strategy_validation_report.json
+- **Fix 2**: campo expectancy_pct (nao per_trade)
+- **Fix 3**: campo lesson (nao lesson_learned) + trade_identity.symbol/system
+
+### 2. Capital ajustado de $35k para $1k
+- Variavel: `BOT_PORTFOLIO_TARGET_CAPITAL=1000` no .env
+- States resetados manualmente na Pi:
+  - paper_state.json → $285.71
+  - agent_state.json → $285.71
+  - scalping_state.json → $285.71
+  - pump_positions.json → $142.86 (criado do zero, nome correto)
+- Proporcao original mantida (paper/agent/scalping iguais, pump = metade)
+
+### 3. Scalping ativado em modo experimental
+- `SCALPING_EXPERIMENTAL_FORCE_ENTRIES=true` no .env
+- Isso liga tambem: IGNORE_RISK_FILTERS, DISABLE_AI_GATE, DISABLE_COOLDOWN
+- Scalping Mode mostra "Experimental" no dashboard
+
+### 4. Agent — trades orfaos limpos
+- Script close_orphan_trades.py criado (dry run + execute)
+- 3 posicoes fechadas: DOGE (-1.54%), XRP (-1.65%), BTC (-0.08%)
+- Total: -$65.22 (agent capital → $9933.34, depois resetado para $285.71)
+
+### 5. CHANGELOG.md criado
+- Tracking de alteracoes por sessao
+
+### Arquivos alterados
+- dashboard_server.py (AI Brain backend + fixes)
+- templates/index.html (AI Brain tab + CSS + JS)
+- CHANGELOG.md (novo)
+- close_orphan_trades.py (novo)
+- .env na Pi (capital + scalping flags)
+- runtime/baseline/*.json na Pi (capital reset)
+
+### Commits
+- 97a03a3 — feat: add AI Brain dashboard tab + changelog
+- 2cdff27 — fix: correct validation report filename
+- d28e26d — fix: read correct expectancy field
+- 096a745 — feat: add orphan trade closer utility
+
+### Estado atual da Pi
+- Bot healthy, 3 posicoes abertas (paper)
+- Portfolio: $999.99 (4 sistemas)
+- Scalping: experimental, 0 trades ainda (recem ativado)
+- Agent: limpo, 0 posicoes, pronto pra novos trades
+- Pump: ativo, 2 trades historicos
+
+### Pendente — Reset visual do dashboard
+O -97.14% mostrado no return e porque os trades antigos foram feitos com capital de $10k.
+Opcoes para proxima sessao:
+- **Opcao A**: Limpar historico de trades antigos do banco (perder dados visuais, manter backup)
+- **Opcao B**: Criar um "marco zero" — ignorar trades antes de 06/04 no calculo de return
+- **Opcao C**: Backup do banco atual + criar banco novo zerado
+
+---
+
+## 2026-04-06 — Dashboard AI Brain + Roadmap (detalhes tecnicos)
 
 ### O que foi feito
 
