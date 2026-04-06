@@ -115,6 +115,13 @@ PUMP_PRICE_CHANGE_MIN = 2.0      # % minima de mudanca de preco para alertar
 PUMP_SCAN_INTERVAL = 60          # segundos entre scans
 PUMP_TOP_COINS = 50              # quantas moedas monitorar
 
+# Agent Execution Policy
+AGENT_REAL_EXECUTION_ENABLED = os.environ.get("AGENT_REAL_EXECUTION_ENABLED", "").strip().lower() in ("true", "1", "yes")
+AGENT_REAL_MIN_CONFIDENCE = 80
+AGENT_REAL_MIN_SETUP_QUALITY = {"A", "B"}
+AGENT_REAL_BLOCKED_ENTRY_QUALITY = {"late", "poor"}
+AGENT_REAL_BLOCKED_INVALIDATION_QUALITY = {"unclear", "missing"}
+
 # Circuit Breaker
 DAILY_LOSS_LIMIT_PCT = 5.0       # para de operar se perder X% num dia
 DAILY_MAX_TRADES = 20            # maximo de trades por dia

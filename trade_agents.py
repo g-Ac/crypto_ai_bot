@@ -10,6 +10,7 @@ import os
 import json
 import time
 import tempfile
+import uuid
 import requests
 import pandas as pd
 import ta
@@ -20,6 +21,11 @@ from anthropic import Anthropic
 from config import (
     AGENT_INITIAL_CAPITAL, COOLDOWN_MINUTES,
     ATR_SL_MULTIPLIER, ATR_SL_FLOOR_PCT,
+    AGENT_REAL_EXECUTION_ENABLED,
+    AGENT_REAL_MIN_CONFIDENCE,
+    AGENT_REAL_MIN_SETUP_QUALITY,
+    AGENT_REAL_BLOCKED_ENTRY_QUALITY,
+    AGENT_REAL_BLOCKED_INVALIDATION_QUALITY,
 )
 from runtime_config import AGENT_STATE_FILE
 
@@ -39,6 +45,8 @@ client = None
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 if ANTHROPIC_API_KEY:
     client = Anthropic(api_key=ANTHROPIC_API_KEY)
+
+ANALYST_PROMPT_VERSION = "analyst_v2"
 
 
 # ============================================================
@@ -79,16 +87,36 @@ def log_trade(trade):
 
 def _build_analyst_prompt(state):
     """Build dynamic analyst prompt with current performance context."""
-    base = """Voce e um analista de trading de criptomoedas responsavel por validar oportunidades.
+    base = """Voce e um trader tecnico especialista atuando como validador de sinais.
 
-Voce recebe dados de uma analise tecnica automatizada. Sua funcao e decidir se o trade deve ser executado.
+Seu papel e decidir se uma oportunidade deve ser executada, rejeitada, ou roteada para outro tipo de estrategia.
 
-Considere:
-- Alinhamento dos indicadores (quanto mais alinhados, melhor)
-- RSI nao deve estar em extremos contra a direcao do trade
-- Tendencia do 1h deve confirmar a direcao
-- Volume acima da media e um bom sinal
-- Body ratio forte na direcao do trade confirma momentum
+## Principios
+
+1. Prefira REJEITAR trades fracos. So aprove se a confluencia for clara.
+2. Nao invente dados que nao foram fornecidos. Se falta informacao, penalize a confianca.
+3. Distinga FATO de INTERPRETACAO. Indicadores sao fatos. Projecoes sao interpretacoes.
+4. Avalie tres dimensoes:
+   - Qualidade da ENTRADA: o preco atual e um bom ponto de entrada para a direcao?
+   - Qualidade da INVALIDACAO: existe um nivel claro onde o trade esta errado?
+   - Qualidade do CONTEXTO: os indicadores de multiplos timeframes confirmam?
+5. Voce pode recomendar rota: "scalping" (trade rapido), "swing" (trade de posicao) ou "reject".
+6. Voce NAO calcula position size, stop loss numerico, nem altera parametros de risco.
+
+## Criterios de avaliacao
+
+- RSI em extremo CONTRA a direcao = red flag forte
+- Tendencia 1h desalinhada = red flag moderada
+- Volume abaixo da media = red flag leve
+- Body ratio fraco = entrada duvidosa
+- Score de confianca do sistema < 60 = cautela extra
+- Breakout sem volume = falso sinal provavel
+
+## Escala de qualidade
+
+- setup_quality: "A" (excelente), "B" (aceitavel), "C" (fraco), "D" (pessimo)
+- entry_quality: "ideal", "acceptable", "late", "poor"
+- invalidation_quality: "clear", "acceptable", "unclear", "missing"
 """
 
     total = state.get("total_trades", 0)
@@ -104,35 +132,157 @@ Considere:
             break
 
     if total > 0:
-        base += f"\nContexto de performance atual:"
-        base += f"\n- Win rate: {win_rate:.0f}% ({wins}W/{losses}L de {total} trades)"
-        base += f"\n- Perdas consecutivas recentes: {consecutive_losses}"
+        base += f"\n## Contexto de performance atual\n"
+        base += f"- Win rate: {win_rate:.0f}% ({wins}W/{losses}L de {total} trades)\n"
+        base += f"- Perdas consecutivas recentes: {consecutive_losses}\n"
 
         if consecutive_losses >= 3:
-            base += f"\n\nATENCAO: {consecutive_losses} perdas consecutivas."
-            base += "\nSeja MAIS CONSERVADOR. So aprove sinais com alta confluencia."
-            base += "\nExija confidence minima de 75 para aprovar."
+            base += f"\nATENCAO: {consecutive_losses} perdas consecutivas.\n"
+            base += "Seja MUITO CONSERVADOR. So aprove sinais com confluencia excepcional.\n"
+            base += "Exija confidence minima de 75 para aprovar.\n"
         elif consecutive_losses >= 2:
-            base += "\n\nUltimos 2 trades foram perdas. Seja moderadamente cauteloso."
+            base += "\nUltimos 2 trades foram perdas. Seja moderadamente cauteloso.\n"
         elif win_rate > 60 and total >= 5:
-            base += "\n\nBoa performance recente. Mantenha o padrao de qualidade."
+            base += "\nBoa performance recente. Mantenha o padrao de qualidade.\n"
 
     base += """
+## Formato de resposta
 
-Responda SOMENTE com um JSON valido, sem markdown, neste formato:
-{"approved": true/false, "confidence": 0-100, "reasoning": "explicacao curta"}
+Responda SOMENTE com um JSON valido, sem markdown, sem texto antes ou depois:
+
+{"approved": true, "confidence": 74, "setup_quality": "B", "entry_quality": "acceptable", "invalidation_quality": "clear", "route": "scalping", "thesis": ["fato 1", "fato 2"], "red_flags": ["problema 1"], "reasoning": "explicacao curta e objetiva"}
+
+Regras do JSON:
+- "approved": booleano obrigatorio
+- "confidence": inteiro 0-100 obrigatorio
+- "setup_quality": "A", "B", "C" ou "D"
+- "entry_quality": "ideal", "acceptable", "late" ou "poor"
+- "invalidation_quality": "clear", "acceptable", "unclear" ou "missing"
+- "route": "scalping", "swing" ou "reject"
+- "thesis": lista de strings curtas (maximo 3 itens)
+- "red_flags": lista de strings curtas (maximo 3 itens, pode ser vazia)
+- "reasoning": string curta e objetiva (maximo 200 caracteres)
 
 Se os indicadores estao bem alinhados e o contexto confirma, aprove.
-Se ha conflitos significativos, rejeite.
-Seja objetivo e pratico."""
+Se ha conflitos significativos ou dados insuficientes, rejeite.
+Seja objetivo, tecnico e conservador."""
 
     return base
+
+
+# Valid values for analyst enum fields
+_VALID_SETUP_QUALITY = {"A", "B", "C", "D"}
+_VALID_ENTRY_QUALITY = {"ideal", "acceptable", "late", "poor"}
+_VALID_INVALIDATION_QUALITY = {"clear", "acceptable", "unclear", "missing"}
+_VALID_ROUTES = {"scalping", "swing", "reject"}
+
+
+def _normalize_analyst_response(raw: dict) -> dict:
+    """
+    Normalize and validate the analyst Claude response.
+
+    Returns a normalized dict on success.
+    Raises ValueError if the response cannot be safely normalized.
+    """
+    # --- approved (required, bool) ---
+    approved = raw.get("approved")
+    if approved is None:
+        raise ValueError("Campo 'approved' ausente")
+    if isinstance(approved, str):
+        approved = approved.lower().strip() in ("true", "yes", "sim", "1")
+    approved = bool(approved)
+
+    # --- confidence (required, int 0-100) ---
+    confidence = raw.get("confidence")
+    if confidence is None:
+        raise ValueError("Campo 'confidence' ausente")
+    try:
+        confidence = int(float(confidence))
+    except (TypeError, ValueError):
+        raise ValueError(f"Campo 'confidence' invalido: {confidence}")
+    confidence = max(0, min(100, confidence))
+
+    # --- setup_quality (enum, default "C") ---
+    setup_quality = str(raw.get("setup_quality", "C")).strip().upper()
+    if setup_quality not in _VALID_SETUP_QUALITY:
+        setup_quality = "C"
+
+    # --- entry_quality (enum, default "poor") ---
+    entry_quality = str(raw.get("entry_quality", "poor")).strip().lower()
+    if entry_quality not in _VALID_ENTRY_QUALITY:
+        entry_quality = "poor"
+
+    # --- invalidation_quality (enum, default "unclear") ---
+    invalidation_quality = str(raw.get("invalidation_quality", "unclear")).strip().lower()
+    if invalidation_quality not in _VALID_INVALIDATION_QUALITY:
+        invalidation_quality = "unclear"
+
+    # --- route (enum, default based on approved) ---
+    route = str(raw.get("route", "")).strip().lower()
+    if route not in _VALID_ROUTES:
+        route = "reject" if not approved else "scalping"
+
+    # --- thesis (list of strings, max 3) ---
+    thesis = raw.get("thesis", [])
+    if isinstance(thesis, str):
+        thesis = [thesis]
+    if not isinstance(thesis, list):
+        thesis = []
+    thesis = [str(t).strip()[:150] for t in thesis[:3] if t]
+
+    # --- red_flags (list of strings, max 3) ---
+    red_flags = raw.get("red_flags", [])
+    if isinstance(red_flags, str):
+        red_flags = [red_flags]
+    if not isinstance(red_flags, list):
+        red_flags = []
+    red_flags = [str(r).strip()[:150] for r in red_flags[:3] if r]
+
+    # --- reasoning (string, truncate) ---
+    reasoning = str(raw.get("reasoning", "")).strip()[:500]
+    if not reasoning:
+        reasoning = "Sem justificativa fornecida"
+
+    # --- Cross-validation: reject incoherent responses ---
+    if approved and route == "reject":
+        approved = False
+        reasoning = f"Auto-corrigido: approved=true com route=reject. {reasoning}"
+
+    if not approved and route in ("scalping", "swing"):
+        route = "reject"
+
+    return {
+        "approved": approved,
+        "confidence": confidence,
+        "setup_quality": setup_quality,
+        "entry_quality": entry_quality,
+        "invalidation_quality": invalidation_quality,
+        "route": route,
+        "thesis": thesis,
+        "red_flags": red_flags,
+        "reasoning": reasoning,
+    }
+
+
+def _fallback_analyst_response(reason: str) -> dict:
+    """Return a conservative fallback response when Claude fails."""
+    return {
+        "approved": False,
+        "confidence": 0,
+        "reasoning": f"Fallback conservador ({reason})",
+        "setup_quality": "D",
+        "entry_quality": "poor",
+        "invalidation_quality": "missing",
+        "route": "reject",
+        "thesis": [],
+        "red_flags": [reason[:150]],
+    }
 
 
 def agent_analyst(signal_data):
     """Agent 1: Validates opportunity using Claude."""
     if not client:
-        # Fallback: approve if score >= SIGNAL_SCORE_MIN and htf_aligned
+        # Fallback: approve if decision is BUY/SELL and htf_aligned
         approved = (
             signal_data["decision"] in ["BUY", "SELL"]
             and signal_data.get("htf_aligned", False)
@@ -141,6 +291,12 @@ def agent_analyst(signal_data):
             "approved": approved,
             "confidence": signal_data.get("confidence_score", 50),
             "reasoning": "Analise automatica (Claude nao disponivel)",
+            "setup_quality": "C",
+            "entry_quality": "acceptable" if approved else "poor",
+            "invalidation_quality": "unclear",
+            "route": "scalping" if approved else "reject",
+            "thesis": [],
+            "red_flags": ["Claude indisponivel"],
         }
 
     data_text = (
@@ -178,7 +334,7 @@ def agent_analyst(signal_data):
     try:
         response = client.messages.create(
             model=_model,
-            max_tokens=150,
+            max_tokens=300,
             system=_build_analyst_prompt(state),
             messages=[{"role": "user", "content": data_text}],
         )
@@ -188,16 +344,23 @@ def agent_analyst(signal_data):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
             if text.endswith("```"):
                 text = text[:-3].strip()
-        result = json.loads(text)
+        raw = json.loads(text)
+        result = _normalize_analyst_response(raw)
+    except json.JSONDecodeError as e:
+        print(f"  Erro parse JSON do Analista: {e}")
+        _fallback_used = True
+        _parse_success = False
+        result = _fallback_analyst_response(f"JSON invalido: {e}")
+    except ValueError as e:
+        print(f"  Erro normalizacao do Analista: {e}")
+        _fallback_used = True
+        _parse_success = False
+        result = _fallback_analyst_response(f"Normalizacao falhou: {e}")
     except Exception as e:
         print(f"  Erro no Agente Analista: {e}")
         _fallback_used = True
         _parse_success = False
-        result = {
-            "approved": False,
-            "confidence": 0,
-            "reasoning": f"Fallback conservador (API erro): {e}",
-        }
+        result = _fallback_analyst_response(f"API erro: {e}")
 
     _latency = (_time.time() - _t0) * 1000
     try:
@@ -205,6 +368,7 @@ def agent_analyst(signal_data):
             "symbol": signal_data.get("symbol", ""),
             "system": "agent",
             "model": _model,
+            "prompt_version": ANALYST_PROMPT_VERSION,
             "latency_ms": round(_latency, 1),
             "fallback_used": _fallback_used,
             "parse_success": _parse_success,
@@ -343,17 +507,95 @@ def agent_risk(signal_data, analyst_result):
 
 
 # ============================================================
+#  EXECUTION POLICY
+# ============================================================
+
+def agent_execution_policy(analyst_result, risk_params, state):
+    """Evaluate execution eligibility for the agent desk.
+
+    Returns dict with:
+        recommended_mode: what the quality gates suggest ("paper" or "real")
+        real_eligible: True if both quality gates AND env gate pass
+        allowed: whether the trade is allowed at all
+        reason: short explanation
+
+    Note: this function evaluates eligibility only. The executor always
+    runs in paper mode until a real order-placement path is implemented.
+    """
+    confidence = analyst_result.get("confidence", 0)
+    setup = analyst_result.get("setup_quality", "D")
+    entry = analyst_result.get("entry_quality", "poor")
+    invalidation = analyst_result.get("invalidation_quality", "missing")
+
+    # Always allowed — policy decides eligibility, not approval
+    # (approval was already decided by analyst + risk)
+
+    # Check quality gates for real recommendation
+    quality_ok = (
+        confidence >= AGENT_REAL_MIN_CONFIDENCE
+        and setup in AGENT_REAL_MIN_SETUP_QUALITY
+        and entry not in AGENT_REAL_BLOCKED_ENTRY_QUALITY
+        and invalidation not in AGENT_REAL_BLOCKED_INVALIDATION_QUALITY
+    )
+
+    if quality_ok:
+        recommended_mode = "real"
+    else:
+        recommended_mode = "paper"
+
+    # real_eligible: True only if env gate is explicitly enabled AND quality passes
+    if AGENT_REAL_EXECUTION_ENABLED and quality_ok:
+        real_eligible = True
+        reason = "Gate real habilitado e quality gates passaram"
+    elif quality_ok:
+        real_eligible = False
+        reason = (
+            f"Quality gates OK (conf={confidence}, setup={setup}, "
+            f"entry={entry}, inv={invalidation}) mas AGENT_REAL_EXECUTION_ENABLED=false"
+        )
+    else:
+        real_eligible = False
+        blocks = []
+        if confidence < AGENT_REAL_MIN_CONFIDENCE:
+            blocks.append(f"conf={confidence}<{AGENT_REAL_MIN_CONFIDENCE}")
+        if setup not in AGENT_REAL_MIN_SETUP_QUALITY:
+            blocks.append(f"setup={setup}")
+        if entry in AGENT_REAL_BLOCKED_ENTRY_QUALITY:
+            blocks.append(f"entry={entry}")
+        if invalidation in AGENT_REAL_BLOCKED_INVALIDATION_QUALITY:
+            blocks.append(f"inv={invalidation}")
+        reason = f"Quality gates bloquearam: {', '.join(blocks)}"
+
+    return {
+        "recommended_mode": recommended_mode,
+        "real_eligible": real_eligible,
+        "allowed": True,
+        "reason": reason,
+    }
+
+
+# ============================================================
 #  AGENTE 3: EXECUTOR (Paper / Real)
 # ============================================================
 
-def agent_executor(signal_data, risk_params, analyst_result):
-    """Agent 3: Executes the trade (paper mode)."""
+def agent_executor(signal_data, risk_params, analyst_result, policy_result):
+    """Agent 3: Executes the trade (paper mode).
+
+    execution_mode always reflects what actually happened (paper).
+    recommended_mode captures the policy recommendation for traceability.
+    """
     state = load_state()
     symbol = signal_data["symbol"]
     price = signal_data["price"]
     direction = "LONG" if signal_data["decision"] == "BUY" else "SHORT"
 
-    # Record position
+    lifecycle_id = str(uuid.uuid4())
+    # execution_mode = what actually happened (always paper until real path exists)
+    execution_mode = "paper"
+    # recommended_mode = what the policy would have allowed
+    recommended_mode = policy_result["recommended_mode"]
+
+    # Record position (with lifecycle metadata)
     state["positions"][symbol] = {
         "type": direction,
         "entry_price": price,
@@ -362,6 +604,9 @@ def agent_executor(signal_data, risk_params, analyst_result):
         "tp_price": risk_params["tp_price"],
         "position_size_usd": risk_params["position_size_usd"],
         "analyst_confidence": analyst_result.get("confidence", 0),
+        "execution_mode": execution_mode,
+        "recommended_mode": recommended_mode,
+        "lifecycle_id": lifecycle_id,
     }
     save_state(state)
 
@@ -376,19 +621,25 @@ def agent_executor(signal_data, risk_params, analyst_result):
         "position_size_usd": risk_params["position_size_usd"],
         "analyst_confidence": analyst_result.get("confidence", 0),
         "capital_after": state["capital"],
+        "execution_mode": execution_mode,
+        "recommended_mode": recommended_mode,
+        "lifecycle_id": lifecycle_id,
     }
     try:
         log_trade(trade)
     except Exception as db_err:
         print(f"  [ERRO] Falha ao salvar trade no banco: {db_err}")
 
+    lc_short = lifecycle_id[:8]
     return (
-        f"[AGENT] {direction} executado: {symbol}\n"
+        f"[AGENT] {direction} executado [PAPER]: {symbol}\n"
         f"Entrada: {price:.4f}\n"
         f"SL: {risk_params['sl_price']:.4f} (-{risk_params['sl_pct']}%)\n"
         f"TP: {risk_params['tp_price']:.4f} (+{risk_params['tp_pct']}%)\n"
         f"Tamanho: ${risk_params['position_size_usd']:.2f}\n"
         f"Confianca analista: {analyst_result.get('confidence', 0)}/100\n"
+        f"Policy: rec={recommended_mode} | exec={execution_mode} | "
+        f"LC: {lc_short}\n"
         f"Razao: {analyst_result.get('reasoning', '')}"
     )
 
@@ -468,6 +719,10 @@ def check_agent_positions(results):
 
             wr = (state["wins"] / state["total_trades"]) * 100
 
+            pos_exec_mode = pos.get("execution_mode", "paper")
+            pos_rec_mode = pos.get("recommended_mode", "paper")
+            pos_lifecycle_id = pos.get("lifecycle_id")
+
             trade = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "symbol": symbol,
@@ -482,17 +737,21 @@ def check_agent_positions(results):
                 "exit_reason": hit,
                 "analyst_confidence": pos.get("analyst_confidence", 0),
                 "capital_after": state["capital"],
+                "execution_mode": pos_exec_mode,
+                "recommended_mode": pos_rec_mode,
+                "lifecycle_id": pos_lifecycle_id,
             }
             try:
                 log_trade(trade)
             except Exception as db_err:
                 print(f"  [ERRO] Falha ao salvar trade no banco: {db_err}")
 
+            lc_short = pos_lifecycle_id[:8] if pos_lifecycle_id else "?"
             msg = (
-                f"[AGENT] {pos['type']} fechado: {symbol}\n"
+                f"[AGENT] {pos['type']} fechado [PAPER]: {symbol}\n"
                 f"Entrada: {entry:.4f} | Saida: {exit_price:.4f}\n"
                 f"P&L: {pnl_pct:+.2f}% (${pnl_usd:+.2f})\n"
-                f"Motivo: {hit}\n"
+                f"Motivo: {hit} | rec={pos_rec_mode} | LC: {lc_short}\n"
                 f"Capital: ${state['capital']:.2f} | "
                 f"Trades: {state['total_trades']} | WR: {wr:.1f}%"
             )
@@ -566,9 +825,17 @@ def orchestrate(results, open_new=True):
 
         print(f"  [AGENTE 2] Size: ${risk['position_size_usd']} | SL: {risk['sl_pct']}% | TP: {risk['tp_pct']}%")
 
-        # AGENT 3: Executor
-        print(f"  [AGENTE 3] Executando trade...")
-        exec_msg = agent_executor(result, risk, analyst)
+        # EXECUTION POLICY
+        state = load_state()
+        policy = agent_execution_policy(analyst, risk, state)
+        print(
+            f"  [POLICY] rec={policy['recommended_mode']} | "
+            f"eligible={policy['real_eligible']} | {policy['reason']}"
+        )
+
+        # AGENT 3: Executor (always paper until real path exists)
+        print(f"  [AGENTE 3] Executando trade em paper...")
+        exec_msg = agent_executor(result, risk, analyst, policy)
         messages.append(exec_msg)
         print(f"  [AGENTE 3] Trade executado com sucesso")
 

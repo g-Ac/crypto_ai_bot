@@ -173,7 +173,13 @@ def _score_verdict(complete_actionable: int, win_rate: float, avg_60m: float, pr
     return edge_score, "watch"
 
 
-def build_scalping_scorer_report(days: int = 30, limit: int = 5000) -> dict:
+def compute_scalping_scorer_report(days: int = 30, limit: int = 5000) -> dict:
+    """Compute the scorer report in memory without writing any file.
+
+    This is the pure-computation core used by both
+    ``build_scalping_scorer_report`` (which also persists the result)
+    and any read-only consumer like the validation auditor.
+    """
     labels = db.get_scalping_outcome_labels(limit=limit, days=days)
     groups: dict[tuple[str, str, str, str], dict] = {}
 
@@ -299,5 +305,11 @@ def build_scalping_scorer_report(days: int = 30, limit: int = 5000) -> dict:
         "groups": scored_groups,
     }
 
+    return report
+
+
+def build_scalping_scorer_report(days: int = 30, limit: int = 5000) -> dict:
+    """Compute scorer report AND persist it to SCALPING_SCORER_REPORT_FILE."""
+    report = compute_scalping_scorer_report(days=days, limit=limit)
     _write_json(SCALPING_SCORER_REPORT_FILE, report)
     return report

@@ -22,6 +22,7 @@ VALID_TABLES = frozenset({
     "scalping_decisions",
     "scalping_audit_log",
     "scalping_outcome_labels",
+    "ai_decisions",
 })
 
 
@@ -266,6 +267,14 @@ def init_db():
         except Exception:
             pass  # coluna já existe
 
+    # Migração: agent_trades ganha execution_mode, lifecycle_id, recommended_mode
+    for col, coltype in [("execution_mode", "TEXT"), ("lifecycle_id", "TEXT"), ("recommended_mode", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE agent_trades ADD COLUMN {col} {coltype}")
+            conn.commit()
+        except Exception:
+            pass  # coluna já existe
+
     conn.close()
 
 
@@ -367,8 +376,9 @@ def insert_agent_trade(trade: dict):
             INSERT INTO agent_trades (
                 timestamp, symbol, type, entry_price, sl_price, tp_price,
                 position_size_usd, exit_price, pnl_pct, pnl_usd,
-                exit_reason, analyst_confidence, capital_after
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                exit_reason, analyst_confidence, capital_after,
+                execution_mode, lifecycle_id, recommended_mode
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             trade["timestamp"],
             trade["symbol"],
@@ -383,6 +393,9 @@ def insert_agent_trade(trade: dict):
             trade.get("exit_reason", "open"),
             trade.get("analyst_confidence", 0),
             round(trade.get("capital_after", 0), 2),
+            trade.get("execution_mode", "paper"),
+            trade.get("lifecycle_id"),
+            trade.get("recommended_mode", "paper"),
         ))
         conn.commit()
     finally:
@@ -642,6 +655,20 @@ def get_recent_trades(table: str, limit: int = 50) -> list:
     try:
         return [dict(r) for r in conn.execute(
             f"SELECT * FROM {table} ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def get_recent_trades_by_symbol(table: str, symbol: str,
+                                limit: int = 10) -> list:
+    """Fetch the N most recent trades for a specific symbol. Read-only."""
+    _validate_table(table)
+    conn = _get_conn()
+    try:
+        return [dict(r) for r in conn.execute(
+            f"SELECT * FROM {table} WHERE symbol = ? ORDER BY id DESC LIMIT ?",
+            (symbol, limit),
         ).fetchall()]
     finally:
         conn.close()
@@ -951,6 +978,259 @@ def get_trades_range(table: str, days: int = 7, limit: int = 100) -> list:
     ).fetchall()]
     conn.close()
     return rows
+
+
+def get_closed_trades_in_period(table: str, days: int = 30) -> list:
+    """Todos os trades fechados (com PnL) no periodo, sem limite artificial.
+
+    Read-only.  Usado pelo auditor offline para garantir que expectancy,
+    churn, concentration e verdict usem a mesma base completa.
+    """
+    _validate_table(table)
+    from datetime import timedelta
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    conn = _get_conn()
+    try:
+        return [dict(r) for r in conn.execute(
+            f"SELECT * FROM {table} "
+            f"WHERE timestamp >= ? AND pnl_pct IS NOT NULL AND exit_reason != 'open' "
+            f"ORDER BY id",
+            (cutoff,),
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def get_ai_decisions_summary(days: int = 30, system: str | None = None) -> dict:
+    """Resumo read-only das decisoes de IA no periodo (para auditor offline).
+
+    Se ``system`` for fornecido, filtra apenas registros desse desk
+    (ex: "agent").  Caso contrario, retorna o resumo global.
+    """
+    from datetime import timedelta
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+
+    where = "WHERE timestamp >= ?"
+    params: list = [cutoff]
+    if system is not None:
+        where += " AND system = ?"
+        params.append(system)
+
+    conn = _get_conn()
+    try:
+        total = conn.execute(
+            f"SELECT COUNT(*) as cnt FROM ai_decisions {where}", params,
+        ).fetchone()["cnt"]
+
+        empty = {
+            "total": 0, "by_system": {}, "by_prompt_version": {},
+            "fallbacks": 0, "parse_failures": 0, "approvals": 0,
+            "approval_rate": 0, "avg_confidence": 0, "avg_latency_ms": 0,
+        }
+        if total == 0:
+            return empty
+
+        versions = [dict(r) for r in conn.execute(
+            f"SELECT prompt_version, COUNT(*) as cnt FROM ai_decisions "
+            f"{where} GROUP BY prompt_version", params,
+        ).fetchall()]
+
+        by_system = [dict(r) for r in conn.execute(
+            f"SELECT system, COUNT(*) as cnt FROM ai_decisions "
+            f"{where} GROUP BY system", params,
+        ).fetchall()]
+
+        agg = conn.execute(
+            f"SELECT SUM(fallback_used) as fb, "
+            f"SUM(CASE WHEN parse_success = 0 THEN 1 ELSE 0 END) as pf, "
+            f"SUM(approved) as ap, AVG(confidence) as ac, AVG(latency_ms) as al "
+            f"FROM ai_decisions {where}", params,
+        ).fetchone()
+
+        fallbacks = int(agg["fb"] or 0)
+        parse_failures = int(agg["pf"] or 0)
+        approvals = int(agg["ap"] or 0)
+        avg_conf = float(agg["ac"]) if agg["ac"] is not None else 0
+        avg_lat = float(agg["al"]) if agg["al"] is not None else 0
+
+        return {
+            "total": total,
+            "by_system": {r["system"]: r["cnt"] for r in by_system},
+            "by_prompt_version": {(r["prompt_version"] or "none"): r["cnt"] for r in versions},
+            "fallbacks": fallbacks,
+            "parse_failures": parse_failures,
+            "approvals": approvals,
+            "approval_rate": round(approvals / total * 100, 1),
+            "avg_confidence": round(avg_conf, 1),
+            "avg_latency_ms": round(avg_lat, 1),
+        }
+    finally:
+        conn.close()
+
+
+def get_trade_by_id(table: str, trade_id: int) -> dict | None:
+    """Fetch a single trade by ID. Read-only."""
+    _validate_table(table)
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            f"SELECT * FROM {table} WHERE id = ?", (trade_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+# Whitelist of timestamp column names allowed in get_nearby_records.
+_VALID_TS_COLS = frozenset({"timestamp", "audit_timestamp", "labeled_at"})
+
+
+def get_nearby_records(table: str, timestamp: str, symbol: str | None = None,
+                       window_minutes: int = 60, limit: int = 20,
+                       timestamp_col: str = "timestamp") -> list:
+    """Fetch records near a timestamp from any valid table. Read-only.
+
+    Used by the Trade Review Lab to collect context around a specific trade.
+    """
+    _validate_table(table)
+    if timestamp_col not in _VALID_TS_COLS:
+        raise ValueError(
+            f"timestamp_col '{timestamp_col}' not allowed. "
+            f"Valid: {sorted(_VALID_TS_COLS)}"
+        )
+
+    from datetime import timedelta
+    try:
+        ts = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return []
+
+    start = (ts - timedelta(minutes=window_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    end = (ts + timedelta(minutes=window_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+
+    query = f"SELECT * FROM {table} WHERE {timestamp_col} BETWEEN ? AND ?"
+    params: list = [start, end]
+
+    if symbol:
+        query += " AND symbol = ?"
+        params.append(symbol)
+
+    query += f" ORDER BY {timestamp_col} DESC LIMIT ?"
+    params.append(limit)
+
+    conn = _get_conn()
+    try:
+        rows = [dict(r) for r in conn.execute(query, tuple(params)).fetchall()]
+    finally:
+        conn.close()
+
+    for row in rows:
+        details = row.get("details_json")
+        if details:
+            try:
+                row["details"] = json.loads(details)
+            except Exception:
+                row["details"] = {"raw": details}
+            row.pop("details_json", None)
+
+    return rows
+
+
+def get_nearby_ai_decisions(timestamp: str, symbol: str | None = None,
+                            system: str | None = None,
+                            window_minutes: int = 30,
+                            limit: int = 10) -> list:
+    """Fetch ai_decisions near a timestamp, optionally filtered by system.
+
+    Dedicated helper so the Trade Review Lab can request only decisions
+    from a specific desk (e.g. system="agent").  Read-only.
+    """
+    from datetime import timedelta
+    try:
+        ts = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return []
+
+    start = (ts - timedelta(minutes=window_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    end = (ts + timedelta(minutes=window_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+
+    query = "SELECT * FROM ai_decisions WHERE timestamp BETWEEN ? AND ?"
+    params: list = [start, end]
+
+    if symbol:
+        query += " AND symbol = ?"
+        params.append(symbol)
+
+    if system:
+        query += " AND system = ?"
+        params.append(system)
+
+    query += " ORDER BY timestamp DESC LIMIT ?"
+    params.append(limit)
+
+    conn = _get_conn()
+    try:
+        return [dict(r) for r in conn.execute(query, tuple(params)).fetchall()]
+    finally:
+        conn.close()
+
+
+# ── CLOSED-TRADE HELPERS (Trade Review Lab) ──────────────────────────────────
+
+_OPEN_EXIT_REASONS = frozenset({"", "open"})
+
+
+def _is_closed_filter() -> str:
+    """SQL fragment that matches only closed trades."""
+    return "exit_reason IS NOT NULL AND exit_reason != '' AND exit_reason != 'open'"
+
+
+def get_closed_trade_by_id(table: str, trade_id: int) -> dict | None:
+    """Fetch a single trade by ID only if it is closed. Read-only.
+
+    A trade is considered closed when exit_reason is present and not
+    empty/'open'. Returns None if the trade does not exist or is still open.
+    """
+    _validate_table(table)
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            f"SELECT * FROM {table} WHERE id = ? AND {_is_closed_filter()}",
+            (trade_id,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_recent_closed_trades(table: str, limit: int = 10) -> list:
+    """Fetch the N most recent closed trades from a table. Read-only."""
+    _validate_table(table)
+    conn = _get_conn()
+    try:
+        return [dict(r) for r in conn.execute(
+            f"SELECT * FROM {table} WHERE {_is_closed_filter()} "
+            f"ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def get_recent_closed_trades_by_symbol(table: str, symbol: str,
+                                       limit: int = 10) -> list:
+    """Fetch the N most recent closed trades for a symbol. Read-only."""
+    _validate_table(table)
+    conn = _get_conn()
+    try:
+        return [dict(r) for r in conn.execute(
+            f"SELECT * FROM {table} "
+            f"WHERE symbol = ? AND {_is_closed_filter()} "
+            f"ORDER BY id DESC LIMIT ?",
+            (symbol, limit),
+        ).fetchall()]
+    finally:
+        conn.close()
 
 
 # ── SELF-TEST ─────────────────────────────────────────────────────────────────
