@@ -30,6 +30,7 @@ from signal_types import Direction, Signal, ConfluenceResult, ScalpingConfig
 from funding_engine import FundingEngine
 from liquidation_engine import LiquidationEngine
 from basis_engine import BasisEngine
+from execution_layer import calculate_levels, apply_to_signal
 
 logger = logging.getLogger("scalping.confluence")
 
@@ -222,6 +223,22 @@ def analyze(
     # Se chegou aqui, o trade passou pelo gate adaptativo (multi-motor
     # exige >= 2, single-motor exige >= 1 + continuous_score >= 60).
     meets_threshold = True
+
+    # ── EXECUTION LAYER: calcular entry/SL/TP via ATR ───────────
+    if best_signal is not None and candles_5m is not None:
+        exec_plan = calculate_levels(
+            signal=best_signal,
+            candles_5m=candles_5m,
+            direction=direction,
+            score=continuous_score,
+        )
+        if exec_plan is not None:
+            apply_to_signal(best_signal, exec_plan)
+        else:
+            logger.warning(
+                "CONFLUENCE %s: execution layer falhou, best_signal sem niveis",
+                symbol,
+            )
 
     motor_status = " | ".join(motor_labels)
     reason = (
