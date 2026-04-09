@@ -1,0 +1,65 @@
+=== TRADES POR SISTEMA DESDE RESET (06/04) ===
+System       Trades  Wins Losses   AvgPct   TotalUSD
+----------------------------------------------------
+scalping          8     3      5    0.078       0.47
+agent            12     0     12  -1.3744      -2.93
+paper             4     1      3  -1.1859    -197.93
+pump             14     4     10  -1.3322      -0.53
+
+=== SCALPING TRADES DETAIL ===
+  2026-04-07 16:37:39 | DOGEUSDT LONG | e=0.0915 x=None | None% $0.0 | open | c=1
+  2026-04-07 16:48:33 | DOGEUSDT LONG | e=0.0915 x=0.0917 | 0.2245% $0.32 | take_profit_2 | c=1
+  2026-04-07 22:56:43 | ETHUSDT LONG | e=2236.25 x=None | None% $0.0 | open | c=1
+  2026-04-07 23:08:20 | ETHUSDT LONG | e=2236.25 x=2240.3538 | 0.1035% $0.15 | take_profit_2 | c=1
+  2026-04-07 23:54:45 | DOGEUSDT LONG | e=0.0946 x=None | None% $0.0 | open | c=1
+  2026-04-07 23:59:20 | DOGEUSDT LONG | e=0.0946 x=0.0946 | 0.074% $0.11 | manual_reset | c=1
+  2026-04-07 23:59:55 | DOGEUSDT LONG | e=0.0945 x=None | None% $0.0 | open | c=1
+  2026-04-08 00:50:47 | DOGEUSDT LONG | e=0.0945 x=0.0945 | -0.09% $-0.11 | stop_loss | c=1
+
+=== AGENT TRADES DETAIL ===
+  2026-04-06 17:30:54 | BTCUSDT LONG | e=69960.1 x=None | None% $0.0 | open
+  2026-04-06 17:30:58 | ETHUSDT LONG | e=2152.75 x=None | None% $0.0 | open
+  2026-04-07 12:42:57 | BTCUSDT LONG | e=69960.1 x=68560.898 | -2.08% $-0.89 | stop_loss
+  2026-04-07 12:42:57 | ETHUSDT LONG | e=2152.75 x=2109.695 | -2.08% $-0.89 | stop_loss
+  2026-04-07 13:23:15 | XRPUSDT SHORT | e=1.296 x=None | None% $0.0 | open
+  2026-04-07 18:12:30 | XRPUSDT SHORT | e=1.296 x=1.3219 | -2.08% $-0.89 | stop_loss
+  2026-04-07 23:14:15 | ETHUSDT LONG | e=2244.73 x=None | None% $0.0 | open
+  2026-04-07 23:14:21 | DOGEUSDT LONG | e=0.0949 x=None | None% $0.0 | open
+  2026-04-07 23:59:19 | ETHUSDT LONG | e=2244.73 x=2235.51 | -0.4107% $-0.17 | manual_reset
+  2026-04-07 23:59:19 | DOGEUSDT LONG | e=0.0949 x=0.0946 | -0.2214% $-0.09 | manual_reset
+  2026-04-08 00:05:26 | XRPUSDT LONG | e=1.3763 x=None | None% $0.0 | open
+  2026-04-08 00:34:01 | ETHUSDT LONG | e=2239.23 x=None | None% $0.0 | open
+
+=== AI DECISIONS (ultimas 10) ===
+Total: 22 decisoes
+  2026-04-07 15:58:10 | ETHUSDT agent | ok=0 conf=35 | 2893.0ms
+    Apesar de confidence score 100 e dados de volume positivos, existe conflito critico: tendencia 5m ai...
+  2026-04-07 15:58:13 | XRPUSDT agent | ok=1 conf=78 | 2415.0ms
+    Setup SELL com confluencia forte: tendencias alinhadas, preco em posicao ideal, volume confirmado, b...
+  2026-04-07 17:55:40 | ETHUSDT agent | ok=0 conf=35 | 2753.0ms
+    Sinal SELL tem score alto mas conflita com tendencia 5m em ALTA. Apos 5L, exija convergencia clara e...
+  2026-04-07 23:14:14 | ETHUSDT agent | ok=1 conf=78 | 3225.0ms
+    Setup tecnico solido com confluencia clara (tendencia, SMAs, breakout, volume, body ratio). Buy scor...
+  2026-04-07 23:14:18 | XRPUSDT agent | ok=0 conf=45 | 3020.0ms
+    Setup tecnicamente valido mas comprometido por volume fraco no breakout e sequencia de 6 perdas. Con...
+  2026-04-07 23:14:20 | DOGEUSDT agent | ok=1 conf=78 | 2383.0ms
+    Setup tecnico excelente: alinhamento HTF, RSI neutro, breakout com volume, body ratio forte. Mas win...
+  2026-04-07 23:20:02 | ETHUSDT agent | ok=0 conf=45 | 2622.0ms
+    Setup tecnico valido mas entrada fraca (body ratio critico) + sequencia de 6 perdas consecutivas exi...
+  2026-04-08 00:05:26 | XRPUSDT agent | ok=1 conf=85 | 2265.0ms
+    Setup com tendencia forte e alinhamento multi-timeframe, mas volume fraco e body ratio baixo penaliz...
+  2026-04-08 00:33:58 | BTCUSDT agent | ok=0 conf=38 | 2860.0ms
+    Breakout em baixo volume e corte de tendencia 5m sao sinais de falso rompimento. A confluencia 1h/HT...
+  2026-04-08 00:34:01 | ETHUSDT agent | ok=1 conf=92 | 2515.0ms
+    Setup de qualidade A: confluencia clara em HTF (1h), breakout confirmado com volume, body ratio fort...
+
+=== TAMANHO DAS TABELAS ===
+  analysis_log                  1262 rows
+  paper_trades                     4 rows
+  agent_trades                    12 rows
+  scalping_trades                  8 rows
+  pump_trades                     14 rows
+  ai_decisions                    22 rows
+  scalping_decisions             906 rows
+  scalping_audit_log             910 rows
+  DB file size: 5.6 MB

@@ -6,7 +6,7 @@ Requisitos:
 - Reutiliza a logica real dos motores (volume_breakout, rsi_bb_reversal, ema_crossover)
 - Look-ahead fix: sinal gerado com dados ate candle i-1, entrada no open do candle i
 - Simula gestao de posicao: SL, TP1 parcial (50%), TP2, breakeven apos TP1
-- Fees: 0.04% por lado (0.08% round trip, Futures maker+taker medio)
+- Fees: SINGLE_SIDE_FEE_PCT por lado (ROUND_TRIP_FEE_PCT round trip, config.py)
 - Metricas: win rate, profit factor, expectancy, max drawdown, Sharpe simplificado
 - Resultados separados por confluencia 2/3 vs 3/3, motor principal, simbolo
 
@@ -24,7 +24,7 @@ from typing import Optional
 import pandas as pd
 import requests
 
-from config import BINANCE_KLINES_URL, BACKTEST_DAYS
+from config import BINANCE_KLINES_URL, BACKTEST_DAYS, SINGLE_SIDE_FEE_PCT, ROUND_TRIP_FEE_PCT
 
 # --- Importar logica real dos motores (padrao A4: single source of truth) ---
 from scalping_data import add_scalping_indicators
@@ -38,9 +38,8 @@ import ema_crossover
 #  CONSTANTES
 # ============================================================
 
-# Futures fees: 0.02% maker + 0.04% taker ~ media 0.04% por lado
-FEE_PER_SIDE_PCT = 0.04
-ROUND_TRIP_FEE_PCT = FEE_PER_SIDE_PCT * 2  # 0.08%
+# Fees importadas de config.py (SINGLE_SIDE_FEE_PCT / ROUND_TRIP_FEE_PCT)
+FEE_PER_SIDE_PCT = SINGLE_SIDE_FEE_PCT
 
 # Slippage pessimista adicional (alem do que os motores ja incluem)
 EXTRA_SLIPPAGE_PCT = 0.02  # 0.02% adicional por lado
@@ -57,8 +56,17 @@ WARMUP_CANDLES = 60  # precisa de pelo menos 50 para add_scalping_indicators
 # Janela de dados para alimentar os motores (quantos candles)
 ENGINE_WINDOW = 100
 
+# Exit mode variants for comparison backtesting
+EXIT_MODES = ["partial_tp1_100", "partial_tp1_150", "full_tp2", "trailing"]
+EXIT_MODE_LABELS = {
+    "partial_tp1_100": "Partial 1.0x",
+    "partial_tp1_150": "Partial 1.5x",
+    "full_tp2": "Full TP2",
+    "trailing": "Trailing",
+}
+
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.ERROR,  # Suppress WARNING flood from engines during backtest
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("backtest_scalping")
@@ -250,6 +258,9 @@ def run_confluence_local(
     elif score >= 2:
         position_size_pct = 50.0
         leverage = 3
+    elif score >= 1:
+        position_size_pct = 25.0
+        leverage = 1
     else:
         no_trade.signals = all_signals
         no_trade.score = score
@@ -291,6 +302,8 @@ class SimulatedPosition:
         confluence_score: int,
         primary_engine: str,
         engines_active: list,
+        exit_mode: str = "partial_tp1_100",
+        atr_at_entry: float = 0.0,
     ):
         self.symbol = symbol
         self.direction = direction
@@ -308,57 +321,47 @@ class SimulatedPosition:
         self.tp1_hit = False
         self.breakeven_active = False
         self.original_sl = sl_price
+        self.exit_mode = exit_mode
+        self.atr_at_entry = atr_at_entry
+        # Trailing state
+        self.peak_price = entry_price
+        self.trailing_active = False
 
     def check_exit(self, candle: pd.Series) -> list:
-        """
-        Verifica se o candle atual aciona SL, TP1 ou TP2.
+        """Dispatch to exit logic based on exit_mode."""
+        if self.remaining_size_pct <= 0:
+            return []
+        if self.exit_mode == "trailing":
+            return self._check_exit_trailing(candle)
+        if self.exit_mode == "full_tp2":
+            return self._check_exit_full_tp2(candle)
+        # partial_tp1_100 and partial_tp1_150 use same logic (different TP prices set at creation)
+        return self._check_exit_partial(candle)
 
-        Retorna lista de eventos de saida:
-        [{"reason": str, "price": float, "size_pct": float}, ...]
+    def _check_sl(self, high: float, low: float) -> bool:
+        if self.direction == Direction.LONG:
+            return low <= self.sl_price
+        return high >= self.sl_price
 
-        Ordem de verificacao (pessimista):
-        1. SL primeiro (se a direcao tiver ido contra)
-        2. TP1 (fecha 50%)
-        3. TP2 (fecha restante)
-
-        Assume pior caso: se tanto SL quanto TP poderiam ser atingidos
-        no mesmo candle, SL e acionado primeiro.
-        """
+    def _check_exit_partial(self, candle: pd.Series) -> list:
+        """TP1 partial (50%) + breakeven + TP2 remainder. Used by partial_tp1_100 and partial_tp1_150."""
         exits = []
         high = candle["high"]
         low = candle["low"]
 
-        if self.remaining_size_pct <= 0:
-            return exits
-
-        # --- STOP LOSS ---
-        sl_hit = False
-        if self.direction == Direction.LONG:
-            if low <= self.sl_price:
-                sl_hit = True
-        else:  # SHORT
-            if high >= self.sl_price:
-                sl_hit = True
-
-        if sl_hit:
+        # --- STOP LOSS (pessimistic: checked first) ---
+        if self._check_sl(high, low):
             exits.append({
                 "reason": "stop_loss",
                 "price": self.sl_price,
                 "size_pct": self.remaining_size_pct,
             })
             self.remaining_size_pct = 0
-            return exits  # posicao inteira fechada
+            return exits
 
         # --- TP1 (50% da posicao) ---
         if not self.tp1_hit:
-            tp1_hit = False
-            if self.direction == Direction.LONG:
-                if high >= self.tp1_price:
-                    tp1_hit = True
-            else:
-                if low <= self.tp1_price:
-                    tp1_hit = True
-
+            tp1_hit = (high >= self.tp1_price) if self.direction == Direction.LONG else (low <= self.tp1_price)
             if tp1_hit:
                 close_pct = min(50.0, self.remaining_size_pct)
                 exits.append({
@@ -368,21 +371,12 @@ class SimulatedPosition:
                 })
                 self.remaining_size_pct -= close_pct
                 self.tp1_hit = True
-
-                # Ativar breakeven: mover SL para entry
                 self.breakeven_active = True
                 self.sl_price = self.entry_price
 
         # --- TP2 (restante) ---
         if self.tp1_hit and self.remaining_size_pct > 0:
-            tp2_hit = False
-            if self.direction == Direction.LONG:
-                if high >= self.tp2_price:
-                    tp2_hit = True
-            else:
-                if low <= self.tp2_price:
-                    tp2_hit = True
-
+            tp2_hit = (high >= self.tp2_price) if self.direction == Direction.LONG else (low <= self.tp2_price)
             if tp2_hit:
                 exits.append({
                     "reason": "tp2",
@@ -390,6 +384,78 @@ class SimulatedPosition:
                     "size_pct": self.remaining_size_pct,
                 })
                 self.remaining_size_pct = 0
+
+        return exits
+
+    def _check_exit_full_tp2(self, candle: pd.Series) -> list:
+        """No partial — 100% at TP2 or SL."""
+        exits = []
+        high = candle["high"]
+        low = candle["low"]
+
+        if self._check_sl(high, low):
+            exits.append({
+                "reason": "stop_loss",
+                "price": self.sl_price,
+                "size_pct": self.remaining_size_pct,
+            })
+            self.remaining_size_pct = 0
+            return exits
+
+        tp2_hit = (high >= self.tp2_price) if self.direction == Direction.LONG else (low <= self.tp2_price)
+        if tp2_hit:
+            exits.append({
+                "reason": "tp2",
+                "price": self.tp2_price,
+                "size_pct": self.remaining_size_pct,
+            })
+            self.remaining_size_pct = 0
+
+        return exits
+
+    def _check_exit_trailing(self, candle: pd.Series) -> list:
+        """Trailing stop after 0.5x ATR profit, trail distance 0.8x ATR."""
+        exits = []
+        high = candle["high"]
+        low = candle["low"]
+        trailing_distance = self.atr_at_entry * 0.8
+
+        # STEP 1: Check stops BEFORE updating peak (pessimistic)
+        if self.trailing_active:
+            if self.direction == Direction.LONG:
+                trailing_stop = self.peak_price - trailing_distance
+                if low <= trailing_stop:
+                    exits.append({"reason": "trailing_stop", "price": trailing_stop, "size_pct": self.remaining_size_pct})
+                    self.remaining_size_pct = 0
+                    return exits
+            else:
+                trailing_stop = self.peak_price + trailing_distance
+                if high >= trailing_stop:
+                    exits.append({"reason": "trailing_stop", "price": trailing_stop, "size_pct": self.remaining_size_pct})
+                    self.remaining_size_pct = 0
+                    return exits
+        else:
+            # Normal SL before trailing activates
+            if self._check_sl(high, low):
+                exits.append({"reason": "stop_loss", "price": self.sl_price, "size_pct": self.remaining_size_pct})
+                self.remaining_size_pct = 0
+                return exits
+
+        # STEP 2: Update peak (no stop was hit)
+        if self.direction == Direction.LONG:
+            self.peak_price = max(self.peak_price, high)
+        else:
+            self.peak_price = min(self.peak_price, low)
+
+        # STEP 3: Check trailing activation
+        if not self.trailing_active:
+            activation = self.atr_at_entry * 0.5
+            if self.direction == Direction.LONG:
+                profit = self.peak_price - self.entry_price
+            else:
+                profit = self.entry_price - self.peak_price
+            if profit >= activation:
+                self.trailing_active = True
 
         return exits
 
@@ -409,7 +475,7 @@ def calculate_pnl(
     """
     Calcula PnL para uma saida parcial ou total.
 
-    Aplica fees (0.04% por lado) e slippage extra.
+    Aplica fees (SINGLE_SIDE_FEE_PCT por lado) e slippage extra.
     """
     # PnL bruto em %
     if direction == Direction.LONG:
@@ -417,7 +483,7 @@ def calculate_pnl(
     else:
         raw_pnl_pct = ((entry_price - exit_price) / entry_price) * 100
 
-    # Fees: 0.04% entrada + 0.04% saida = 0.08% total
+    # Fees: SINGLE_SIDE_FEE_PCT entrada + saida = ROUND_TRIP_FEE_PCT total
     fee_pct = ROUND_TRIP_FEE_PCT
 
     # Slippage adicional pessimista
@@ -512,6 +578,14 @@ def calc_metrics(trades: list) -> dict:
     durations = [t.get("duration_candles", 0) for t in trades]
     avg_duration = sum(durations) / len(durations) if durations else 0
 
+    # USD-based metrics
+    win_pnls_usd = [t["total_pnl_usd"] for t in wins]
+    loss_pnls_usd = [t["total_pnl_usd"] for t in losses]
+    avg_win_usd = sum(win_pnls_usd) / len(win_pnls_usd) if win_pnls_usd else 0
+    avg_loss_usd = sum(loss_pnls_usd) / len(loss_pnls_usd) if loss_pnls_usd else 0
+    expectancy_usd = total_pnl_usd / len(trades) if trades else 0
+    rr_effective = abs(avg_win_usd / avg_loss_usd) if avg_loss_usd != 0 else 0
+
     return {
         "total_trades": len(trades),
         "wins": len(wins),
@@ -521,6 +595,10 @@ def calc_metrics(trades: list) -> dict:
         "total_pnl_usd": round(total_pnl_usd, 2),
         "avg_win_pct": round(avg_win, 4),
         "avg_loss_pct": round(avg_loss, 4),
+        "avg_win_usd": round(avg_win_usd, 2),
+        "avg_loss_usd": round(avg_loss_usd, 2),
+        "expectancy_usd": round(expectancy_usd, 2),
+        "rr_effective": round(rr_effective, 4),
         "max_drawdown_pct": round(max_dd_pct, 4),
         "max_drawdown_usd": round(max_dd_usd, 2),
         "profit_factor": round(pf, 4) if pf != float("inf") else 999.99,
@@ -542,6 +620,7 @@ def run_backtest_symbol(
     df_5m: pd.DataFrame,
     df_15m: pd.DataFrame,
     config: ScalpingConfig,
+    exit_mode: str = "partial_tp1_100",
 ) -> list:
     """
     Executa backtest para um simbolo.
@@ -652,7 +731,8 @@ def run_backtest_symbol(
         )
 
         # Verificar se temos sinal operavel
-        if not confluence.meets_threshold or confluence.score < 2:
+        min_conf = getattr(config, '_bt_min_confluence', 2)
+        if not confluence.meets_threshold or confluence.score < min_conf:
             continue
         if confluence.direction == Direction.NEUTRAL:
             continue
@@ -695,6 +775,23 @@ def run_backtest_symbol(
             if s.valid and s.direction == confluence.direction
         ]
 
+        # Estimar ATR a partir do TP1 do motor
+        if confluence.direction == Direction.LONG:
+            atr_est = abs(best.tp1_price - entry_price)
+        else:
+            atr_est = abs(entry_price - best.tp1_price)
+
+        # Ajustar TP prices baseado no exit_mode
+        tp1_final = best.tp1_price
+        tp2_final = best.tp2_price
+        if exit_mode == "partial_tp1_150" and atr_est > 0:
+            if confluence.direction == Direction.LONG:
+                tp1_final = entry_price + 1.5 * atr_est
+                tp2_final = entry_price + 2.5 * atr_est
+            else:
+                tp1_final = entry_price - 1.5 * atr_est
+                tp2_final = entry_price - 2.5 * atr_est
+
         # Abrir posicao
         position = SimulatedPosition(
             symbol=symbol,
@@ -702,13 +799,15 @@ def run_backtest_symbol(
             entry_price=entry_price,
             entry_time=current_candle["time"],
             sl_price=best.sl_price,
-            tp1_price=best.tp1_price,
-            tp2_price=best.tp2_price,
+            tp1_price=tp1_final,
+            tp2_price=tp2_final,
             position_size_usd=position_size_usd,
             leverage=confluence.leverage,
             confluence_score=confluence.score,
             primary_engine=best.source,
             engines_active=engines_active,
+            exit_mode=exit_mode,
+            atr_at_entry=atr_est,
         )
 
         # Verificar se SL/TP ja atingido no candle de entrada
@@ -966,8 +1065,510 @@ def print_report(all_trades: list, by_symbol: dict, days: int):
 
 
 # ============================================================
+#  COLETA DE SINAIS (para comparacao de exit modes)
+# ============================================================
+
+def collect_signals_for_symbol(
+    symbol: str,
+    df_3m: pd.DataFrame,
+    df_5m: pd.DataFrame,
+    df_15m: pd.DataFrame,
+    config: ScalpingConfig,
+) -> list:
+    """
+    Pre-scan all entry signals for a symbol, ignoring position state.
+    Returns list of signal dicts with all data needed to create a position.
+    """
+    signals = []
+    start_idx = WARMUP_CANDLES + 1
+    total_candles = len(df_5m)
+
+    # Diagnostic counters
+    diag = {
+        "total_cycles": 0,
+        "insufficient_data": 0,
+        "vb_signal": 0, "vb_blocked": 0,
+        "rsi_signal": 0, "rsi_blocked": 0,
+        "ema_signal": 0, "ema_blocked": 0,
+        "confluence_0": 0, "confluence_1": 0,
+        "confluence_2": 0, "confluence_3": 0,
+        "opposite_signals": 0,
+        "below_threshold": 0,
+        "passed": 0,
+        "vb_block_reasons": {},
+        "rsi_block_reasons": {},
+        "ema_block_reasons": {},
+    }
+    min_conf = getattr(config, '_bt_min_confluence', 2)
+
+    for i in range(start_idx, total_candles):
+        current_candle = df_5m.iloc[i]
+        signal_candle = df_5m.iloc[i - 1]
+        signal_time = signal_candle["time"]
+
+        df_3m_window = get_window_up_to(df_3m, signal_time, ENGINE_WINDOW)
+        df_5m_window = get_window_up_to(df_5m, signal_time, ENGINE_WINDOW)
+        df_15m_window = get_window_up_to(df_15m, signal_time, ENGINE_WINDOW)
+
+        if len(df_3m_window) < 50 or len(df_5m_window) < 50:
+            diag["insufficient_data"] += 1
+            continue
+
+        diag["total_cycles"] += 1
+
+        confluence = run_confluence_local(
+            symbol, config, df_3m_window, df_5m_window, df_15m_window
+        )
+
+        # Count individual engine signals for diagnostics
+        if hasattr(confluence, 'signals') and confluence.signals:
+            for sig in confluence.signals:
+                src = sig.source if hasattr(sig, 'source') else ""
+                if "volume_breakout" in src or "VB" in src:
+                    if sig.valid:
+                        diag["vb_signal"] += 1
+                    else:
+                        diag["vb_blocked"] += 1
+                        reason = sig.reason if hasattr(sig, 'reason') and sig.reason else "unknown"
+                        # Truncate reason for grouping
+                        reason_key = reason.split(":")[0].strip() if ":" in reason else reason[:60]
+                        diag["vb_block_reasons"][reason_key] = diag["vb_block_reasons"].get(reason_key, 0) + 1
+                elif "rsi_bb" in src or "RSI" in src:
+                    if sig.valid:
+                        diag["rsi_signal"] += 1
+                    else:
+                        diag["rsi_blocked"] += 1
+                        reason = sig.reason if hasattr(sig, 'reason') and sig.reason else "unknown"
+                        reason_key = reason.split(":")[0].strip() if ":" in reason else reason[:60]
+                        diag["rsi_block_reasons"][reason_key] = diag["rsi_block_reasons"].get(reason_key, 0) + 1
+                elif "ema" in src.lower() or "EMA" in src:
+                    if sig.valid:
+                        diag["ema_signal"] += 1
+                    else:
+                        diag["ema_blocked"] += 1
+                        reason = sig.reason if hasattr(sig, 'reason') and sig.reason else "unknown"
+                        reason_key = reason.split(":")[0].strip() if ":" in reason else reason[:60]
+                        diag["ema_block_reasons"][reason_key] = diag["ema_block_reasons"].get(reason_key, 0) + 1
+
+        # Count confluence levels
+        if confluence.score == 0:
+            diag["confluence_0"] += 1
+        elif confluence.score == 1:
+            diag["confluence_1"] += 1
+        elif confluence.score == 2:
+            diag["confluence_2"] += 1
+        elif confluence.score == 3:
+            diag["confluence_3"] += 1
+
+        if hasattr(confluence, 'reason') and "opostos" in str(confluence.reason).lower():
+            diag["opposite_signals"] += 1
+
+        if confluence.score < min_conf:
+            diag["below_threshold"] += 1
+            continue
+        if not confluence.meets_threshold:
+            diag["below_threshold"] += 1
+            continue
+        if confluence.direction == Direction.NEUTRAL or confluence.best_signal is None:
+            continue
+
+        best = confluence.best_signal
+        entry_price = current_candle["open"]
+
+        # Slippage
+        slip = entry_price * (EXTRA_SLIPPAGE_PCT / 100)
+        if confluence.direction == Direction.LONG:
+            entry_price += slip
+        else:
+            entry_price -= slip
+
+        # Position sizing
+        sl_distance_pct = abs(entry_price - best.sl_price) / entry_price
+        if sl_distance_pct <= 0:
+            continue
+
+        risk_amount = INITIAL_CAPITAL * (config.max_risk_pct / 100)
+        position_size_usd = risk_amount / sl_distance_pct
+        position_size_usd = position_size_usd * (confluence.position_size_pct / 100)
+
+        max_margin = INITIAL_CAPITAL * 0.5
+        margin = position_size_usd / confluence.leverage
+        if margin > max_margin:
+            position_size_usd = max_margin * confluence.leverage
+
+        engines_active = [
+            s.source for s in confluence.signals
+            if s.valid and s.direction == confluence.direction
+        ]
+
+        # Estimate ATR from signal TP1
+        if confluence.direction == Direction.LONG:
+            atr_est = abs(best.tp1_price - entry_price)
+        else:
+            atr_est = abs(entry_price - best.tp1_price)
+
+        signals.append({
+            "candle_index": i,
+            "symbol": symbol,
+            "direction": confluence.direction,
+            "entry_price": entry_price,
+            "entry_time": current_candle["time"],
+            "sl_price": best.sl_price,
+            "tp1_price_base": best.tp1_price,
+            "tp2_price_base": best.tp2_price,
+            "atr_est": atr_est,
+            "position_size_usd": position_size_usd,
+            "leverage": confluence.leverage,
+            "confluence_score": confluence.score,
+            "primary_engine": best.source,
+            "engines_active": engines_active,
+        })
+
+    diag["passed"] = len(signals)
+
+    # Print diagnostic summary
+    tc = diag["total_cycles"]
+    print(f"\n    --- DIAGNOSTICO {symbol} ({tc} ciclos avaliados) ---")
+    print(f"    Volume Breakout:  {diag['vb_signal']:>5} sinais | {diag['vb_blocked']:>5} bloqueados ({diag['vb_blocked']*100/tc:.1f}%)" if tc else "")
+    print(f"    RSI/BB Reversal:  {diag['rsi_signal']:>5} sinais | {diag['rsi_blocked']:>5} bloqueados ({diag['rsi_blocked']*100/tc:.1f}%)" if tc else "")
+    print(f"    EMA Crossover:    {diag['ema_signal']:>5} sinais | {diag['ema_blocked']:>5} bloqueados ({diag['ema_blocked']*100/tc:.1f}%)" if tc else "")
+    print(f"    Confluencia:  0/3={diag['confluence_0']}  1/3={diag['confluence_1']}  2/3={diag['confluence_2']}  3/3={diag['confluence_3']}  opostos={diag['opposite_signals']}")
+    print(f"    Abaixo threshold: {diag['below_threshold']} | Passaram: {diag['passed']}")
+
+    # Top block reasons per engine
+    for eng_label, reasons_key in [("VB", "vb_block_reasons"), ("RSI", "rsi_block_reasons"), ("EMA", "ema_block_reasons")]:
+        reasons = diag[reasons_key]
+        if reasons:
+            top = sorted(reasons.items(), key=lambda x: -x[1])[:3]
+            print(f"    Top bloqueios {eng_label}: {' | '.join(f'{r}({c})' for r, c in top)}")
+    print(f"    --- FIM DIAGNOSTICO {symbol} ---\n")
+
+    print(f"    {symbol}: {len(signals)} sinais coletados")
+    return signals
+
+
+def run_variant_for_symbol(
+    signals: list,
+    df_5m: pd.DataFrame,
+    exit_mode: str,
+    config: ScalpingConfig,
+) -> list:
+    """
+    Simulate position management for pre-collected signals with a specific exit mode.
+    Maintains one-position-at-a-time + cooldown, identical to run_backtest_symbol.
+    """
+    trades = []
+    position: Optional[SimulatedPosition] = None
+    cooldown_remaining = 0
+
+    # Build signal lookup by candle index
+    signal_by_candle = {sig["candle_index"]: sig for sig in signals}
+
+    start_idx = WARMUP_CANDLES + 1
+    total_candles = len(df_5m)
+
+    for i in range(start_idx, total_candles):
+        current_candle = df_5m.iloc[i]
+
+        # --- GERENCIAR POSICAO ABERTA ---
+        if position is not None:
+            exit_events = position.check_exit(current_candle)
+            if exit_events:
+                total_net_pnl_pct = 0.0
+                total_pnl_usd = 0.0
+                exit_details = []
+                for ev in exit_events:
+                    pnl = calculate_pnl(
+                        direction=position.direction,
+                        entry_price=position.entry_price,
+                        exit_price=ev["price"],
+                        size_pct=ev["size_pct"],
+                        position_size_usd=position.position_size_usd,
+                        leverage=position.leverage,
+                    )
+                    total_net_pnl_pct += pnl["net_pnl_pct"] * pnl["fraction"]
+                    total_pnl_usd += pnl["pnl_usd"]
+                    exit_details.append({
+                        "reason": ev["reason"],
+                        "price": round(ev["price"], 8),
+                        "size_pct": ev["size_pct"],
+                        **pnl,
+                    })
+
+                if position.remaining_size_pct <= 0:
+                    entry_idx = df_5m.index[df_5m["time"] == position.entry_time]
+                    duration = i - (entry_idx[0] if len(entry_idx) > 0 else i)
+                    trade = {
+                        "symbol": position.symbol,
+                        "direction": position.direction.value,
+                        "entry_price": round(position.entry_price, 8),
+                        "entry_time": str(position.entry_time),
+                        "exit_time": str(current_candle["time"]),
+                        "sl_price": round(position.original_sl, 8),
+                        "tp1_price": round(position.tp1_price, 8),
+                        "tp2_price": round(position.tp2_price, 8),
+                        "confluence_score": position.confluence_score,
+                        "primary_engine": position.primary_engine,
+                        "engines_active": position.engines_active,
+                        "leverage": position.leverage,
+                        "position_size_usd": round(position.position_size_usd, 2),
+                        "exit_details": exit_details,
+                        "total_net_pnl_pct": round(total_net_pnl_pct, 6),
+                        "total_pnl_usd": round(total_pnl_usd, 4),
+                        "tp1_hit": position.tp1_hit,
+                        "duration_candles": int(duration),
+                    }
+                    trades.append(trade)
+                    cooldown_remaining = config.cooldown_candles
+                    position = None
+
+        # Decrementar cooldown
+        if cooldown_remaining > 0:
+            cooldown_remaining -= 1
+
+        # --- ENTRADA ---
+        if position is not None or cooldown_remaining > 0:
+            continue
+
+        sig = signal_by_candle.get(i)
+        if sig is None:
+            continue
+
+        # Compute TP prices for this exit mode
+        atr = sig["atr_est"]
+        direction = sig["direction"]
+        ep = sig["entry_price"]
+
+        if exit_mode == "partial_tp1_150" and atr > 0:
+            if direction == Direction.LONG:
+                tp1_price = ep + 1.5 * atr
+                tp2_price = ep + 2.5 * atr
+            else:
+                tp1_price = ep - 1.5 * atr
+                tp2_price = ep - 2.5 * atr
+        else:
+            tp1_price = sig["tp1_price_base"]
+            tp2_price = sig["tp2_price_base"]
+
+        position = SimulatedPosition(
+            symbol=sig["symbol"],
+            direction=direction,
+            entry_price=ep,
+            entry_time=sig["entry_time"],
+            sl_price=sig["sl_price"],
+            tp1_price=tp1_price,
+            tp2_price=tp2_price,
+            position_size_usd=sig["position_size_usd"],
+            leverage=sig["leverage"],
+            confluence_score=sig["confluence_score"],
+            primary_engine=sig["primary_engine"],
+            engines_active=sig["engines_active"],
+            exit_mode=exit_mode,
+            atr_at_entry=atr,
+        )
+
+        # Check immediate exit on entry candle
+        exit_events = position.check_exit(current_candle)
+        if exit_events and position.remaining_size_pct <= 0:
+            total_net_pnl_pct = 0.0
+            total_pnl_usd = 0.0
+            exit_details = []
+            for ev in exit_events:
+                pnl = calculate_pnl(
+                    direction=position.direction,
+                    entry_price=position.entry_price,
+                    exit_price=ev["price"],
+                    size_pct=ev["size_pct"],
+                    position_size_usd=position.position_size_usd,
+                    leverage=position.leverage,
+                )
+                total_net_pnl_pct += pnl["net_pnl_pct"] * pnl["fraction"]
+                total_pnl_usd += pnl["pnl_usd"]
+                exit_details.append({
+                    "reason": ev["reason"],
+                    "price": round(ev["price"], 8),
+                    "size_pct": ev["size_pct"],
+                    **pnl,
+                })
+            trade = {
+                "symbol": sig["symbol"],
+                "direction": direction.value,
+                "entry_price": round(ep, 8),
+                "entry_time": str(sig["entry_time"]),
+                "exit_time": str(current_candle["time"]),
+                "sl_price": round(sig["sl_price"], 8),
+                "tp1_price": round(tp1_price, 8),
+                "tp2_price": round(tp2_price, 8),
+                "confluence_score": sig["confluence_score"],
+                "primary_engine": sig["primary_engine"],
+                "engines_active": sig["engines_active"],
+                "leverage": sig["leverage"],
+                "position_size_usd": round(sig["position_size_usd"], 2),
+                "exit_details": exit_details,
+                "total_net_pnl_pct": round(total_net_pnl_pct, 6),
+                "total_pnl_usd": round(total_pnl_usd, 4),
+                "tp1_hit": position.tp1_hit,
+                "duration_candles": 0,
+            }
+            trades.append(trade)
+            cooldown_remaining = config.cooldown_candles
+            position = None
+
+    # Fechar posicao aberta no fim dos dados
+    if position is not None:
+        last = df_5m.iloc[-1]
+        close_price = last["close"]
+        pnl = calculate_pnl(
+            direction=position.direction,
+            entry_price=position.entry_price,
+            exit_price=close_price,
+            size_pct=position.remaining_size_pct,
+            position_size_usd=position.position_size_usd,
+            leverage=position.leverage,
+        )
+        entry_idx = df_5m.index[df_5m["time"] == position.entry_time]
+        duration = (total_candles - 1) - (entry_idx[0] if len(entry_idx) > 0 else total_candles - 1)
+        trade = {
+            "symbol": position.symbol,
+            "direction": position.direction.value,
+            "entry_price": round(position.entry_price, 8),
+            "entry_time": str(position.entry_time),
+            "exit_time": str(last["time"]),
+            "sl_price": round(position.original_sl, 8),
+            "tp1_price": round(position.tp1_price, 8),
+            "tp2_price": round(position.tp2_price, 8),
+            "confluence_score": position.confluence_score,
+            "primary_engine": position.primary_engine,
+            "engines_active": position.engines_active,
+            "leverage": position.leverage,
+            "position_size_usd": round(position.position_size_usd, 2),
+            "exit_details": [{
+                "reason": "end_of_data",
+                "price": round(close_price, 8),
+                "size_pct": position.remaining_size_pct,
+                **pnl,
+            }],
+            "total_net_pnl_pct": round(pnl["net_pnl_pct"] * pnl["fraction"], 6),
+            "total_pnl_usd": round(pnl["pnl_usd"], 4),
+            "tp1_hit": position.tp1_hit,
+            "duration_candles": int(duration),
+        }
+        trades.append(trade)
+
+    return trades
+
+
+# ============================================================
+#  RELATORIO COMPARATIVO
+# ============================================================
+
+def print_comparison_report(results_by_mode: dict, days: int, symbols: list) -> str:
+    """Print comparison table and return recommendation."""
+    print("\n" + "=" * 80)
+    print(f"  COMPARACAO DE ESTRATEGIAS DE SAIDA")
+    print(f"  Periodo: {days} dias | Symbols: {', '.join(symbols)}")
+    print("=" * 80)
+
+    modes = EXIT_MODES
+    labels = [EXIT_MODE_LABELS[m] for m in modes]
+
+    # Header
+    header = f"\n  {'':25s}"
+    for label in labels:
+        header += f" | {label:>13s}"
+    print(header)
+    print("  " + "-" * (25 + 16 * len(modes)))
+
+    def row(name, key, fmt=".2f", prefix="", suffix=""):
+        line = f"  {name:25s}"
+        for m in modes:
+            val = results_by_mode[m].get(key, 0)
+            if fmt == "d":
+                line += f" | {prefix}{val:>12}{suffix}"
+            else:
+                line += f" | {prefix}{val:>12{fmt}}{suffix}"
+        print(line)
+
+    row("Total trades", "total_trades", "d")
+    row("Win rate", "win_rate", ".1f", suffix="%")
+    row("Avg win $", "avg_win_usd", ".2f", prefix="$")
+    row("Avg loss $", "avg_loss_usd", ".2f", prefix="$")
+    row("Expectancy $/trade", "expectancy_usd", ".2f", prefix="$")
+    row("Profit Factor", "profit_factor", ".2f")
+    row("Total P&L $", "total_pnl_usd", ".2f", prefix="$")
+    row("Max Drawdown %", "max_drawdown_pct", ".2f", suffix="%")
+    row("Sharpe (simpl.)", "sharpe_simplified", ".2f")
+    row("RR efetivo", "rr_effective", ".2f")
+    row("Avg duration (candles)", "avg_duration_candles", ".1f")
+
+    print("  " + "-" * (25 + 16 * len(modes)))
+
+    # Recommendation: best expectancy adjusted by drawdown
+    def score_fn(m):
+        metrics = results_by_mode[m]
+        exp = metrics.get("expectancy_usd", 0)
+        dd = max(metrics.get("max_drawdown_pct", 0.01), 0.01)
+        return exp / dd
+
+    best_mode = max(modes, key=score_fn)
+    bm = results_by_mode[best_mode]
+
+    print(f"\n  RECOMENDACAO: {EXIT_MODE_LABELS[best_mode]} ({best_mode})")
+    print(f"    Melhor expectancy ajustada por drawdown")
+    print(f"    Expectancy: ${bm.get('expectancy_usd', 0):.2f}/trade | "
+          f"PF: {bm.get('profit_factor', 0):.2f} | "
+          f"Max DD: {bm.get('max_drawdown_pct', 0):.2f}%")
+    print("=" * 80)
+
+    return best_mode
+
+
+# ============================================================
 #  MAIN
 # ============================================================
+
+def _download_data_for_symbol(symbol: str, days: int):
+    """Download 3m, 5m, 15m data for a symbol. Returns (df_3m, df_5m, df_15m) or None."""
+    fetch_days = days + 5
+
+    print(f"    Baixando 3m...")
+    df_3m = fetch_historical_futures(symbol, "3m", fetch_days)
+    print(f"    Baixando 5m...")
+    df_5m = fetch_historical_futures(symbol, "5m", fetch_days)
+    print(f"    Baixando 15m...")
+    df_15m = fetch_historical_futures(symbol, "15m", fetch_days)
+
+    if df_3m is None or df_5m is None:
+        print(f"    ERRO: Dados insuficientes para {symbol}, pulando.")
+        return None
+
+    if df_15m is None:
+        print(f"    AVISO: Dados 15m indisponiveis, usando apenas 3m e 5m")
+        df_15m = pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume"])
+
+    print(f"    Candles: 3m={len(df_3m)} | 5m={len(df_5m)} | 15m={len(df_15m)}")
+    print(f"    Periodo: {df_5m['time'].iloc[0]} a {df_5m['time'].iloc[-1]}")
+
+    return df_3m, df_5m, df_15m
+
+
+def _build_config_dict(config: ScalpingConfig) -> dict:
+    return {
+        "max_risk_pct": config.max_risk_pct,
+        "cooldown_candles": config.cooldown_candles,
+        "min_confluence_score": config.min_confluence_score,
+        "slippage_pct": config.slippage_pct,
+        "max_sl_volume_breakout": config.max_sl_volume_breakout,
+        "max_sl_rsi_bb": config.max_sl_rsi_bb,
+        "max_sl_ema_crossover": config.max_sl_ema_crossover,
+        "min_rr_volume_breakout": config.min_rr_volume_breakout,
+        "min_rr_rsi_bb": config.min_rr_rsi_bb,
+        "min_rr_ema_crossover": config.min_rr_ema_crossover,
+        "vb_volume_multiplier": config.vb_volume_multiplier,
+        "rsi_oversold": config.rsi_oversold,
+        "rsi_overbought": config.rsi_overbought,
+    }
+
 
 def main():
     parser = argparse.ArgumentParser(description="Backtest Scalping Strategy")
@@ -978,55 +1579,100 @@ def main():
     )
     parser.add_argument("--output", type=str, default="backtest_scalping_results.json",
                         help="Arquivo JSON de saida")
+    parser.add_argument("--exit-mode", type=str, default=None, choices=EXIT_MODES,
+                        help="Exit mode variant to test")
+    parser.add_argument("--compare-exits", action="store_true",
+                        help="Run all 4 exit variants and compare")
+    parser.add_argument("--min-confluence", type=int, default=2, choices=[1, 2, 3],
+                        help="Minimum confluence score to open trade (default: 2)")
     args = parser.parse_args()
 
     symbols = args.symbols.split(",") if args.symbols else DEFAULT_SYMBOLS
     days = args.days
+    config = ScalpingConfig()
+    config._bt_min_confluence = args.min_confluence
+    config.min_confluence_score = args.min_confluence
+
+    # ── COMPARE EXITS MODE ────────────────────────────────────────────
+    if args.compare_exits:
+        print_separator()
+        print(f"  BACKTEST SCALPING — COMPARACAO DE SAIDAS")
+        print(f"  Periodo: {days} dias | Ativos: {', '.join(symbols)}")
+        print(f"  Variantes: {', '.join(EXIT_MODE_LABELS[m] for m in EXIT_MODES)}")
+        print(f"  Fees: {ROUND_TRIP_FEE_PCT}% round-trip | Slippage: {EXTRA_SLIPPAGE_PCT * 2}%")
+        print_separator()
+
+        # Phase 1: Download data + collect signals (once per symbol)
+        symbol_data = {}
+        for symbol in symbols:
+            print(f"\n  [{symbol}] Baixando dados historicos...")
+            data = _download_data_for_symbol(symbol, days)
+            if data is None:
+                continue
+            df_3m, df_5m, df_15m = data
+
+            print(f"    Coletando sinais de entrada...")
+            signals = collect_signals_for_symbol(symbol, df_3m, df_5m, df_15m, config)
+            symbol_data[symbol] = {"df_5m": df_5m, "signals": signals}
+
+        # Phase 2: Run each variant
+        all_results = {}
+        for mode in EXIT_MODES:
+            label = EXIT_MODE_LABELS[mode]
+            print(f"\n  --- Simulando variante: {label} ({mode}) ---")
+            mode_trades = []
+            for symbol, sdata in symbol_data.items():
+                trades = run_variant_for_symbol(
+                    sdata["signals"], sdata["df_5m"], mode, config
+                )
+                mode_trades.extend(trades)
+                print(f"    {symbol}: {len(trades)} trades")
+            all_results[mode] = calc_metrics(mode_trades)
+
+        # Phase 3: Print comparison
+        recommendation = print_comparison_report(all_results, days, symbols)
+
+        # Phase 4: Save JSON
+        output_file = "backtest_exit_comparison.json"
+        comparison_json = {
+            "generated_at": datetime.utcnow().isoformat(),
+            "days": days,
+            "symbols": symbols,
+            "fee_round_trip_pct": ROUND_TRIP_FEE_PCT,
+            "extra_slippage_pct": EXTRA_SLIPPAGE_PCT,
+            "initial_capital": INITIAL_CAPITAL,
+            "config": _build_config_dict(config),
+            "variants": all_results,
+            "recommendation": recommendation,
+        }
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(comparison_json, f, indent=2, default=str, ensure_ascii=False)
+        print(f"\n  Resultados exportados para: {output_file}")
+        return
+
+    # ── SINGLE EXIT MODE or DEFAULT ──────────────────────────────────
+    exit_mode = args.exit_mode or "partial_tp1_100"
 
     print_separator()
     print(f"  BACKTEST SCALPING")
     print(f"  Periodo: {days} dias | Ativos: {', '.join(symbols)}")
+    print(f"  Exit mode: {EXIT_MODE_LABELS.get(exit_mode, exit_mode)}")
     print(f"  Timeframes: 3m + 5m (principal) + 15m")
     print(f"  Fees: {ROUND_TRIP_FEE_PCT}% round-trip | Slippage: {EXTRA_SLIPPAGE_PCT * 2}%")
     print_separator()
-
-    config = ScalpingConfig()
 
     all_trades = []
     by_symbol = {}
 
     for symbol in symbols:
         print(f"\n  [{symbol}] Baixando dados historicos...")
-
-        # Baixar dados dos 3 timeframes
-        # Adicionar margem extra para warmup
-        fetch_days = days + 5
-
-        print(f"    Baixando 3m...")
-        df_3m = fetch_historical_futures(symbol, "3m", fetch_days)
-        print(f"    Baixando 5m...")
-        df_5m = fetch_historical_futures(symbol, "5m", fetch_days)
-        print(f"    Baixando 15m...")
-        df_15m = fetch_historical_futures(symbol, "15m", fetch_days)
-
-        if df_3m is None or df_5m is None:
-            print(f"    ERRO: Dados insuficientes para {symbol}, pulando.")
+        data = _download_data_for_symbol(symbol, days)
+        if data is None:
             continue
+        df_3m, df_5m, df_15m = data
 
-        if df_15m is None:
-            print(f"    AVISO: Dados 15m indisponiveis, usando apenas 3m e 5m")
-            df_15m = pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume"])
-
-        print(
-            f"    Candles: 3m={len(df_3m)} | 5m={len(df_5m)} | 15m={len(df_15m)}"
-        )
-        print(
-            f"    Periodo: {df_5m['time'].iloc[0]} a {df_5m['time'].iloc[-1]}"
-        )
-
-        # Rodar backtest
-        print(f"    Executando backtest...")
-        sym_trades = run_backtest_symbol(symbol, df_3m, df_5m, df_15m, config)
+        print(f"    Executando backtest ({exit_mode})...")
+        sym_trades = run_backtest_symbol(symbol, df_3m, df_5m, df_15m, config, exit_mode=exit_mode)
 
         all_trades.extend(sym_trades)
         by_symbol[symbol] = sym_trades
@@ -1040,24 +1686,11 @@ def main():
             "run_date": datetime.utcnow().isoformat(),
             "days": days,
             "symbols": symbols,
+            "exit_mode": exit_mode,
             "fee_round_trip_pct": ROUND_TRIP_FEE_PCT,
             "extra_slippage_pct": EXTRA_SLIPPAGE_PCT,
             "initial_capital": INITIAL_CAPITAL,
-            "config": {
-                "max_risk_pct": config.max_risk_pct,
-                "cooldown_candles": config.cooldown_candles,
-                "min_confluence_score": config.min_confluence_score,
-                "slippage_pct": config.slippage_pct,
-                "max_sl_volume_breakout": config.max_sl_volume_breakout,
-                "max_sl_rsi_bb": config.max_sl_rsi_bb,
-                "max_sl_ema_crossover": config.max_sl_ema_crossover,
-                "min_rr_volume_breakout": config.min_rr_volume_breakout,
-                "min_rr_rsi_bb": config.min_rr_rsi_bb,
-                "min_rr_ema_crossover": config.min_rr_ema_crossover,
-                "vb_volume_multiplier": config.vb_volume_multiplier,
-                "rsi_oversold": config.rsi_oversold,
-                "rsi_overbought": config.rsi_overbought,
-            },
+            "config": _build_config_dict(config),
         },
         "global_metrics": calc_metrics(all_trades),
         "by_symbol": {
@@ -1075,7 +1708,6 @@ def main():
         "trades": all_trades,
     }
 
-    # Por motor
     engines = {}
     for t in all_trades:
         eng = t["primary_engine"]
@@ -1084,7 +1716,6 @@ def main():
         eng: calc_metrics(trades) for eng, trades in engines.items()
     }
 
-    # Salvar JSON
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, default=str, ensure_ascii=False)
     print(f"\n  Resultados exportados para: {args.output}")

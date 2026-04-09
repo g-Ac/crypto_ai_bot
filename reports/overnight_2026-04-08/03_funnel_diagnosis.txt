@@ -1,0 +1,63 @@
+DIAGNOSTICO DO FUNIL — 2026-04-08 01:05:13
+============================================================
+
+BTCUSDT:
+  Preco: $71381.19 | RSI: 48.8
+  Volume Breakout     : BLOQUEADO — Volume ratio 1.81x < 2.5x
+  RSI/BB Reversal     : BLOQUEADO — RSI 46.5 nao em extremo (sobrevenda <= 32.0, sobrecompra >= 68.0)
+  EMA Crossover       : BLOQUEADO — Nenhum cruzamento EMA9/EMA21 nos ultimos 15 candles
+  Confluencia: 0/3 (nenhum sinal)
+
+ETHUSDT:
+  Preco: $2239.6 | RSI: 57.0
+  Volume Breakout     : BLOQUEADO — RR insuficiente: 0.59 < 1.8
+  RSI/BB Reversal     : BLOQUEADO — RSI 55.2 nao em extremo (sobrevenda <= 32.0, sobrecompra >= 68.0)
+  EMA Crossover       : BLOQUEADO — RR insuficiente: 0.95 < 2.0
+  Confluencia: 0/3 (nenhum sinal)
+
+SOLUSDT:
+  Preco: $84.69 | RSI: 54.0
+  Volume Breakout     : BLOQUEADO — Volume ratio 0.60x < 2.5x
+  RSI/BB Reversal     : BLOQUEADO — RSI 51.9 nao em extremo (sobrevenda <= 32.0, sobrecompra >= 68.0)
+  EMA Crossover       : BLOQUEADO — Nenhum cruzamento EMA9/EMA21 nos ultimos 15 candles
+  Confluencia: 0/3 (nenhum sinal)
+
+BNBUSDT:
+  Preco: $613.97 | RSI: 41.2
+  Volume Breakout     : BLOQUEADO — Volume ratio 1.09x < 2.5x
+  RSI/BB Reversal     : BLOQUEADO — RSI 39.6 nao em extremo (sobrevenda <= 32.0, sobrecompra >= 68.0)
+  EMA Crossover       : BLOQUEADO — Nenhum cruzamento EMA9/EMA21 nos ultimos 15 candles
+  Confluencia: 0/3 (nenhum sinal)
+
+XRPUSDT:
+  Preco: $1.3712 | RSI: 51.2
+  Volume Breakout     : BLOQUEADO — Volume ratio 1.02x < 2.5x
+  RSI/BB Reversal     : BLOQUEADO — RSI 44.8 nao em extremo (sobrevenda <= 32.0, sobrecompra >= 68.0)
+  EMA Crossover       : BLOQUEADO — Nenhum cruzamento EMA9/EMA21 nos ultimos 15 candles
+  Confluencia: 0/3 (nenhum sinal)
+
+DOGEUSDT:
+  Preco: $0.095 | RSI: 62.3
+  Volume Breakout     : BLOQUEADO — Volume ratio 1.65x < 2.5x
+  RSI/BB Reversal     : BLOQUEADO — RSI 54.1 nao em extremo (sobrevenda <= 32.0, sobrecompra >= 68.0)
+  EMA Crossover       : BLOQUEADO — Nao esta em zona de retest (EMA9-EMA21)
+  Confluencia: 0/3 (nenhum sinal)
+
+============================================================
+RESUMO:
+============================================================
+  Simbolos analisados: 6
+
+  Motor                   Sinais  Bloqueados  Taxa Bloq
+  -------------------------------------------------------
+  Volume Breakout             0           6     100%
+  RSI/BB Reversal             0           6     100%
+  EMA Crossover               0           6     100%
+
+  Principal gargalo: Volume Breakout (100% bloqueado)
+  Motivos mais frequentes:
+    - Volume ratio 1.81x < 2.5x (1x)
+    - RR insuficiente: 0.59 < 1.8 (1x)
+    - Volume ratio 0.60x < 2.5x (1x)
+
+============================================================
