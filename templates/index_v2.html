@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CryptoBot V2 — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; }
+    .card { background: #1e293b; border-radius: 0.75rem; border: 1px solid #334155; }
+    .badge { padding: 2px 8px; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+    .badge-trending { background: #166534; color: #86efac; }
+    .badge-volatile { background: #854d0e; color: #fde047; }
+    .badge-choppy  { background: #991b1b; color: #fca5a5; }
+    .badge-ranging { background: #1e3a5f; color: #93c5fd; }
+    .badge-cascade { background: #92400e; color: #fbbf24; }
+    .badge-divergence { background: #581c87; color: #d8b4fe; }
+    .badge-continuation { background: #1e3a5f; color: #93c5fd; }
+    .badge-none { background: #334155; color: #94a3b8; }
+    .badge-unknown { background: #334155; color: #94a3b8; }
+    .badge-long { background: #166534; color: #86efac; }
+    .badge-short { background: #991b1b; color: #fca5a5; }
+    .badge-neutral { background: #334155; color: #94a3b8; }
+    .badge-tp1, .badge-tp2, .badge-tp3 { background: #166534; color: #86efac; }
+    .badge-sl { background: #991b1b; color: #fca5a5; }
+    .badge-timeout { background: #854d0e; color: #fde047; }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- ============================================================ -->
+<!-- SECTION 1: HEADER + STATUS BAR                               -->
+<!-- ============================================================ -->
+<header id="header" class="sticky top-0 z-50 bg-slate-900/95 backdrop-blur border-b border-slate-700 px-4 py-2">
+  <div class="max-w-[1920px] mx-auto flex items-center justify-between flex-wrap gap-2">
+    <div class="flex items-center gap-3">
+      <h1 class="text-lg font-bold text-white">CryptoBot V2</h1>
+      <span id="hdr-bot-id" class="text-xs text-slate-400"></span>
+      <span id="hdr-git-sha" class="text-xs text-slate-500 font-mono"></span>
+    </div>
+    <div class="flex items-center gap-4 text-xs">
+      <span id="hdr-status" class="badge">--</span>
+      <span id="hdr-regime" class="badge badge-none">--</span>
+      <span id="hdr-uptime" class="text-slate-400"></span>
+      <span id="hdr-utc" class="text-slate-400 font-mono"></span>
+      <span id="hdr-local" class="text-slate-400 font-mono"></span>
+      <span id="refresh-indicator" class="text-slate-500">
+        <svg class="w-3 h-3 inline spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" stroke-linecap="round" class="opacity-75"/></svg>
+      </span>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-[1920px] mx-auto px-4 py-4 space-y-4">
+
+<!-- ============================================================ -->
+<!-- SECTION 2: KPI CARDS                                         -->
+<!-- ============================================================ -->
+<section id="kpi-section">
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div class="card p-4 text-center">
+      <div class="text-xs text-slate-400 mb-1">Capital Total</div>
+      <div id="kpi-capital" class="text-xl font-bold text-white">--</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-xs text-slate-400 mb-1">P&L Hoje</div>
+      <div id="kpi-pnl-today" class="text-xl font-bold">--</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-xs text-slate-400 mb-1">P&L 7d</div>
+      <div id="kpi-pnl-7d" class="text-xl font-bold">--</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-xs text-slate-400 mb-1">Win Rate 7d</div>
+      <div id="kpi-winrate" class="text-xl font-bold">--</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-xs text-slate-400 mb-1">Trades Hoje</div>
+      <div id="kpi-trades-today" class="text-xl font-bold text-white">--</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-xs text-slate-400 mb-1">Sinais Hoje</div>
+      <div id="kpi-signals-today" class="text-xl font-bold text-white">--</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: MICROSTRUCTURE (REAL-TIME)                        -->
+<!-- ============================================================ -->
+<section>
+  <h2 class="text-sm font-semibold text-slate-300 mb-2">Microestrutura em Tempo Real</h2>
+  <div id="micro-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+    <!-- Cards generated by JS -->
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: SIGNAL SUBTYPE TRACKER                            -->
+<!-- ============================================================ -->
+<section>
+  <h2 class="text-sm font-semibold text-slate-300 mb-2">Signal Subtype Tracker (7d)</h2>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <div class="card p-4">
+      <h3 class="text-xs text-slate-400 mb-2">Distribuicao</h3>
+      <canvas id="chart-subtype-pie" height="200"></canvas>
+    </div>
+    <div class="card p-4">
+      <h3 class="text-xs text-slate-400 mb-2">Timeline Diaria</h3>
+      <canvas id="chart-subtype-timeline" height="200"></canvas>
+    </div>
+    <div class="card p-4 overflow-auto max-h-[340px]">
+      <h3 class="text-xs text-slate-400 mb-2">Sinais Recentes (subtype != none)</h3>
+      <table class="w-full text-xs">
+        <thead><tr class="text-slate-400 border-b border-slate-700">
+          <th class="py-1 text-left">Hora</th>
+          <th class="text-left">Simbolo</th>
+          <th class="text-left">Subtype</th>
+          <th class="text-left">Dir</th>
+          <th class="text-right">Score</th>
+          <th class="text-left">Outcome</th>
+        </tr></thead>
+        <tbody id="subtype-recent-body"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: TRADING                                           -->
+<!-- ============================================================ -->
+<section>
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="text-sm font-semibold text-slate-300">Trades (7d)</h2>
+    <div class="flex items-center gap-2">
+      <select id="trade-filter-subtype" class="bg-slate-800 text-xs text-slate-300 border border-slate-600 rounded px-2 py-1">
+        <option value="">Todos subtypes</option>
+        <option value="cascade">cascade</option>
+        <option value="divergence">divergence</option>
+        <option value="continuation">continuation</option>
+        <option value="none">none</option>
+      </select>
+    </div>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <div class="card p-4 lg:col-span-2">
+      <h3 class="text-xs text-slate-400 mb-2">Equity Curve</h3>
+      <canvas id="chart-equity" height="180"></canvas>
+    </div>
+    <div class="card p-4 overflow-auto max-h-[400px]">
+      <h3 class="text-xs text-slate-400 mb-2">Historico</h3>
+      <table class="w-full text-xs">
+        <thead><tr class="text-slate-400 border-b border-slate-700">
+          <th class="py-1 text-left">Hora</th>
+          <th class="text-left">Par</th>
+          <th class="text-left">Dir</th>
+          <th class="text-right">PnL%</th>
+          <th class="text-right">PnL$</th>
+          <th class="text-left">Exit</th>
+          <th class="text-left">Subtype</th>
+        </tr></thead>
+        <tbody id="trades-body"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: SYSTEM                                            -->
+<!-- ============================================================ -->
+<section>
+  <h2 class="text-sm font-semibold text-slate-300 mb-2">Sistema</h2>
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="card p-4">
+      <h3 class="text-xs text-slate-400 mb-2">Recursos</h3>
+      <div id="sys-resources" class="space-y-2 text-xs"></div>
+    </div>
+    <div class="card p-4">
+      <h3 class="text-xs text-slate-400 mb-2">Circuit Breakers</h3>
+      <div id="sys-circuit-breakers" class="space-y-1 text-xs"></div>
+    </div>
+    <div class="card p-4">
+      <h3 class="text-xs text-slate-400 mb-2">Versao</h3>
+      <div id="sys-version" class="space-y-1 text-xs text-slate-300"></div>
+    </div>
+    <div class="card p-4">
+      <h3 class="text-xs text-slate-400 mb-2">Processos</h3>
+      <div id="sys-processes" class="space-y-1 text-xs"></div>
+    </div>
+  </div>
+  <div class="card p-4 mt-3">
+    <div class="flex items-center gap-2 mb-2">
+      <h3 class="text-xs text-slate-400">Logs</h3>
+      <div class="flex gap-1">
+        <button onclick="switchLogTab('scalping')" class="log-tab text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300" data-tab="scalping">Scalping</button>
+        <button onclick="switchLogTab('main')" class="log-tab text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-500" data-tab="main">Main</button>
+        <button onclick="switchLogTab('pump')" class="log-tab text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-500" data-tab="pump">Pump</button>
+      </div>
+    </div>
+    <pre id="log-viewer" class="bg-slate-950 rounded p-2 text-xs text-slate-400 font-mono overflow-auto max-h-[260px] whitespace-pre-wrap"></pre>
+  </div>
+</section>
+
+</main>
+
+<footer class="text-center text-xs text-slate-600 py-3">
+  Auto-refresh: <span id="footer-countdown">30</span>s &middot; Dashboard V2
+</footer>
+
+<!-- ============================================================ -->
+<!-- JAVASCRIPT                                                   -->
+<!-- ============================================================ -->
+<script>
+// ── State ──────────────────────────────────────────────────────
+let chartPie = null, chartTimeline = null, chartEquity = null;
+let allTrades = [];
+let currentLogTab = 'scalping';
+let countdown = 30;
+
+const SUBTYPE_COLORS = {
+  cascade: '#f59e0b',
+  divergence: '#a855f7',
+  continuation: '#3b82f6',
+  none: '#64748b',
+  unknown: '#475569',
+};
+const REGIME_BADGE = {
+  TRENDING: 'badge-trending',
+  VOLATILE: 'badge-volatile',
+  CHOPPY: 'badge-choppy',
+  RANGING: 'badge-ranging',
+};
+const SYMBOLS = ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT'];
+
+// ── Helpers ────────────────────────────────────────────────────
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+const fmt = (v, d=2) => v != null ? Number(v).toFixed(d) : '--';
+const fmtUsd = (v) => v != null ? '$' + Number(v).toFixed(2) : '--';
+const pnlClass = (v) => v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-slate-400';
+const pnlSign = (v) => v > 0 ? '+' : '';
+
+function shortTime(ts) {
+  if (!ts) return '--';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  } catch { return ts.slice(11,16) || '--'; }
+}
+
+function subtypeBadge(st) {
+  const s = (st || 'none').toLowerCase();
+  return `<span class="badge badge-${s}">${s}</span>`;
+}
+
+function dirBadge(dir) {
+  const d = (dir || '').toUpperCase();
+  if (d === 'LONG' || d === 'BUY') return '<span class="badge badge-long">LONG</span>';
+  if (d === 'SHORT' || d === 'SELL') return '<span class="badge badge-short">SHORT</span>';
+  return '<span class="badge badge-neutral">--</span>';
+}
+
+function exitBadge(reason) {
+  const r = (reason || '').toLowerCase();
+  if (r.includes('tp1')) return '<span class="badge badge-tp1">TP1</span>';
+  if (r.includes('tp2')) return '<span class="badge badge-tp2">TP2</span>';
+  if (r.includes('tp3')) return '<span class="badge badge-tp3">TP3</span>';
+  if (r.includes('sl') || r.includes('stop')) return '<span class="badge badge-sl">SL</span>';
+  if (r.includes('timeout') || r.includes('expire')) return '<span class="badge badge-timeout">TMO</span>';
+  return `<span class="badge badge-none">${r.slice(0,8)}</span>`;
+}
+
+function regimeBadge(regime) {
+  const r = (regime || 'UNKNOWN').toUpperCase();
+  const cls = REGIME_BADGE[r] || 'badge-none';
+  return `<span class="badge ${cls}">${r}</span>`;
+}
+
+function fundingArrow(current, prev) {
+  if (current == null || prev == null) return '';
+  if (current > prev) return '<span class="text-green-400">&#9650;</span>';
+  if (current < prev) return '<span class="text-red-400">&#9660;</span>';
+  return '<span class="text-slate-500">&#9654;</span>';
+}
+
+function progressBar(value, maxAbs=5) {
+  const clamped = Math.max(-maxAbs, Math.min(maxAbs, value || 0));
+  const pct = Math.abs(clamped) / maxAbs * 100;
+  const color = clamped >= 0 ? 'bg-green-500' : 'bg-red-500';
+  return `<div class="w-full bg-slate-700 rounded h-1.5"><div class="${color} h-1.5 rounded" style="width:${pct}%"></div></div>`;
+}
+
+// ── API Fetch ──────────────────────────────────────────────────
+async function fetchJSON(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+// ── Section 1: Header ──────────────────────────────────────────
+async function refreshHeader() {
+  const [status, version, micro] = await Promise.all([
+    fetchJSON('/api/status'),
+    fetchJSON('/api/version'),
+    fetchJSON('/api/microstructure/latest'),
+  ]);
+
+  if (version) {
+    $('#hdr-bot-id').textContent = version.bot_id || '';
+    $('#hdr-git-sha').textContent = version.git_sha ? version.git_sha.slice(0,7) : '';
+  }
+
+  if (status) {
+    const paused = status.is_paused;
+    const el = $('#hdr-status');
+    if (paused) {
+      el.textContent = 'PAUSED'; el.className = 'badge bg-red-900 text-red-300';
+    } else {
+      el.textContent = 'RUNNING'; el.className = 'badge bg-green-900 text-green-300';
+    }
+
+    // Uptime
+    if (status.started_at) {
+      const diff = Math.floor((Date.now() - new Date(status.started_at).getTime()) / 1000);
+      const h = Math.floor(diff / 3600); const m = Math.floor((diff % 3600) / 60);
+      $('#hdr-uptime').textContent = `Up ${h}h${m}m`;
+    }
+  }
+
+  // Regime from microstructure (use BTCUSDT as primary)
+  if (micro && micro.BTCUSDT && micro.BTCUSDT.microstructure) {
+    const session = micro.BTCUSDT.microstructure.session || '';
+    const regime = detectRegime(micro.BTCUSDT.microstructure);
+    const el = $('#hdr-regime');
+    el.innerHTML = regimeBadge(regime) + (session ? ` <span class="text-xs text-slate-500">${session}</span>` : '');
+  }
+
+  // Clock
+  const now = new Date();
+  $('#hdr-utc').textContent = 'UTC ' + now.toISOString().slice(11,19);
+  $('#hdr-local').textContent = 'Local ' + now.toLocaleTimeString('en-GB');
+
+  return { status, micro };
+}
+
+function detectRegime(m) {
+  if (!m) return 'UNKNOWN';
+  const oiChange = Math.abs(m.oi_change_1h_pct || 0);
+  const basis = Math.abs(m.basis_spread_pct || 0);
+  if (oiChange > 3 && basis > 0.15) return 'VOLATILE';
+  if (oiChange > 1.5) return 'TRENDING';
+  if (basis < 0.03 && oiChange < 0.5) return 'RANGING';
+  return 'CHOPPY';
+}
+
+// ── Section 2: KPIs ────────────────────────────────────────────
+function refreshKPIs(status) {
+  if (!status) return;
+
+  // Capital total
+  const cap = status.capital || {};
+  let totalCap = 0;
+  for (const sys of Object.values(cap)) {
+    totalCap += (sys.value || 0);
+  }
+  $('#kpi-capital').textContent = fmtUsd(totalCap);
+
+  // P&L today
+  const statsToday = status.stats_today || {};
+  let pnlToday = 0;
+  for (const sys of Object.values(statsToday)) {
+    pnlToday += (sys.pnl_usd || 0);
+  }
+  const elToday = $('#kpi-pnl-today');
+  elToday.textContent = pnlSign(pnlToday) + fmtUsd(pnlToday);
+  elToday.className = 'text-xl font-bold ' + pnlClass(pnlToday);
+
+  // Trades today
+  let tradesToday = 0;
+  for (const sys of Object.values(statsToday)) {
+    tradesToday += (sys.count || 0);
+  }
+  $('#kpi-trades-today').textContent = tradesToday;
+
+  // Win rate + P&L 7d from leaderboard
+  const lb = status.leaderboard || [];
+  let wins7 = 0, total7 = 0, pnl7 = 0;
+  for (const row of lb) {
+    total7 += (row.total_trades || 0);
+    wins7 += Math.round((row.win_rate || 0) / 100 * (row.total_trades || 0));
+  }
+
+  const wr7 = total7 > 0 ? (wins7 / total7 * 100) : 0;
+  const elWr = $('#kpi-winrate');
+  elWr.textContent = fmt(wr7, 1) + '%';
+  elWr.className = 'text-xl font-bold ' + (wr7 >= 50 ? 'text-green-400' : wr7 > 0 ? 'text-red-400' : 'text-slate-400');
+
+  // P&L 7d placeholder (from /api/trades sum)
+  $('#kpi-pnl-7d').textContent = '--';
+  $('#kpi-signals-today').textContent = '--';
+}
+
+// ── Section 3: Microstructure ──────────────────────────────────
+function refreshMicrostructure(micro) {
+  if (!micro) return;
+  const grid = $('#micro-grid');
+  grid.innerHTML = '';
+
+  for (const sym of SYMBOLS) {
+    const data = micro[sym] || {};
+    const m = data.microstructure;
+    const dec = data.last_decision;
+
+    const regime = m ? detectRegime(m) : 'UNKNOWN';
+    const funding = m ? m.funding_rate : null;
+    const fundingPrev = m ? m.funding_rate_prev1 : null;
+    const oi1h = m ? m.oi_change_1h_pct : null;
+    const oi4h = m ? m.oi_change_4h_pct : null;
+    const basis = m ? m.basis_spread_pct : null;
+    const lsTop = m ? m.ls_ratio_top : null;
+    const lsGlobal = m ? m.ls_ratio_global : null;
+    const session = m ? (m.session || '--') : '--';
+    const decSubtype = dec ? dec.signal_subtype : null;
+    const decDir = dec ? dec.confluence_direction : null;
+    const decScore = dec ? dec.confluence_score : null;
+
+    const longPct = lsTop ? (lsTop / (1 + lsTop) * 100) : 50;
+    const shortPct = 100 - longPct;
+
+    const card = document.createElement('div');
+    card.className = 'card p-3';
+    card.innerHTML = `
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-bold text-sm text-white">${sym.replace('USDT','')}</span>
+        <div class="flex items-center gap-2">
+          ${regimeBadge(regime)}
+          <span class="text-xs text-slate-500">${session}</span>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <div class="text-slate-400">Funding</div>
+        <div class="text-right">${funding != null ? (funding * 100).toFixed(4) + '%' : '--'} ${fundingArrow(funding, fundingPrev)}</div>
+        <div class="text-slate-400">OI 1h</div>
+        <div class="text-right ${oi1h > 0 ? 'text-green-400' : oi1h < 0 ? 'text-red-400' : 'text-slate-400'}">${fmt(oi1h,2)}%</div>
+        <div class="col-span-2">${progressBar(oi1h)}</div>
+        <div class="text-slate-400">OI 4h</div>
+        <div class="text-right ${oi4h > 0 ? 'text-green-400' : oi4h < 0 ? 'text-red-400' : 'text-slate-400'}">${fmt(oi4h,2)}%</div>
+        <div class="text-slate-400">Basis</div>
+        <div class="text-right">${fmt(basis,4)}%</div>
+        <div class="text-slate-400">L/S Ratio</div>
+        <div class="text-right">${fmt(lsTop,3)}</div>
+        <div class="col-span-2">
+          <div class="flex h-2 rounded overflow-hidden bg-slate-700">
+            <div class="bg-green-500 h-full" style="width:${longPct.toFixed(1)}%"></div>
+            <div class="bg-red-500 h-full" style="width:${shortPct.toFixed(1)}%"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-slate-500 mt-0.5">
+            <span>L ${longPct.toFixed(0)}%</span><span>S ${shortPct.toFixed(0)}%</span>
+          </div>
+        </div>
+      </div>
+      <div class="mt-2 pt-2 border-t border-slate-700 flex items-center gap-2 text-xs">
+        <span class="text-slate-400">Sinal:</span>
+        ${decSubtype && decSubtype !== 'none' && decSubtype !== 'unknown'
+          ? `${subtypeBadge(decSubtype)} ${dirBadge(decDir)} <span class="text-slate-400">score ${decScore != null ? decScore : '--'}</span>`
+          : '<span class="text-slate-500">Sem sinal</span>'}
+      </div>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+// ── Section 4: Signal Subtype Tracker ──────────────────────────
+async function refreshSubtypes() {
+  const data = await fetchJSON('/api/signal-subtypes?days=7');
+  if (!data) return;
+
+  // Pie chart
+  const dist = data.distribution || {};
+  const pieLabels = Object.keys(dist);
+  const pieValues = Object.values(dist);
+  const pieColors = pieLabels.map(l => SUBTYPE_COLORS[l] || '#475569');
+
+  if (chartPie) chartPie.destroy();
+  chartPie = new Chart($('#chart-subtype-pie'), {
+    type: 'doughnut',
+    data: { labels: pieLabels, datasets: [{ data: pieValues, backgroundColor: pieColors, borderWidth: 0 }] },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 10 } } },
+      },
+    },
+  });
+
+  // Timeline chart
+  const daily = data.daily || [];
+  const tlLabels = daily.map(d => d.date ? d.date.slice(5) : '');
+  const subtypes = ['cascade','divergence','continuation','none'];
+
+  if (chartTimeline) chartTimeline.destroy();
+  chartTimeline = new Chart($('#chart-subtype-timeline'), {
+    type: 'bar',
+    data: {
+      labels: tlLabels,
+      datasets: subtypes.map(st => ({
+        label: st,
+        data: daily.map(d => d[st] || 0),
+        backgroundColor: SUBTYPE_COLORS[st],
+        borderRadius: 2,
+      })),
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { stacked: true, ticks: { color: '#64748b', font: { size: 10 } }, grid: { display: false } },
+        y: { stacked: true, ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } },
+      },
+      plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 10 } } } },
+    },
+  });
+
+  // Recent signals table
+  const tbody = $('#subtype-recent-body');
+  tbody.innerHTML = '';
+  for (const sig of (data.recent_signals || [])) {
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-slate-800';
+    tr.innerHTML = `
+      <td class="py-1 text-slate-400">${shortTime(sig.timestamp)}</td>
+      <td>${(sig.symbol || '').replace('USDT','')}</td>
+      <td>${subtypeBadge(sig.signal_subtype)}</td>
+      <td>${dirBadge(sig.confluence_direction)}</td>
+      <td class="text-right">${sig.confluence_score != null ? sig.confluence_score : '--'}</td>
+      <td>${sig.outcome || '--'}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // Update KPI signals count (today's non-none/unknown signals)
+  const todayStr = new Date().toISOString().slice(0,10);
+  const todayDaily = daily.find(d => d.date === todayStr);
+  if (todayDaily) {
+    const signalsToday = (todayDaily.cascade || 0) + (todayDaily.divergence || 0) + (todayDaily.continuation || 0);
+    $('#kpi-signals-today').textContent = signalsToday;
+  }
+}
+
+// ── Section 5: Trading ─────────────────────────────────────────
+async function refreshTrades() {
+  const data = await fetchJSON('/api/trades?system=scalping&days=7');
+  if (!data) return;
+  allTrades = (data.trades || []).sort((a, b) => {
+    const ta = a.exit_time || a.timestamp || '';
+    const tb = b.exit_time || b.timestamp || '';
+    return ta > tb ? 1 : -1;
+  });
+
+  renderTrades();
+
+  // P&L 7d from trades
+  let pnl7 = 0;
+  for (const t of allTrades) pnl7 += (t.pnl_usd || 0);
+  const el7 = $('#kpi-pnl-7d');
+  el7.textContent = pnlSign(pnl7) + fmtUsd(pnl7);
+  el7.className = 'text-xl font-bold ' + pnlClass(pnl7);
+}
+
+function renderTrades() {
+  const filter = $('#trade-filter-subtype').value;
+  const filtered = filter
+    ? allTrades.filter(t => (t.signal_subtype || 'none') === filter)
+    : allTrades;
+
+  // Equity curve
+  let cumPnl = 0;
+  const eqData = filtered.map(t => {
+    cumPnl += (t.pnl_usd || 0);
+    return cumPnl;
+  });
+  const eqLabels = filtered.map((t, i) => i + 1);
+
+  if (chartEquity) chartEquity.destroy();
+  chartEquity = new Chart($('#chart-equity'), {
+    type: 'line',
+    data: {
+      labels: eqLabels,
+      datasets: [{
+        label: 'Equity ($)',
+        data: eqData,
+        borderColor: cumPnl >= 0 ? '#22c55e' : '#ef4444',
+        backgroundColor: (cumPnl >= 0 ? 'rgba(34,197,94,' : 'rgba(239,68,68,') + '0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 1,
+        borderWidth: 1.5,
+      }],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { display: false },
+        y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } },
+      },
+      plugins: { legend: { display: false } },
+    },
+  });
+
+  // Trades table
+  const tbody = $('#trades-body');
+  tbody.innerHTML = '';
+  for (const t of filtered.slice().reverse().slice(0, 50)) {
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-slate-800';
+    tr.innerHTML = `
+      <td class="py-1 text-slate-400">${shortTime(t.exit_time || t.timestamp)}</td>
+      <td>${(t.symbol || '').replace('USDT','')}</td>
+      <td>${dirBadge(t.type)}</td>
+      <td class="text-right ${pnlClass(t.pnl_pct)}">${pnlSign(t.pnl_pct)}${fmt(t.pnl_pct,2)}%</td>
+      <td class="text-right ${pnlClass(t.pnl_usd)}">${pnlSign(t.pnl_usd)}${fmtUsd(t.pnl_usd)}</td>
+      <td>${exitBadge(t.exit_reason)}</td>
+      <td>${subtypeBadge(t.signal_subtype)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+$('#trade-filter-subtype').addEventListener('change', renderTrades);
+
+// ── Section 6: System ──────────────────────────────────────────
+async function refreshSystem(status) {
+  if (!status) return;
+
+  // Resources
+  const res = $('#sys-resources');
+  const hw = status.hardware || {};
+  res.innerHTML = `
+    <div class="flex justify-between"><span class="text-slate-400">CPU</span><span>${fmt(hw.cpu_pct,0)}%</span></div>
+    <div class="w-full bg-slate-700 rounded h-1.5"><div class="bg-blue-500 h-1.5 rounded" style="width:${Math.min(hw.cpu_pct||0,100)}%"></div></div>
+    <div class="flex justify-between"><span class="text-slate-400">RAM</span><span>${fmt(hw.ram_pct,0)}%</span></div>
+    <div class="w-full bg-slate-700 rounded h-1.5"><div class="bg-purple-500 h-1.5 rounded" style="width:${Math.min(hw.ram_pct||0,100)}%"></div></div>
+    <div class="flex justify-between"><span class="text-slate-400">Disco</span><span>${fmt(hw.disk_pct,0)}%</span></div>
+    <div class="w-full bg-slate-700 rounded h-1.5"><div class="bg-amber-500 h-1.5 rounded" style="width:${Math.min(hw.disk_pct||0,100)}%"></div></div>
+  `;
+
+  // Circuit breakers
+  const cb = $('#sys-circuit-breakers');
+  const cap = status.capital || {};
+  cb.innerHTML = '';
+  for (const [sys, data] of Object.entries(cap)) {
+    const active = data.cb;
+    cb.innerHTML += `<div class="flex justify-between">
+      <span class="text-slate-400">${sys}</span>
+      <span class="${active ? 'text-red-400' : 'text-green-400'}">${active ? 'ACTIVE' : 'OK'}</span>
+    </div>`;
+  }
+
+  // Version
+  const ver = await fetchJSON('/api/version');
+  const vDiv = $('#sys-version');
+  if (ver) {
+    vDiv.innerHTML = `
+      <div><span class="text-slate-400">Bot ID:</span> ${ver.bot_id || '--'}</div>
+      <div><span class="text-slate-400">Version:</span> ${ver.version_tag || '--'}</div>
+      <div><span class="text-slate-400">Branch:</span> ${ver.branch || '--'}</div>
+      <div><span class="text-slate-400">Commit:</span> <span class="font-mono">${(ver.git_sha || '').slice(0,7)}</span></div>
+    `;
+  }
+
+  // Processes
+  const procs = $('#sys-processes');
+  const processes = status.processes || {};
+  procs.innerHTML = '';
+  for (const [name, info] of Object.entries(processes)) {
+    const running = info && (info.running || info.pid);
+    procs.innerHTML += `<div class="flex justify-between">
+      <span class="text-slate-400">${name}</span>
+      <span class="${running ? 'text-green-400' : 'text-red-400'}">${running ? 'UP' : 'DOWN'}</span>
+    </div>`;
+  }
+  if (Object.keys(processes).length === 0) {
+    procs.innerHTML = '<span class="text-slate-500">No process info</span>';
+  }
+}
+
+// ── Logs ───────────────────────────────────────────────────────
+async function refreshLogs() {
+  const data = await fetchJSON(`/api/logs?source=${currentLogTab}&lines=80`);
+  if (data && data.logs) {
+    const viewer = $('#log-viewer');
+    viewer.textContent = data.logs.join('\n');
+    viewer.scrollTop = viewer.scrollHeight;
+  }
+}
+
+function switchLogTab(tab) {
+  currentLogTab = tab;
+  $$('.log-tab').forEach(btn => {
+    if (btn.dataset.tab === tab) {
+      btn.className = 'log-tab text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300';
+    } else {
+      btn.className = 'log-tab text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-500';
+    }
+  });
+  refreshLogs();
+}
+
+// ── Main Refresh Loop ──────────────────────────────────────────
+async function refreshAll() {
+  $('#refresh-indicator').style.display = 'inline';
+  try {
+    const { status, micro } = await refreshHeader();
+    refreshKPIs(status);
+    refreshMicrostructure(micro);
+    await Promise.all([
+      refreshSubtypes(),
+      refreshTrades(),
+      refreshSystem(status),
+      refreshLogs(),
+    ]);
+  } catch (e) {
+    console.error('Refresh error:', e);
+  }
+  $('#refresh-indicator').style.display = 'none';
+  countdown = 30;
+}
+
+// Countdown timer
+setInterval(() => {
+  countdown--;
+  const el = $('#footer-countdown');
+  if (el) el.textContent = Math.max(countdown, 0);
+  if (countdown <= 0) {
+    refreshAll();
+  }
+}, 1000);
+
+// Initial load
+refreshAll();
+</script>
+</body>
+</html>

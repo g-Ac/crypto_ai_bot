@@ -21,6 +21,7 @@ Rotas:
 import os
 import json
 import shutil
+import sqlite3
 import time
 import functools
 import base64
@@ -49,6 +50,7 @@ from runtime_config import (
     BOT_ID,
     BOT_LABEL,
     DASHBOARD_PORT,
+    DB_FILE,
     LOG_DIR,
     PAPER_STATE_FILE,
     AGENT_STATE_FILE,
@@ -1607,6 +1609,92 @@ def api_logs():
 
     log_lines = _get_recent_logs(source=source, lines=lines)
     return jsonify({"logs": log_lines})
+
+
+# ── V2 DASHBOARD ─────────────────────────────────────────────────────────────
+
+_MICRO_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"]
+
+
+def _get_dashboard_db():
+    conn = sqlite3.connect(str(DB_FILE), timeout=10, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@app.route("/api/microstructure/latest")
+def api_microstructure_latest():
+    conn = _get_dashboard_db()
+    result = {}
+    try:
+        for sym in _MICRO_SYMBOLS:
+            row = conn.execute(
+                "SELECT * FROM market_microstructure WHERE symbol = ? ORDER BY timestamp DESC LIMIT 1",
+                (sym,),
+            ).fetchone()
+            dec = conn.execute(
+                "SELECT signal_subtype, confluence_direction, confluence_score "
+                "FROM scalping_decisions WHERE symbol = ? ORDER BY timestamp DESC LIMIT 1",
+                (sym,),
+            ).fetchone()
+            result[sym] = {
+                "microstructure": dict(row) if row else None,
+                "last_decision": dict(dec) if dec else None,
+            }
+    finally:
+        conn.close()
+    return jsonify(result)
+
+
+@app.route("/api/signal-subtypes")
+def api_signal_subtypes():
+    days = max(1, min(_safe_int(request.args.get("days", "7"), 7), 30))
+    conn = _get_dashboard_db()
+    try:
+        since = (date.today() - timedelta(days=days)).isoformat()
+
+        dist_rows = conn.execute(
+            "SELECT COALESCE(signal_subtype, 'unknown') AS st, COUNT(*) AS cnt "
+            "FROM scalping_decisions WHERE timestamp >= ? GROUP BY st",
+            (since,),
+        ).fetchall()
+        distribution = {r["st"]: r["cnt"] for r in dist_rows}
+
+        daily_rows = conn.execute(
+            "SELECT DATE(timestamp) AS d, COALESCE(signal_subtype, 'unknown') AS st, COUNT(*) AS cnt "
+            "FROM scalping_decisions WHERE timestamp >= ? GROUP BY d, st ORDER BY d",
+            (since,),
+        ).fetchall()
+        daily_map = {}
+        for r in daily_rows:
+            day = r["d"]
+            if day not in daily_map:
+                daily_map[day] = {"date": day, "none": 0, "cascade": 0, "divergence": 0, "continuation": 0, "unknown": 0}
+            st = r["st"] if r["st"] in ("none", "cascade", "divergence", "continuation") else "unknown"
+            daily_map[day][st] += r["cnt"]
+        daily = list(daily_map.values())
+
+        recent = conn.execute(
+            "SELECT timestamp, symbol, signal_subtype, confluence_direction, confluence_score, outcome "
+            "FROM scalping_decisions "
+            "WHERE timestamp >= ? AND COALESCE(signal_subtype, 'none') NOT IN ('none', 'unknown') "
+            "ORDER BY timestamp DESC LIMIT 20",
+            (since,),
+        ).fetchall()
+        recent_signals = [dict(r) for r in recent]
+    finally:
+        conn.close()
+
+    return jsonify({
+        "distribution": distribution,
+        "daily": daily,
+        "recent_signals": recent_signals,
+    })
+
+
+@app.route("/v2")
+def dashboard_v2():
+    return render_template("index_v2.html")
 
 
 # ── MAIN ─────────────────────────────────────────────────────────────────────
