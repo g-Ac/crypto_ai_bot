@@ -21,6 +21,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
+import config as cfg
 from signal_types import Direction, Signal, ConfluenceResult, ScalpingConfig
 from confluence import analyze
 
@@ -326,3 +327,240 @@ class TestSoloGateIntegration:
         )
         assert result.meets_threshold is False
         assert result.position_size_pct == 0
+
+
+# ── V2.1b: Feature flag toggle ─────────────────────────────────────────
+
+class TestV21bFeatureFlag:
+    """V2_1B_ENABLED controla qual fluxo roda."""
+
+    @patch("confluence._liquidation_engine")
+    @patch("confluence._funding_engine")
+    @patch("confluence._basis_engine")
+    def test_flag_off_uses_v2_flow(self, mock_basis, mock_funding, mock_liq, config):
+        """Com V2_1B_ENABLED=False, usa fluxo V2 (multi-motor)."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = False
+        try:
+            mock_funding.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=70, source="funding")
+            mock_liq.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=65, source="liquidation")
+            mock_basis.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=60, source="basis")
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"some": "data"}, regime="TRENDING",
+            )
+            assert result.score == 3  # V2 conta motores
+            assert "V2.1b" not in result.reason
+        finally:
+            cfg.V2_1B_ENABLED = original
+
+    @patch("confluence._funding_filter")
+    @patch("confluence._basis_adjuster")
+    @patch("confluence._liquidation_engine")
+    def test_flag_on_uses_v21b_flow(self, mock_liq, mock_adjuster, mock_filter, config):
+        """Com V2_1B_ENABLED=True, usa fluxo V2.1b (OI primary)."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = True
+        try:
+            mock_liq.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=70, source="liquidation")
+            mock_filter.should_veto.return_value = False
+            mock_adjuster.adjust.return_value = 1.0
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"funding_rate": 0.0001, "basis_pct": 0.01},
+                regime="TRENDING",
+            )
+            assert result.meets_threshold is True
+            assert "V2.1b" in result.reason
+        finally:
+            cfg.V2_1B_ENABLED = original
+
+
+# ── V2.1b: FundingFilter veto ──────────────────────────────────────────
+
+class TestV21bFundingVeto:
+    """FundingFilter veta sinal quando crowd na mesma direcao."""
+
+    @patch("confluence._basis_adjuster")
+    @patch("confluence._funding_filter")
+    @patch("confluence._liquidation_engine")
+    def test_funding_veto_blocks_long(self, mock_liq, mock_filter, mock_adjuster, config):
+        """LONG vetado quando funding alta (crowd long)."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = True
+        try:
+            mock_liq.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=70, source="liquidation")
+            mock_filter.should_veto.return_value = True
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"funding_rate": 0.001}, regime="TRENDING",
+            )
+            assert result.direction == Direction.NEUTRAL
+            assert result.meets_threshold is False
+            assert "funding_crowd" in result.reason
+        finally:
+            cfg.V2_1B_ENABLED = original
+
+    @patch("confluence._basis_adjuster")
+    @patch("confluence._funding_filter")
+    @patch("confluence._liquidation_engine")
+    def test_funding_no_veto_passes(self, mock_liq, mock_filter, mock_adjuster, config):
+        """Sem veto: sinal passa para basis adjuster."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = True
+        try:
+            mock_liq.analyze.return_value = _make_signal(Direction.SHORT, valid=True, score=65, source="liquidation")
+            mock_filter.should_veto.return_value = False
+            mock_adjuster.adjust.return_value = 1.1
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"funding_rate": 0.0001, "basis_pct": -0.05},
+                regime="TRENDING",
+            )
+            assert result.direction == Direction.SHORT
+            assert result.meets_threshold is True
+        finally:
+            cfg.V2_1B_ENABLED = original
+
+
+# ── V2.1b: BasisConfidenceAdjuster ─────────────────────────────────────
+
+class TestV21bBasisAdjustment:
+    """BasisConfidenceAdjuster ajusta strength sem bloquear."""
+
+    @patch("confluence._basis_adjuster")
+    @patch("confluence._funding_filter")
+    @patch("confluence._liquidation_engine")
+    def test_basis_bonus_increases_strength(self, mock_liq, mock_filter, mock_adjuster, config):
+        """Basis confirma direcao -> bonus aplicado."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = True
+        try:
+            sig = _make_signal(Direction.LONG, valid=True, score=60, source="liquidation")
+            mock_liq.analyze.return_value = sig
+            mock_filter.should_veto.return_value = False
+            mock_adjuster.adjust.return_value = 1.1  # bonus
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"funding_rate": 0.0001, "basis_pct": 0.05},
+                regime="TRENDING",
+            )
+            assert result.meets_threshold is True
+            assert result.best_signal.metadata["basis_confidence_mult"] == 1.1
+        finally:
+            cfg.V2_1B_ENABLED = original
+
+    @patch("confluence._basis_adjuster")
+    @patch("confluence._funding_filter")
+    @patch("confluence._liquidation_engine")
+    def test_basis_penalty_can_drop_below_threshold(self, mock_liq, mock_filter, mock_adjuster, config):
+        """Basis contradiz direcao -> penalty pode dropar score abaixo de 40."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = True
+        try:
+            sig = _make_signal(Direction.LONG, valid=True, score=42, source="liquidation")
+            mock_liq.analyze.return_value = sig
+            mock_filter.should_veto.return_value = False
+            mock_adjuster.adjust.return_value = 0.85  # penalty: 42 * 0.85 = 35
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"funding_rate": 0.0001, "basis_pct": -0.05},
+                regime="TRENDING",
+            )
+            assert result.meets_threshold is False
+            assert "score ajustado" in result.reason
+        finally:
+            cfg.V2_1B_ENABLED = original
+
+    @patch("confluence._basis_adjuster")
+    @patch("confluence._funding_filter")
+    @patch("confluence._liquidation_engine")
+    def test_basis_neutral_no_change(self, mock_liq, mock_filter, mock_adjuster, config):
+        """Basis neutro -> multiplicador = 1.0, sem mudanca."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = True
+        try:
+            sig = _make_signal(Direction.LONG, valid=True, score=65, source="liquidation")
+            mock_liq.analyze.return_value = sig
+            mock_filter.should_veto.return_value = False
+            mock_adjuster.adjust.return_value = 1.0
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"funding_rate": 0.0001, "basis_pct": 0.0},
+                regime="TRENDING",
+            )
+            assert result.meets_threshold is True
+            assert result.best_signal.metadata["basis_confidence_mult"] == 1.0
+        finally:
+            cfg.V2_1B_ENABLED = original
+
+
+# ── V2.1b: Regime gate still works ─────────────────────────────────────
+
+class TestV21bRegimeGate:
+    """V2.1b respeita regime gate."""
+
+    def test_choppy_blocked_v21b(self, config):
+        """CHOPPY bloqueia mesmo com V2.1b."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = True
+        try:
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"funding_rate": 0.0001},
+                regime="CHOPPY",
+            )
+            assert result.direction == Direction.NEUTRAL
+            assert result.meets_threshold is False
+        finally:
+            cfg.V2_1B_ENABLED = original
+
+
+# ── V2.1b: Sizing tiers ────────────────────────────────────────────────
+
+class TestV21bSizing:
+    """V2.1b sizing tiers baseados em adjusted_score."""
+
+    @patch("confluence._basis_adjuster")
+    @patch("confluence._funding_filter")
+    @patch("confluence._liquidation_engine")
+    def test_high_score_full_size(self, mock_liq, mock_filter, mock_adjuster, config):
+        """Score >= 70 -> 100% size, 5x leverage."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = True
+        try:
+            mock_liq.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=75, source="liquidation")
+            mock_filter.should_veto.return_value = False
+            mock_adjuster.adjust.return_value = 1.0
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"funding_rate": 0.0001, "basis_pct": 0.0},
+                regime="TRENDING",
+            )
+            assert result.position_size_pct == 100.0
+            assert result.leverage == 5
+            assert "ALTO" in result.reason
+        finally:
+            cfg.V2_1B_ENABLED = original
+
+    @patch("confluence._basis_adjuster")
+    @patch("confluence._funding_filter")
+    @patch("confluence._liquidation_engine")
+    def test_medium_score_half_size(self, mock_liq, mock_filter, mock_adjuster, config):
+        """Score 55-69 -> 50% size, 3x leverage."""
+        original = cfg.V2_1B_ENABLED
+        cfg.V2_1B_ENABLED = True
+        try:
+            mock_liq.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=60, source="liquidation")
+            mock_filter.should_veto.return_value = False
+            mock_adjuster.adjust.return_value = 1.0
+            result = analyze(
+                symbol="BTCUSDT", config=config,
+                market_data={"funding_rate": 0.0001, "basis_pct": 0.0},
+                regime="TRENDING",
+            )
+            assert result.position_size_pct == 50.0
+            assert result.leverage == 3
+            assert "MEDIO" in result.reason
+        finally:
+            cfg.V2_1B_ENABLED = original

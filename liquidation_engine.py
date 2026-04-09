@@ -138,6 +138,7 @@ class LiquidationEngine:
 
         # ── Determinar direcao do sinal ──────────────────────────────────
         direction = Direction.NEUTRAL
+        signal_subtype = "unknown"
         signal_reasons = []
 
         # Cenario 1: Cascata de liquidacoes SHORT -> LONG
@@ -145,6 +146,7 @@ class LiquidationEngine:
         if liq_vol_short > LIQUIDATION_MIN_USD and liq_vol_short > liq_vol_long * 1.5:
             if oi_change_1h > 0:  # OI aumentando = dinheiro novo entrando
                 direction = Direction.LONG
+                signal_subtype = "cascade"
                 signal_reasons.append(
                     f"Cascata SHORT: ${liq_vol_short:.0f} liquidados, OI +{oi_change_1h:.2f}%"
                 )
@@ -154,6 +156,7 @@ class LiquidationEngine:
         if liq_vol_long > LIQUIDATION_MIN_USD and liq_vol_long > liq_vol_short * 1.5:
             if oi_change_1h <= 0:  # OI diminuindo ou estavel
                 direction = Direction.SHORT
+                signal_subtype = "cascade"
                 signal_reasons.append(
                     f"Cascata LONG: ${liq_vol_long:.0f} liquidados, OI {oi_change_1h:+.2f}%"
                 )
@@ -161,6 +164,7 @@ class LiquidationEngine:
         # Cenario 3: OI Divergencia — preco sobe, OI cai (distribuicao)
         if price_change_1h_pct > 0.3 and oi_change_1h < -OI_MIN_CHANGE_PCT:
             direction = Direction.SHORT
+            signal_subtype = "divergence"
             signal_reasons.append(
                 f"OI divergencia bearish: preco +{price_change_1h_pct:.2f}%, OI {oi_change_1h:+.2f}%"
             )
@@ -171,12 +175,14 @@ class LiquidationEngine:
             # Se liquidacoes de longs sao altas, e bearish continuation
             if liq_vol_long > LIQUIDATION_MIN_USD:
                 direction = Direction.SHORT
+                signal_subtype = "continuation"
                 signal_reasons.append(
                     f"Shorts acumulando: preco {price_change_1h_pct:+.2f}%, OI +{oi_change_1h:.2f}%"
                 )
             else:
                 # OI subindo com preco caindo mas sem liquidacoes = possivel reversal
                 direction = Direction.LONG
+                signal_subtype = "divergence"
                 signal_reasons.append(
                     f"Possivel reversal: preco {price_change_1h_pct:+.2f}%, OI +{oi_change_1h:.2f}%, sem liq"
                 )
@@ -205,8 +211,8 @@ class LiquidationEngine:
         total_score = score_liq + score_oi + score_speed + score_regime
 
         logger.info(
-            "LIQ %s: dir=%s score=%d (liq=%d%s oi=%d speed=%d regime=%d) | %s",
-            symbol, direction.value, total_score,
+            "Signal %s %s subtype=%s score=%d (liq=%d%s oi=%d speed=%d regime=%d) | %s",
+            symbol, direction.value, signal_subtype, total_score,
             score_liq, " [PROXY]" if liq_is_proxy else "",
             score_oi, score_speed, score_regime,
             "; ".join(signal_reasons),
@@ -238,6 +244,7 @@ class LiquidationEngine:
             reason="; ".join(signal_reasons),
             metadata={
                 "total_score": total_score,
+                "signal_subtype": signal_subtype,
                 "score_liquidation": score_liq,
                 "score_oi_divergence": score_oi,
                 "score_speed": score_speed,

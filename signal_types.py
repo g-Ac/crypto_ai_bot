@@ -58,6 +58,8 @@ class ConfluenceResult:
     reason: str = ""
     # Melhor sinal para SL/TP (o motor com melhor RR)
     best_signal: Optional[Signal] = None
+    # Subtype do sinal do LiquidationEngine (independente de qual motor venceu)
+    liq_signal_subtype: str = "none"
 
 
 @dataclass

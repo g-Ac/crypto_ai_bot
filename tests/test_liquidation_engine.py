@@ -494,5 +494,77 @@ class TestDataUnavailable(unittest.TestCase):
         self.assertEqual(signal.metadata["score_liquidation"], 0)
 
 
+class TestSignalSubtype(unittest.TestCase):
+    """signal_subtype deve ser preenchido corretamente em cada cenario."""
+
+    def setUp(self):
+        self.engine = LiquidationEngine()
+
+    def test_short_cascade_subtype(self):
+        """Cenario 1 (cascata SHORT) -> subtype = cascade."""
+        md = _base_market_data(
+            liquidation_vol_short=600_000,
+            liquidation_vol_long=50_000,
+            oi_change_1h_pct=1.5,
+            oi_change_4h_pct=2.0,
+        )
+        candles = _make_candles_5m(n=24, trend_pct=0.5)
+        signal = self.engine.analyze("BTCUSDT", md, "TRENDING", candles)
+        self.assertEqual(signal.direction, Direction.LONG)
+        self.assertEqual(signal.metadata["signal_subtype"], "cascade")
+
+    def test_long_cascade_subtype(self):
+        """Cenario 2 (cascata LONG) -> subtype = cascade."""
+        md = _base_market_data(
+            liquidation_vol_long=700_000,
+            liquidation_vol_short=30_000,
+            oi_change_1h_pct=-1.0,
+            oi_change_4h_pct=-1.5,
+        )
+        candles = _make_candles_5m(n=24, trend_pct=-0.5)
+        signal = self.engine.analyze("BTCUSDT", md, "TRENDING", candles)
+        self.assertEqual(signal.direction, Direction.SHORT)
+        self.assertEqual(signal.metadata["signal_subtype"], "cascade")
+
+    def test_bearish_divergence_subtype(self):
+        """Cenario 3 (OI divergencia bearish) -> subtype = divergence."""
+        md = _base_market_data(
+            liquidation_vol_long=5_000,
+            liquidation_vol_short=5_000,
+            oi_change_1h_pct=-3.0,
+            oi_change_4h_pct=-4.0,
+        )
+        candles = _make_candles_5m(n=24, trend_pct=1.5)
+        signal = self.engine.analyze("BTCUSDT", md, "TRENDING", candles)
+        self.assertEqual(signal.direction, Direction.SHORT)
+        self.assertEqual(signal.metadata["signal_subtype"], "divergence")
+
+    def test_continuation_subtype(self):
+        """Cenario 4 com liq alta -> subtype = continuation."""
+        md = _base_market_data(
+            liquidation_vol_long=300_000,
+            liquidation_vol_short=20_000,
+            oi_change_1h_pct=2.0,
+            oi_change_4h_pct=3.0,
+        )
+        candles = _make_candles_5m(n=24, trend_pct=-1.0)
+        signal = self.engine.analyze("BTCUSDT", md, "TRENDING", candles)
+        self.assertEqual(signal.direction, Direction.SHORT)
+        self.assertEqual(signal.metadata["signal_subtype"], "continuation")
+
+    def test_reversal_divergence_subtype(self):
+        """Cenario 4 sem liq -> subtype = divergence (reversal)."""
+        md = _base_market_data(
+            liquidation_vol_long=10_000,
+            liquidation_vol_short=5_000,
+            oi_change_1h_pct=2.5,
+            oi_change_4h_pct=3.0,
+        )
+        candles = _make_candles_5m(n=24, trend_pct=-1.0)
+        signal = self.engine.analyze("BTCUSDT", md, "RANGING", candles)
+        self.assertEqual(signal.direction, Direction.LONG)
+        self.assertEqual(signal.metadata["signal_subtype"], "divergence")
+
+
 if __name__ == "__main__":
     unittest.main()

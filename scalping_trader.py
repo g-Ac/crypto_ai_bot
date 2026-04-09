@@ -303,6 +303,7 @@ def _record_scalping_decision(
 ) -> None:
     """Persiste o resultado final do funil do scalping para comparacao entre instancias."""
     best_signal = confluence.best_signal if confluence else None
+    signal_subtype = confluence.liq_signal_subtype if confluence else "none"
     payload = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "cycle_id": cycle_id,
@@ -317,6 +318,7 @@ def _record_scalping_decision(
         "risk_approved": risk.approved if risk else False,
         "rr_ratio": best_signal.rr_ratio if best_signal else None,
         "sl_distance_pct": best_signal.sl_distance_pct if best_signal else None,
+        "signal_subtype": signal_subtype,
     }
     try:
         db.insert_scalping_decision(payload)
@@ -537,6 +539,7 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
             "pnl_usd": round(pnl_usd, 2),
             "exit_reason": hit,
             "capital_after": round(state["capital"], 2),
+            "signal_subtype": pos.get("signal_subtype", "unknown"),
         }
         try:
             db.insert_scalping_trade(trade)
@@ -605,6 +608,8 @@ def _open_position(
     direction = confluence.direction.value
     best = confluence.best_signal
 
+    signal_subtype = confluence.liq_signal_subtype
+
     positions = state.setdefault("positions", {})
     positions[symbol] = {
         "direction": direction,
@@ -619,6 +624,7 @@ def _open_position(
         "source": best.source,
         "tp1_hit": False,
         "forced_entry": bool(force_entry_applied),
+        "signal_subtype": signal_subtype,
     }
 
     # Log no banco
@@ -638,6 +644,7 @@ def _open_position(
         "pnl_usd": 0,
         "exit_reason": "open",
         "capital_after": state["capital"],
+        "signal_subtype": signal_subtype,
     }
     try:
         db.insert_scalping_trade(trade)

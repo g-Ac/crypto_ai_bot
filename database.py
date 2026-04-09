@@ -305,6 +305,14 @@ def init_db():
         except Exception:
             pass  # coluna já existe ou tabela ainda não criada
 
+    # Migração: signal_subtype em scalping_decisions e scalping_trades (V2.1b observabilidade)
+    for table in ["scalping_decisions", "scalping_trades"]:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN signal_subtype TEXT DEFAULT 'unknown'")
+            conn.commit()
+        except Exception:
+            pass  # coluna já existe
+
     conn.close()
 
 
@@ -467,8 +475,8 @@ def insert_scalping_trade(trade: dict):
                 timestamp, symbol, type, entry_price, exit_price,
                 sl_price, tp_price, position_size_usd, leverage,
                 confluence_score, source, pnl_pct, pnl_usd,
-                exit_reason, capital_after
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                exit_reason, capital_after, signal_subtype
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             trade["timestamp"],
             trade["symbol"],
@@ -485,6 +493,7 @@ def insert_scalping_trade(trade: dict):
             round(trade.get("pnl_usd", 0), 2),
             trade.get("exit_reason", "open"),
             round(trade.get("capital_after", 0), 2),
+            trade.get("signal_subtype", "unknown"),
         ))
         conn.commit()
     finally:
@@ -498,8 +507,9 @@ def insert_scalping_decision(decision: dict):
             INSERT INTO scalping_decisions (
                 timestamp, cycle_id, symbol, outcome, reason,
                 confluence_score, confluence_direction, best_signal_source,
-                ai_used, ai_approved, risk_approved, rr_ratio, sl_distance_pct
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ai_used, ai_approved, risk_approved, rr_ratio, sl_distance_pct,
+                signal_subtype
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             decision.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             decision.get("cycle_id", ""),
@@ -514,6 +524,7 @@ def insert_scalping_decision(decision: dict):
             int(bool(decision.get("risk_approved", False))),
             decision.get("rr_ratio"),
             decision.get("sl_distance_pct"),
+            decision.get("signal_subtype", "unknown"),
         ))
         conn.commit()
     finally:
@@ -1233,15 +1244,14 @@ def get_nearby_ai_decisions(timestamp: str, symbol: str | None = None,
 
     conn = _get_conn()
     try:
-        return [dict(r) for r in conn.execute(query, tuple(params)).fetchall()]
+        return [dict(r) for r in conn.execute(query, params).fetchall()]
+    except Exception:
+        return []
     finally:
         conn.close()
 
 
-# ── CLOSED-TRADE HELPERS (Trade Review Lab) ──────────────────────────────────
-
-_OPEN_EXIT_REASONS = frozenset({"", "open"})
-
+# ── TRADE QUERY HELPERS (used by trade_review_lab.py) ─────────────────────────
 
 def _is_closed_filter() -> str:
     """SQL fragment that matches only closed trades."""
@@ -1294,21 +1304,3 @@ def get_recent_closed_trades_by_symbol(table: str, symbol: str,
         ).fetchall()]
     finally:
         conn.close()
-
-
-# ── SELF-TEST ─────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    print(f"Inicializando banco em: {DB_FILE}")
-    init_db()
-    print("Tabelas criadas com sucesso.")
-
-    conn = _get_conn()
-    tables = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    ).fetchall()
-    conn.close()
-
-    print(f"Tabelas no banco ({len(tables)}):")
-    for t in tables:
-        print(f"  - {t['name']}")

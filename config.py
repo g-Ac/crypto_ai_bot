@@ -141,6 +141,10 @@ PUMP_DUMP_SPEED_PCT = 2.0        # % de queda em PUMP_DUMP_SPEED_CANDLES candles
 PUMP_DUMP_SPEED_CANDLES = 3      # janela de candles para medir velocidade de queda
 PUMP_CAPITAL = PUMP_INITIAL_CAPITAL  # capital separado para pump trades
 
+# V2.1b Confluence: motor primario OI + FundingFilter veto + BasisConfidenceAdjuster
+# Mudar para True apos paper test validar OOS
+V2_1B_ENABLED = False
+
 # Dashboard Auth (HTTP Basic Auth para rotas POST)
 # Defina via env vars DASHBOARD_USER / DASHBOARD_PASS no Pi.
 # Se ambas estiverem vazias, auth fica desabilitada (apenas rede local confiavel).
