@@ -37,7 +37,7 @@
 <!-- ============================================================ -->
 <!-- SECTION 1: HEADER + STATUS BAR                               -->
 <!-- ============================================================ -->
-<header id="header" class="sticky top-0 z-50 bg-slate-900/95 backdrop-blur border-b border-slate-700 px-4 py-2">
+<header id="header" class="sticky top-0 z-50 bg-slate-900 border-b border-slate-700 px-4 py-2">
   <div class="max-w-[1920px] mx-auto flex items-center justify-between flex-wrap gap-2">
     <div class="flex items-center gap-3">
       <h1 class="text-lg font-bold text-white">CryptoBot V2</h1>
@@ -57,7 +57,7 @@
   </div>
 </header>
 
-<main class="max-w-[1920px] mx-auto px-4 py-4 space-y-4">
+<main class="max-w-[1920px] mx-auto px-4 py-4 space-y-6">
 
 <!-- ============================================================ -->
 <!-- SECTION 2: KPI CARDS                                         -->
@@ -104,8 +104,8 @@
 <!-- ============================================================ -->
 <!-- SECTION 4: SIGNAL SUBTYPE TRACKER                            -->
 <!-- ============================================================ -->
-<section>
-  <h2 class="text-sm font-semibold text-slate-300 mb-2">Signal Subtype Tracker (7d)</h2>
+<section style="display:block; min-height:100px;" class="pt-2 border-t border-slate-800">
+  <h2 class="text-sm font-semibold text-slate-300 mb-2" style="color:#cbd5e1;">Signal Subtype Tracker (7d)</h2>
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
     <div class="card p-4">
       <h3 class="text-xs text-slate-400 mb-2">Distribuicao</h3>
@@ -135,9 +135,9 @@
 <!-- ============================================================ -->
 <!-- SECTION 5: TRADING                                           -->
 <!-- ============================================================ -->
-<section>
+<section style="display:block; min-height:100px;" class="pt-2 border-t border-slate-800">
   <div class="flex items-center justify-between mb-2">
-    <h2 class="text-sm font-semibold text-slate-300">Trades (7d)</h2>
+    <h2 class="text-sm font-semibold text-slate-300" style="color:#cbd5e1;">Trades (7d)</h2>
     <div class="flex items-center gap-2">
       <select id="trade-filter-subtype" class="bg-slate-800 text-xs text-slate-300 border border-slate-600 rounded px-2 py-1">
         <option value="">Todos subtypes</option>
@@ -174,8 +174,8 @@
 <!-- ============================================================ -->
 <!-- SECTION 6: SYSTEM                                            -->
 <!-- ============================================================ -->
-<section>
-  <h2 class="text-sm font-semibold text-slate-300 mb-2">Sistema</h2>
+<section style="display:block; min-height:100px;" class="pt-2 border-t border-slate-800">
+  <h2 class="text-sm font-semibold text-slate-300 mb-2" style="color:#cbd5e1;">Sistema</h2>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
     <div class="card p-4">
       <h3 class="text-xs text-slate-400 mb-2">Recursos</h3>
@@ -237,6 +237,19 @@ const REGIME_BADGE = {
   RANGING: 'badge-ranging',
 };
 const SYMBOLS = ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT'];
+
+// Chart.js plugin: draw solid background on canvas (prevents transparency on dark theme)
+const chartBgPlugin = {
+  id: 'customCanvasBackgroundColor',
+  beforeDraw: (chart) => {
+    const {ctx} = chart;
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, chart.width, chart.height);
+    ctx.restore();
+  }
+};
 
 // ── Helpers ────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -492,6 +505,7 @@ async function refreshSubtypes() {
   if (chartPie) chartPie.destroy();
   chartPie = new Chart($('#chart-subtype-pie'), {
     type: 'doughnut',
+    plugins: [chartBgPlugin],
     data: { labels: pieLabels, datasets: [{ data: pieValues, backgroundColor: pieColors, borderWidth: 0 }] },
     options: {
       responsive: true,
@@ -509,6 +523,7 @@ async function refreshSubtypes() {
   if (chartTimeline) chartTimeline.destroy();
   chartTimeline = new Chart($('#chart-subtype-timeline'), {
     type: 'bar',
+    plugins: [chartBgPlugin],
     data: {
       labels: tlLabels,
       datasets: subtypes.map(st => ({
@@ -591,6 +606,7 @@ function renderTrades() {
   if (chartEquity) chartEquity.destroy();
   chartEquity = new Chart($('#chart-equity'), {
     type: 'line',
+    plugins: [chartBgPlugin],
     data: {
       labels: eqLabels,
       datasets: [{
