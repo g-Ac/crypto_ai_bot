@@ -47,7 +47,7 @@ def setup_scalping_logging(level: int = logging.INFO) -> None:
     console_handler.setFormatter(fmt)
     console_handler.setLevel(logging.WARNING)
 
-    # Configurar todos os loggers de scalping
+    # Configurar todos os loggers de scalping + motores V2
     for name in [
         "scalping",
         "scalping.data",
@@ -57,6 +57,12 @@ def setup_scalping_logging(level: int = logging.INFO) -> None:
         "scalping.ema_crossover",
         "scalping.confluence",
         "scalping.trader",
+        "scalping.basis_engine",
+        "scalping.funding_filter",
+        "scalping.basis_confidence",
+        "scalping.outcomes",
+        "engine.liquidation",
+        "engine.funding",
     ]:
         logger = logging.getLogger(name)
         logger.setLevel(level)
