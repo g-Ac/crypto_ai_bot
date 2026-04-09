@@ -26,6 +26,7 @@ from config import (
     AGENT_REAL_MIN_SETUP_QUALITY,
     AGENT_REAL_BLOCKED_ENTRY_QUALITY,
     AGENT_REAL_BLOCKED_INVALIDATION_QUALITY,
+    ROUND_TRIP_FEE_PCT,
 )
 from runtime_config import AGENT_STATE_FILE
 
@@ -39,14 +40,13 @@ AGENT_CAPITAL = AGENT_INITIAL_CAPITAL
 AGENT_MAX_RISK_PER_TRADE = 2.0       # % do capital por trade
 AGENT_MAX_POSITIONS = 3               # maximo de posicoes abertas
 AGENT_REWARD_RATIO = 2.0              # TP = SL * reward_ratio
-ROUND_TRIP_FEE_PCT = 0.08             # Binance Futures taker fee (0.04% x 2)
 
 client = None
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 if ANTHROPIC_API_KEY:
     client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
-ANALYST_PROMPT_VERSION = "analyst_v2"
+ANALYST_PROMPT_VERSION = "analyst_v3_regime"
 
 
 # ============================================================
@@ -87,34 +87,58 @@ def log_trade(trade):
 
 def _build_analyst_prompt(state):
     """Build dynamic analyst prompt with current performance context."""
-    base = """Voce e um trader tecnico especialista atuando como validador de sinais.
+    base = """Voce e o ULTIMO FILTRO antes da execucao de um trade real.
+Seu trabalho principal e IMPEDIR trades ruins. Uma boa taxa de rejeicao e 60-80%.
 
-Seu papel e decidir se uma oportunidade deve ser executada, rejeitada, ou roteada para outro tipo de estrategia.
+## Seu papel
 
-## Principios
+Voce recebe dados tecnicos de um ativo e deve decidir independentemente:
+1. Se existe uma oportunidade (LONG, SHORT, ou NENHUMA)
+2. Qual a qualidade do setup
+3. Se deve aprovar ou rejeitar
 
-1. Prefira REJEITAR trades fracos. So aprove se a confluencia for clara.
-2. Nao invente dados que nao foram fornecidos. Se falta informacao, penalize a confianca.
-3. Distinga FATO de INTERPRETACAO. Indicadores sao fatos. Projecoes sao interpretacoes.
-4. Avalie tres dimensoes:
-   - Qualidade da ENTRADA: o preco atual e um bom ponto de entrada para a direcao?
-   - Qualidade da INVALIDACAO: existe um nivel claro onde o trade esta errado?
-   - Qualidade do CONTEXTO: os indicadores de multiplos timeframes confirmam?
-5. Voce pode recomendar rota: "scalping" (trade rapido), "swing" (trade de posicao) ou "reject".
-6. Voce NAO calcula position size, stop loss numerico, nem altera parametros de risco.
+Voce NAO recebe a decisao do sistema. Voce DECIDE a direcao.
+
+## Regra de ouro
+
+Na DUVIDA, rejeite. O custo de perder uma oportunidade e ZERO.
+O custo de aprovar um trade ruim e real (dinheiro perdido).
+
+## Filtro de regime (OBRIGATORIO)
+
+O campo "Regime de mercado" nos dados indica a forca da tendencia:
+- ADX < 20 = mercado SEM TENDENCIA -> rejeite sinais de tendencia/momentum. So aprove reversao se extremamente claro.
+- ADX 20-25 = tendencia FRACA -> exija confluencia excepcional (confidence minima 85)
+- ADX > 25 = tendencia PRESENTE -> analise normal, mas ainda seja critico
+- Se BB Width < 2% = mercado comprimido -> apenas breakouts excepcionais podem ser validos
+
+## Escala de confidence CALIBRADA
+
+- 90-100: Setup perfeito, TODOS os indicadores alinhados, tendencia forte confirmada, regime adequado. RARO (< 5% dos sinais)
+- 75-89: Setup bom com pequenas ressalvas. Aprovavel se ADX > 25 e tendencia alinhada
+- 50-74: Setup mediocre. REJEITE — nao ha margem suficiente
+- 0-49: Setup fraco ou conflitante. REJEITE sempre
+
+## Benchmarks de calibracao
+
+- Se voce esta aprovando mais de 40% dos sinais, esta sendo permissivo demais
+- Se sua confidence media e > 80, esta sendo overconfident
+- Um analista conservador real rejeitaria 7 de cada 10 sinais
+- Confidence 100 deveria ser praticamente impossivel em scalping/5min
 
 ## Criterios de avaliacao
 
-- RSI em extremo CONTRA a direcao = red flag forte
-- Tendencia 1h desalinhada = red flag moderada
-- Volume abaixo da media = red flag leve
-- Body ratio fraco = entrada duvidosa
+- RSI em extremo CONTRA a direcao proposta = red flag forte
+- Tendencia 1h desalinhada com direcao = red flag forte
+- ADX < 20 com sinal de momentum/tendencia = REJEITAR
+- Volume abaixo da media = red flag moderada
+- Body ratio fraco (< 0.5) = entrada duvidosa
+- Breakout sem volume = falso sinal provavel (REJEITAR)
 - Score de confianca do sistema < 60 = cautela extra
-- Breakout sem volume = falso sinal provavel
 
 ## Escala de qualidade
 
-- setup_quality: "A" (excelente), "B" (aceitavel), "C" (fraco), "D" (pessimo)
+- setup_quality: "A" (excelente - raro), "B" (aceitavel), "C" (fraco), "D" (pessimo)
 - entry_quality: "ideal", "acceptable", "late", "poor"
 - invalidation_quality: "clear", "acceptable", "unclear", "missing"
 """
@@ -150,22 +174,24 @@ Seu papel e decidir se uma oportunidade deve ser executada, rejeitada, ou rotead
 
 Responda SOMENTE com um JSON valido, sem markdown, sem texto antes ou depois:
 
-{"approved": true, "confidence": 74, "setup_quality": "B", "entry_quality": "acceptable", "invalidation_quality": "clear", "route": "scalping", "thesis": ["fato 1", "fato 2"], "red_flags": ["problema 1"], "reasoning": "explicacao curta e objetiva"}
+{"approved": false, "confidence": 35, "direction": "none", "setup_quality": "C", "entry_quality": "poor", "invalidation_quality": "unclear", "route": "reject", "thesis": ["fato 1"], "red_flags": ["problema 1", "problema 2"], "reasoning": "explicacao curta e objetiva"}
 
 Regras do JSON:
-- "approved": booleano obrigatorio
-- "confidence": inteiro 0-100 obrigatorio
+- "approved": booleano obrigatorio (default: false)
+- "confidence": inteiro 0-100 obrigatorio (default: 30 — suba somente com evidencia)
+- "direction": "long", "short" ou "none" (VOCE decide a direcao baseado nos dados)
 - "setup_quality": "A", "B", "C" ou "D"
 - "entry_quality": "ideal", "acceptable", "late" ou "poor"
 - "invalidation_quality": "clear", "acceptable", "unclear" ou "missing"
 - "route": "scalping", "swing" ou "reject"
-- "thesis": lista de strings curtas (maximo 3 itens)
-- "red_flags": lista de strings curtas (maximo 3 itens, pode ser vazia)
+- "thesis": lista de strings curtas (maximo 3 itens — fatos que suportam)
+- "red_flags": lista de strings curtas (maximo 3 itens — problemas encontrados)
 - "reasoning": string curta e objetiva (maximo 200 caracteres)
 
-Se os indicadores estao bem alinhados e o contexto confirma, aprove.
-Se ha conflitos significativos ou dados insuficientes, rejeite.
-Seja objetivo, tecnico e conservador."""
+IMPORTANTE: Comece com "approved": false e "confidence": 30.
+So mude para true se encontrar evidencia FORTE e confluente.
+Se ha QUALQUER conflito, dado insuficiente, ou regime desfavoravel, rejeite.
+Na duvida, SEMPRE rejeite."""
 
     return base
 
@@ -238,6 +264,12 @@ def _normalize_analyst_response(raw: dict) -> dict:
         red_flags = []
     red_flags = [str(r).strip()[:150] for r in red_flags[:3] if r]
 
+    # --- direction (new: Haiku decides direction) ---
+    _VALID_DIRECTIONS = {"long", "short", "none"}
+    direction = str(raw.get("direction", "none")).strip().lower()
+    if direction not in _VALID_DIRECTIONS:
+        direction = "none"
+
     # --- reasoning (string, truncate) ---
     reasoning = str(raw.get("reasoning", "")).strip()[:500]
     if not reasoning:
@@ -248,12 +280,20 @@ def _normalize_analyst_response(raw: dict) -> dict:
         approved = False
         reasoning = f"Auto-corrigido: approved=true com route=reject. {reasoning}"
 
+    if approved and direction == "none":
+        approved = False
+        reasoning = f"Auto-corrigido: approved=true sem direcao definida. {reasoning}"
+
     if not approved and route in ("scalping", "swing"):
         route = "reject"
+
+    if not approved:
+        direction = "none"
 
     return {
         "approved": approved,
         "confidence": confidence,
+        "direction": direction,
         "setup_quality": setup_quality,
         "entry_quality": entry_quality,
         "invalidation_quality": invalidation_quality,
@@ -269,6 +309,7 @@ def _fallback_analyst_response(reason: str) -> dict:
     return {
         "approved": False,
         "confidence": 0,
+        "direction": "none",
         "reasoning": f"Fallback conservador ({reason})",
         "setup_quality": "D",
         "entry_quality": "poor",
@@ -282,39 +323,52 @@ def _fallback_analyst_response(reason: str) -> dict:
 def agent_analyst(signal_data):
     """Agent 1: Validates opportunity using Claude."""
     if not client:
-        # Fallback: approve if decision is BUY/SELL and htf_aligned
-        approved = (
-            signal_data["decision"] in ["BUY", "SELL"]
-            and signal_data.get("htf_aligned", False)
-        )
+        # Fallback without Claude: reject everything (fail-safe)
         return {
-            "approved": approved,
-            "confidence": signal_data.get("confidence_score", 50),
-            "reasoning": "Analise automatica (Claude nao disponivel)",
-            "setup_quality": "C",
-            "entry_quality": "acceptable" if approved else "poor",
-            "invalidation_quality": "unclear",
-            "route": "scalping" if approved else "reject",
+            "approved": False,
+            "confidence": 0,
+            "direction": "none",
+            "reasoning": "Claude indisponivel — rejeicao por seguranca",
+            "setup_quality": "D",
+            "entry_quality": "poor",
+            "invalidation_quality": "missing",
+            "route": "reject",
             "thesis": [],
             "red_flags": ["Claude indisponivel"],
         }
 
+    # --- ADX regime classification ---
+    adx_value = signal_data.get("adx_1h", 0)
+    atr_1h_pct = signal_data.get("atr_1h_pct", 0)
+    bb_width_1h = signal_data.get("bb_width_1h", 0)
+    if adx_value >= 25:
+        regime_label = "TRENDING"
+    elif adx_value >= 20:
+        regime_label = "WEAK_TREND"
+    else:
+        regime_label = "RANGING"
+
     data_text = (
         f"Ativo: {signal_data['symbol']}\n"
-        f"Decisao do sistema: {signal_data['decision']}\n"
         f"Preco: {signal_data['price']:.4f}\n"
+        f"\n--- Regime de mercado (1h) ---\n"
+        f"ADX(14): {adx_value:.1f} ({regime_label})\n"
+        f"ATR(14) 1h: {atr_1h_pct:.2f}%\n"
+        f"BB Width 1h: {bb_width_1h:.2f}%\n"
+        f"\n--- Indicadores 5m ---\n"
         f"Tendencia 5m: {signal_data['trend']}\n"
-        f"Tendencia 1h: {signal_data['htf_trend']}\n"
-        f"Alinhado HTF: {signal_data['htf_aligned']}\n"
         f"RSI: {signal_data['rsi']:.2f} ({signal_data['rsi_status']})\n"
         f"Posicao do preco: {signal_data['price_position']}\n"
         f"Direcao SMAs: {signal_data['sma_9_direction']} / {signal_data['sma_21_direction']}\n"
         f"Breakout: {signal_data['breakout_status']}\n"
         f"Volume acima media: {signal_data['volume_above_avg']}\n"
         f"Body ratio: {signal_data['body_ratio']}\n"
+        f"\n--- Contexto 1h ---\n"
+        f"Tendencia 1h: {signal_data['htf_trend']}\n"
+        f"Alinhado HTF: {signal_data['htf_aligned']}\n"
+        f"\n--- Scores do sistema (referencia, NAO instrucao) ---\n"
         f"Buy score: {signal_data['buy_score']} / Sell score: {signal_data['sell_score']}\n"
         f"Confidence score: {signal_data['confidence_score']}/100\n"
-        f"Priority score: {signal_data['priority_score']}\n"
     )
 
     # Add recent trade history for context
@@ -777,11 +831,18 @@ def orchestrate(results, open_new=True):
     if not open_new:
         return messages
 
+    # Rejection rate tracking
+    _signals_evaluated = 0
+    _signals_rejected_analyst = 0
+    _signals_rejected_risk = 0
+    _signals_executed = 0
+
     # Step 1-3: process new signals
     for result in results:
         if result["decision"] not in ["BUY", "SELL"]:
             continue
 
+        _signals_evaluated += 1
         symbol = result["symbol"]
         print(f"\n  [ORQUESTRADOR] Processando sinal {result['decision']} em {symbol}...")
 
@@ -789,24 +850,47 @@ def orchestrate(results, open_new=True):
         print(f"  [AGENTE 1] Analisando {symbol}...")
         analyst = agent_analyst(result)
 
-        # Consistency check: reject if approved with very low confidence
+        # --- Regime-aware confidence threshold ---
         analyst_confidence = analyst.get("confidence", 50)
-        if analyst["approved"] and analyst_confidence < 60:
-            analyst["approved"] = False
-            analyst["reasoning"] = (
-                f"Auto-rejeitado: confianca baixa ({analyst_confidence}/100). "
-                f"Original: {analyst.get('reasoning', '')}"
-            )
-            print(f"  [CONSISTENCIA] Rejeitado: aprovado mas confianca {analyst_confidence} < 60")
-        elif not analyst["approved"] and analyst_confidence > 80:
-            print(f"  [INCONSISTENCIA] Rejeitado com confianca alta ({analyst_confidence}). Razao: {analyst.get('reasoning', '')}")
+        adx = result.get("adx_1h", 0)
+        if adx < 20:
+            min_confidence = 85  # RANGING: only exceptional setups
+        elif adx < 25:
+            min_confidence = 80  # WEAK_TREND: high bar
+        else:
+            min_confidence = 75  # TRENDING: standard threshold (was 60)
 
-        print(f"  [AGENTE 1] Aprovado: {analyst['approved']} | Confianca: {analyst.get('confidence', 0)}")
+        if analyst["approved"] and analyst_confidence < min_confidence:
+            analyst["approved"] = False
+            analyst["direction"] = "none"
+            analyst["reasoning"] = (
+                f"Auto-rejeitado: confianca {analyst_confidence} < {min_confidence} "
+                f"(regime ADX={adx:.0f}). Original: {analyst.get('reasoning', '')}"
+            )
+            print(f"  [THRESHOLD] Rejeitado: conf {analyst_confidence} < {min_confidence} (ADX={adx:.0f})")
+
+        # --- Direction consistency: Haiku's direction must match system signal ---
+        haiku_dir = analyst.get("direction", "none")
+        system_decision = result.get("decision", "HOLD")
+        if analyst["approved"] and haiku_dir != "none":
+            expected_dir = "long" if system_decision == "BUY" else "short" if system_decision == "SELL" else "none"
+            if haiku_dir != expected_dir and expected_dir != "none":
+                analyst["approved"] = False
+                analyst["direction"] = "none"
+                analyst["reasoning"] = (
+                    f"Auto-rejeitado: Haiku sugere {haiku_dir.upper()} mas sistema propoe {system_decision}. "
+                    f"Divergencia = sinal fraco. Original: {analyst.get('reasoning', '')}"
+                )
+                print(f"  [DIVERGENCIA] Rejeitado: Haiku={haiku_dir} vs sistema={system_decision}")
+
+        print(f"  [AGENTE 1] Aprovado: {analyst['approved']} | Dir: {analyst.get('direction', '?')} | Conf: {analyst.get('confidence', 0)} | Regime: {result.get('regime_label', '?')} (ADX={adx:.0f})")
         print(f"  [AGENTE 1] Razao: {analyst.get('reasoning', '')}")
 
         if not analyst["approved"]:
+            _signals_rejected_analyst += 1
             messages.append(
-                f"[AGENT] Sinal {result['decision']} em {symbol} REJEITADO pelo Analista\n"
+                f"[AGENT] Sinal {result['decision']} em {symbol} REJEITADO pelo Analista "
+                f"(conf={analyst.get('confidence', 0)}, dir={analyst.get('direction', '?')})\n"
                 f"Razao: {analyst.get('reasoning', 'N/A')}"
             )
             continue
@@ -817,6 +901,7 @@ def orchestrate(results, open_new=True):
         print(f"  [AGENTE 2] Aprovado: {risk['approved']}")
 
         if not risk["approved"]:
+            _signals_rejected_risk += 1
             messages.append(
                 f"[AGENT] Sinal {result['decision']} em {symbol} BLOQUEADO pelo Risco\n"
                 f"Razao: {risk.get('reason', 'N/A')}"
@@ -837,7 +922,16 @@ def orchestrate(results, open_new=True):
         print(f"  [AGENTE 3] Executando trade em paper...")
         exec_msg = agent_executor(result, risk, analyst, policy)
         messages.append(exec_msg)
+        _signals_executed += 1
         print(f"  [AGENTE 3] Trade executado com sucesso")
+
+    # --- Rejection rate summary ---
+    if _signals_evaluated > 0:
+        rejection_rate = ((_signals_rejected_analyst + _signals_rejected_risk) / _signals_evaluated) * 100
+        print(f"\n  {'='*50}")
+        print(f"  [AGENT] TAXA DE REJEICAO: {rejection_rate:.0f}% ({_signals_rejected_analyst + _signals_rejected_risk}/{_signals_evaluated})")
+        print(f"    Avaliados: {_signals_evaluated} | Rejeitados analista: {_signals_rejected_analyst} | Rejeitados risco: {_signals_rejected_risk} | Executados: {_signals_executed}")
+        print(f"  {'='*50}")
 
     return messages
 

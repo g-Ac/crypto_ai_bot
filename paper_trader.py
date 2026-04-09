@@ -9,6 +9,7 @@ from config import (
     PAPER_INITIAL_CAPITAL,
     PAPER_MAX_POSITIONS, PAPER_REWARD_RATIO, COOLDOWN_MINUTES,
     ATR_SL_MULTIPLIER, ATR_TP_MULTIPLIER, ATR_SL_FLOOR_PCT,
+    ROUND_TRIP_FEE_PCT,
 )
 import database as db
 from runtime_config import PAPER_STATE_FILE
@@ -195,8 +196,6 @@ def process_signals(results, open_new=True):
     save_state(state)
     return messages
 
-
-ROUND_TRIP_FEE_PCT = 0.08  # Binance Futures taker fee (0.04% x 2)
 
 
 def close_position(state, symbol, price, pnl_pct, reason):

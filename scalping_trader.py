@@ -18,10 +18,11 @@ from typing import List, Optional
 import pandas as pd
 import database as db
 
-from config import SCALPING_INITIAL_CAPITAL
+from config import SCALPING_INITIAL_CAPITAL, SINGLE_SIDE_FEE_PCT, ROUND_TRIP_FEE_PCT
 from signal_types import ConfluenceResult, RiskDecision, ScalpingConfig
 from scalping_data import fetch_candles, add_scalping_indicators, clear_cache
 from confluence import analyze as confluence_analyze
+from htf import get_htf_regime
 from risk_manager import (
     load_scalping_state, save_scalping_state,
     calculate_position_size,
@@ -387,7 +388,7 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
             pos["tp1_hit"] = True
             pos["sl_price"] = entry_price  # Mover SL para breakeven
             pos["tp1_pnl_pct"] = ((tp1_fill - entry_price) / entry_price) * 100
-            pos["tp1_pnl_pct"] -= 0.04  # Fee de saida parcial (half round-trip)
+            pos["tp1_pnl_pct"] -= SINGLE_SIDE_FEE_PCT  # Fee de saida parcial (half round-trip)
             realized_pnl = pos["tp1_pnl_pct"] * (pos["position_size_usd"] * 0.5 / 100)
             state["capital"] += realized_pnl
             positions[symbol] = pos
@@ -446,7 +447,7 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
             pos["tp1_hit"] = True
             pos["sl_price"] = entry_price
             pos["tp1_pnl_pct"] = ((entry_price - tp1_fill) / entry_price) * 100
-            pos["tp1_pnl_pct"] -= 0.04  # Fee de saida parcial (half round-trip)
+            pos["tp1_pnl_pct"] -= SINGLE_SIDE_FEE_PCT  # Fee de saida parcial (half round-trip)
             realized_pnl = pos["tp1_pnl_pct"] * (pos["position_size_usd"] * 0.5 / 100)
             state["capital"] += realized_pnl
             positions[symbol] = pos
@@ -488,7 +489,7 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
     # Fechar posicao completa
     if hit:
         # Descontar fees (half trip se TP1 ja pagou metade da fee na saida parcial)
-        fee_pct = 0.04 if tp1_hit else 0.08  # 0.04% por leg (taker Binance Futures)
+        fee_pct = SINGLE_SIDE_FEE_PCT if tp1_hit else ROUND_TRIP_FEE_PCT
         pnl_pct -= fee_pct
 
         # Ajustar PnL se TP1 ja foi atingido (50% restante)
@@ -666,11 +667,34 @@ def _open_position(
     return msg
 
 
+def _get_prev_basis(symbol: str) -> Optional[float]:
+    """Busca basis_spread_pct do ciclo ANTERIOR (penultimo registro).
+
+    O registro mais recente (OFFSET 0) e do ciclo atual, ja inserido em
+    main.py antes de process_scalping rodar.  Precisamos do OFFSET 1.
+    """
+    try:
+        conn = db._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT basis_spread_pct FROM market_microstructure "
+                "WHERE symbol = ? ORDER BY id DESC LIMIT 1 OFFSET 1",
+                (symbol,),
+            ).fetchone()
+            if row and row[0] is not None:
+                return float(row[0])
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return None
+
+
 # ============================================================
 #  LOOP PRINCIPAL
 # ============================================================
 
-def process_scalping(symbols: list, open_new: bool = True) -> List[str]:
+def process_scalping(symbols: list, open_new: bool = True, results: Optional[list] = None) -> List[str]:
     """
     Executa um ciclo completo da estrategia de scalping.
 
@@ -768,14 +792,46 @@ def process_scalping(symbols: list, open_new: bool = True) -> List[str]:
                     symbol, remaining,
                 )
 
-            # ---- PASSO 4: Buscar dados multi-timeframe ----
-            df_3m = fetch_candles(symbol, "3m", 100)
-            if df_3m is not None:
-                df_3m = add_scalping_indicators(df_3m)
+            # ---- PASSO 4: Regime gate + dados ----
+            regime_data = get_htf_regime(symbol)
+            regime_label = regime_data.get("regime_label", "UNKNOWN")
 
+            if regime_label == "CHOPPY":
+                logger.info("SCALPING %s: regime CHOPPY — nao operar", symbol)
+                _record_scalping_decision(
+                    cycle_id=cycle_id, symbol=symbol,
+                    outcome="regime_blocked",
+                    reason=f"Regime CHOPPY (ADX={regime_data.get('adx_1h', 0)}, BB={regime_data.get('bb_width_1h', 0)}%)",
+                )
+                _record_scalping_audit(
+                    cycle_id=cycle_id, symbol=symbol,
+                    outcome="regime_blocked",
+                    reason=f"Regime CHOPPY — nenhum motor permitido",
+                    opportunity_detected=False, force_entry_applied=False,
+                    ai_used=False, ai_approved=False,
+                    risk=None, confluence=None,
+                    state_before=state_before, state_after=_state_snapshot(state),
+                    market_context={"regime": regime_data},
+                )
+                continue
+
+            # Buscar microstructure data do ciclo principal (se disponivel)
+            micro = None
+            if results is not None:
+                for r in results:
+                    if r.get("symbol") == symbol and "_microstructure" in r:
+                        micro = r["_microstructure"]
+                        break
+
+            # Buscar candles 5m para Motor 2 (VWAP/range)
             df_5m = fetch_candles(symbol, "5m", 100)
             if df_5m is not None:
                 df_5m = add_scalping_indicators(df_5m)
+
+            # Buscar candles auxiliares para context/position management
+            df_3m = fetch_candles(symbol, "3m", 100)
+            if df_3m is not None:
+                df_3m = add_scalping_indicators(df_3m)
 
             if symbol not in df_15m_cache:
                 df_15m = fetch_candles(symbol, "15m", 100)
@@ -790,10 +846,20 @@ def process_scalping(symbols: list, open_new: bool = True) -> List[str]:
                 "tf_3m": _market_snapshot(df_3m),
                 "tf_5m": _market_snapshot(df_5m),
                 "tf_15m": _market_snapshot(df_15m),
+                "regime": regime_data,
             }
 
-            # ---- PASSO 5: Confluencia ----
-            confluence = confluence_analyze(symbol, CONFIG, df_3m=df_3m, df_5m=df_5m, df_15m=df_15m)
+            # Buscar basis anterior para Motor 3
+            prev_basis = _get_prev_basis(symbol)
+
+            # ---- PASSO 5: Confluencia (novos motores V2) ----
+            confluence = confluence_analyze(
+                symbol, CONFIG,
+                market_data=micro,
+                regime=regime_label,
+                candles_5m=df_5m,
+                prev_basis_pct=prev_basis,
+            )
             force_entry_applied = False
             opportunity_detected = any(item.valid for item in (confluence.signals or []))
 

@@ -40,6 +40,12 @@ class Signal:
     valid: bool = False
 
 
+# Alias para compatibilidade com EVOLUCAO_V2.md que referencia "EngineSignal".
+# Todos os motores (volume_breakout, liquidation_engine, basis_engine, etc.)
+# usam Signal — EngineSignal e o mesmo tipo, mesmo nome.
+EngineSignal = Signal
+
+
 @dataclass
 class ConfluenceResult:
     """Resultado da analise de confluencia entre os 3 motores."""

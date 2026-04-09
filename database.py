@@ -23,6 +23,7 @@ VALID_TABLES = frozenset({
     "scalping_audit_log",
     "scalping_outcome_labels",
     "ai_decisions",
+    "market_microstructure",
 })
 
 
@@ -237,6 +238,24 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_scalping_outcome_scenario ON scalping_outcome_labels(scenario_type);
         CREATE INDEX IF NOT EXISTS idx_scalping_outcome_verdict ON scalping_outcome_labels(verdict);
 
+        CREATE TABLE IF NOT EXISTS market_microstructure (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp               TEXT,
+            symbol                  TEXT,
+            funding_rate            REAL,
+            funding_rate_prev1      REAL,
+            funding_rate_prev2      REAL,
+            ls_ratio_top            REAL,
+            ls_ratio_global         REAL,
+            liquidation_vol_long    REAL,
+            liquidation_vol_short   REAL,
+            open_interest           REAL,
+            oi_change_1h_pct        REAL,
+            oi_change_4h_pct        REAL,
+            basis_spread_pct        REAL,
+            session                 TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS ai_decisions (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp       TEXT,
@@ -252,6 +271,9 @@ def init_db():
             reasoning       TEXT,
             trade_result    TEXT
         );
+
+        CREATE INDEX IF NOT EXISTS idx_microstructure_ts ON market_microstructure(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_microstructure_symbol ON market_microstructure(symbol);
 
         CREATE INDEX IF NOT EXISTS idx_ai_decisions_ts ON ai_decisions(timestamp);
         CREATE INDEX IF NOT EXISTS idx_ai_decisions_symbol ON ai_decisions(symbol);
@@ -274,6 +296,14 @@ def init_db():
             conn.commit()
         except Exception:
             pass  # coluna já existe
+
+    # Migração: market_microstructure funding_rate_predicted -> funding_rate_prev1 + prev2
+    for col, coltype in [("funding_rate_prev1", "REAL"), ("funding_rate_prev2", "REAL")]:
+        try:
+            conn.execute(f"ALTER TABLE market_microstructure ADD COLUMN {col} {coltype}")
+            conn.commit()
+        except Exception:
+            pass  # coluna já existe ou tabela ainda não criada
 
     conn.close()
 
@@ -625,6 +655,39 @@ def insert_ai_decision(decision: dict):
         decision.get("confidence"),
         decision.get("reasoning", ""),
         decision.get("trade_result"),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_market_microstructure(data: dict):
+    """Insere snapshot de microestrutura de mercado."""
+    conn = _get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO market_microstructure (
+                timestamp, symbol, funding_rate, funding_rate_prev1,
+                funding_rate_prev2, ls_ratio_top, ls_ratio_global,
+                liquidation_vol_long, liquidation_vol_short,
+                open_interest, oi_change_1h_pct, oi_change_4h_pct,
+                basis_spread_pct, session
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            data.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            data.get("symbol", ""),
+            data.get("funding_rate"),
+            data.get("funding_rate_prev1"),
+            data.get("funding_rate_prev2"),
+            data.get("ls_ratio_top"),
+            data.get("ls_ratio_global"),
+            data.get("liquidation_vol_long"),
+            data.get("liquidation_vol_short"),
+            data.get("open_interest"),
+            data.get("oi_change_1h_pct"),
+            data.get("oi_change_4h_pct"),
+            data.get("basis_spread_pct"),
+            data.get("session", ""),
         ))
         conn.commit()
     finally:

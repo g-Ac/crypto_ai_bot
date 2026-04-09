@@ -85,6 +85,10 @@ ALERT_PRIORITY_MIN = 85
 # Força mínima do candle para pontuar (body_ratio)
 BODY_RATIO_MIN = 0.6
 
+# Fees Binance Futures (taker)
+SINGLE_SIDE_FEE_PCT = 0.04          # 0.04% por leg
+ROUND_TRIP_FEE_PCT = 0.08           # 0.04% x 2
+
 # Backtest
 BACKTEST_DAYS = 180
 

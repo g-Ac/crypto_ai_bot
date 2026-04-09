@@ -16,6 +16,8 @@ from alert_control import should_send_alert
 from context_agent import interpret_signal
 from paper_trader import process_signals, get_status
 from trade_agents import orchestrate, get_agent_status
+from htf import get_htf_regime
+from market_data import collect_microstructure
 from daily_report import check_daily_report, enforce_circuit_breaker
 from scalping_logger import setup_scalping_logging
 from scalping_outcomes import label_scalping_outcomes
@@ -65,8 +67,20 @@ def run_bot():
             df = get_candles(symbol, INTERVAL, LIMIT)
             df = add_indicators(df)
             htf_trend = get_htf_trend(symbol)
+            regime = get_htf_regime(symbol)
             result = generate_signal(df, htf_trend=htf_trend)
             result["symbol"] = symbol
+            result.update(regime)  # adx_1h, atr_1h_pct, bb_width_1h, regime_label
+
+            # Coleta de microestrutura (funding, OI, liquidacoes, basis)
+            try:
+                micro = collect_microstructure(symbol)
+                db.insert_market_microstructure(micro)
+                result["_microstructure"] = micro
+                print(f"  Microstructure data collected for {symbol}")
+            except Exception as e:
+                print(f"  [AVISO] Falha na coleta de microestrutura para {symbol}: {e}")
+
             results.append(result)
 
             print("\n==============================")
@@ -86,6 +100,7 @@ def run_bot():
             print(f"Body ratio: {result['body_ratio']}")
             print(f"Tendência 1h: {result['htf_trend']}")
             print(f"Alinhado com 1h: {result['htf_aligned']}")
+            print(f"Regime: {result.get('regime_label', '?')} (ADX={result.get('adx_1h', 0):.1f})")
             print(f"Score BUY: {result['buy_score']}")
             print(f"Score SELL: {result['sell_score']}")
             print(f"Força do sinal: {result['signal_strength']}")
@@ -241,7 +256,7 @@ def run_bot():
             scalping_suspended = True  # fallback seguro: so gerencia posicoes
         if scalping_suspended:
             print("  Circuit breaker ativo ou bot pausado - novos trades suspensos, gerenciando posicoes")
-        scalping_msgs = process_scalping(SYMBOLS, open_new=not scalping_suspended)
+        scalping_msgs = process_scalping(SYMBOLS, open_new=not scalping_suspended, results=results)
         for msg in scalping_msgs:
             print(f"  {msg}")
             send_telegram_message(f"\u26a1 <b>[SCALPING]</b> {msg}")

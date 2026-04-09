@@ -16,9 +16,8 @@ from pathlib import Path
 
 # Lazy imports to avoid side effects on import
 from runtime_config import AGENT_STATE_FILE
+from config import ROUND_TRIP_FEE_PCT
 import database as db
-
-ROUND_TRIP_FEE_PCT = 0.08  # Binance Futures taker fee (0.04% x 2)
 
 
 def get_current_prices(symbols: list[str]) -> dict[str, float]:

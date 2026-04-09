@@ -9,13 +9,11 @@ from config import (
     SMA_SHORT, SMA_LONG, BREAKOUT_WINDOW, VOLUME_WINDOW,
     BACKTEST_DAYS, ATR_SL_MULTIPLIER, ATR_SL_FLOOR_PCT,
     ATR_TP_MULTIPLIER, PAPER_REWARD_RATIO,
+    ROUND_TRIP_FEE_PCT,
 )
 from indicators import add_indicators
 from strategy import _score_row
 from htf import classify_htf_trend
-
-# Binance Futures fee: 0.04% per side (maker) = 0.08% round trip
-ROUND_TRIP_FEE_PCT = 0.08
 
 
 def fetch_historical(symbol, interval, days):

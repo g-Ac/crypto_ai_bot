@@ -9,7 +9,7 @@ Logica:
   2. Simula deteccao de pump (volume_ratio + price_change)
   3. Entra LONG/SHORT no open do candle seguinte (sem look-ahead)
   4. Gerencia com trailing stop e timeout, candle a candle
-  5. Aplica fees de 0.08% round trip (Futures taker)
+  5. Aplica fees de ROUND_TRIP_FEE_PCT round trip (Futures taker, config.py)
   6. Reporta metricas de robustez, segmentadas por simbolo/hora/direcao
 """
 
@@ -29,10 +29,10 @@ from config import (
     PUMP_MAX_POSITIONS,
     PUMP_CAPITAL,
     PUMP_POSITION_SIZE_PCT,
+    ROUND_TRIP_FEE_PCT,
 )
 
 # ── Config do backtest ──────────────────────────────────────────
-ROUND_TRIP_FEE_PCT = 0.08          # Futures taker: 0.04% * 2
 COOLDOWN_CANDLES = 6               # 30min / 5min = 6 candles de cooldown
 VOLUME_AVG_WINDOW = 20             # janela para media de volume
 PRICE_CHANGE_LOOKBACK = 3          # candles para price change sustentado

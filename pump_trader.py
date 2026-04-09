@@ -17,11 +17,11 @@ from config import (
     PUMP_POSITION_SIZE_PCT, PUMP_RSI_EXHAUSTION,
     PUMP_DUMP_RETRACE_PCT, PUMP_CAPITAL, PUMP_MAX_POSITIONS,
     PUMP_DUMP_SPEED_PCT, PUMP_DUMP_SPEED_CANDLES,
+    ROUND_TRIP_FEE_PCT,
 )
 from runtime_config import PUMP_STATE_FILE
 
 STATE_FILE = PUMP_STATE_FILE
-ROUND_TRIP_FEE_PCT = 0.08  # Binance Futures taker fee (0.04% x 2)
 
 
 def load_state():
