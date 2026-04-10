@@ -332,7 +332,7 @@ async function refreshHeader() {
   }
 
   if (status) {
-    const paused = status.is_paused;
+    const paused = status.paused;
     const el = $('#hdr-status');
     if (paused) {
       el.textContent = 'PAUSED'; el.className = 'badge bg-red-900 text-red-300';
@@ -340,12 +340,13 @@ async function refreshHeader() {
       el.textContent = 'RUNNING'; el.className = 'badge bg-green-900 text-green-300';
     }
 
-    // Uptime
-    if (status.started_at) {
-      const diff = Math.floor((Date.now() - new Date(status.started_at).getTime()) / 1000);
-      const h = Math.floor(diff / 3600); const m = Math.floor((diff % 3600) / 60);
-      $('#hdr-uptime').textContent = `Up ${h}h${m}m`;
+    // Uptime / cycle info
+    const botStatus = status.bot_status || {};
+    if (botStatus.last_cycle_ago) {
+      $('#hdr-uptime').textContent = `Ciclo: ${botStatus.last_cycle_ago}`;
     }
+    const overall = (botStatus.overall || 'offline').toUpperCase();
+    $('#hdr-uptime').textContent += ` (${overall})`;
   }
 
   // Regime from microstructure (use BTCUSDT as primary)
@@ -403,15 +404,9 @@ function refreshKPIs(status) {
   }
   $('#kpi-trades-today').textContent = tradesToday;
 
-  // Win rate + P&L 7d from leaderboard
-  const lb = status.leaderboard || [];
-  let wins7 = 0, total7 = 0, pnl7 = 0;
-  for (const row of lb) {
-    total7 += (row.total_trades || 0);
-    wins7 += Math.round((row.win_rate || 0) / 100 * (row.total_trades || 0));
-  }
-
-  const wr7 = total7 > 0 ? (wins7 / total7 * 100) : 0;
+  // Win rate 7d from metrics
+  const metrics = status.metrics || {};
+  const wr7 = metrics.win_rate || 0;
   const elWr = $('#kpi-winrate');
   elWr.textContent = fmt(wr7, 1) + '%';
   elWr.className = 'text-xl font-bold ' + (wr7 >= 50 ? 'text-green-400' : wr7 > 0 ? 'text-red-400' : 'text-slate-400');
@@ -497,7 +492,12 @@ async function refreshSubtypes() {
   if (!data) return;
 
   // Pie chart
-  const dist = data.distribution || {};
+  const rawDist = data.distribution || {};
+  // Filter out "unknown" (pre-instrumentation legacy data)
+  const dist = {};
+  for (const [k, v] of Object.entries(rawDist)) {
+    if (k !== 'unknown') dist[k] = v;
+  }
   const pieLabels = Object.keys(dist);
   const pieValues = Object.values(dist);
   const pieColors = pieLabels.map(l => SUBTYPE_COLORS[l] || '#475569');
@@ -657,15 +657,21 @@ async function refreshSystem(status) {
 
   // Resources
   const res = $('#sys-resources');
-  const hw = status.hardware || {};
+  const hw = status.health || {};
   res.innerHTML = `
-    <div class="flex justify-between"><span class="text-slate-400">CPU</span><span>${fmt(hw.cpu_pct,0)}%</span></div>
-    <div class="w-full bg-slate-700 rounded h-1.5"><div class="bg-blue-500 h-1.5 rounded" style="width:${Math.min(hw.cpu_pct||0,100)}%"></div></div>
-    <div class="flex justify-between"><span class="text-slate-400">RAM</span><span>${fmt(hw.ram_pct,0)}%</span></div>
-    <div class="w-full bg-slate-700 rounded h-1.5"><div class="bg-purple-500 h-1.5 rounded" style="width:${Math.min(hw.ram_pct||0,100)}%"></div></div>
-    <div class="flex justify-between"><span class="text-slate-400">Disco</span><span>${fmt(hw.disk_pct,0)}%</span></div>
-    <div class="w-full bg-slate-700 rounded h-1.5"><div class="bg-amber-500 h-1.5 rounded" style="width:${Math.min(hw.disk_pct||0,100)}%"></div></div>
+    <div class="flex justify-between"><span class="text-slate-400">CPU</span><span>${fmt(hw.cpu_usage_pct,0)}%</span></div>
+    <div class="w-full bg-slate-700 rounded h-1.5"><div class="bg-blue-500 h-1.5 rounded" style="width:${Math.min(hw.cpu_usage_pct||0,100)}%"></div></div>
+    <div class="flex justify-between"><span class="text-slate-400">RAM</span><span>${fmt(hw.ram_usage_pct,0)}%</span></div>
+    <div class="w-full bg-slate-700 rounded h-1.5"><div class="bg-purple-500 h-1.5 rounded" style="width:${Math.min(hw.ram_usage_pct||0,100)}%"></div></div>
+    <div class="flex justify-between"><span class="text-slate-400">Disco</span><span>${fmt(hw.disk_usage_pct,0)}%</span></div>
+    <div class="w-full bg-slate-700 rounded h-1.5"><div class="bg-amber-500 h-1.5 rounded" style="width:${Math.min(hw.disk_usage_pct||0,100)}%"></div></div>
   `;
+  if (hw.temp_celsius != null) {
+    res.innerHTML += `
+      <div class="flex justify-between"><span class="text-slate-400">Temp</span><span>${fmt(hw.temp_celsius,0)}°C</span></div>
+      <div class="w-full bg-slate-700 rounded h-1.5"><div class="${(hw.temp_celsius||0) > 70 ? 'bg-red-500' : 'bg-green-500'} h-1.5 rounded" style="width:${Math.min((hw.temp_celsius||0)/100*100,100)}%"></div></div>
+    `;
+  }
 
   // Circuit breakers
   const cb = $('#sys-circuit-breakers');
@@ -693,17 +699,28 @@ async function refreshSystem(status) {
 
   // Processes
   const procs = $('#sys-processes');
-  const processes = status.processes || {};
+  const bs = status.bot_status || {};
+  const procEntries = [
+    ['main_bot', bs.main_bot],
+    ['pump_scanner', bs.pump_scanner],
+    ['dashboard', bs.dashboard],
+  ];
   procs.innerHTML = '';
-  for (const [name, info] of Object.entries(processes)) {
-    const running = info && (info.running || info.pid);
+  for (const [name, alive] of procEntries) {
     procs.innerHTML += `<div class="flex justify-between">
       <span class="text-slate-400">${name}</span>
-      <span class="${running ? 'text-green-400' : 'text-red-400'}">${running ? 'UP' : 'DOWN'}</span>
+      <span class="${alive ? 'text-green-400' : 'text-red-400'}">${alive ? 'UP' : 'DOWN'}</span>
     </div>`;
   }
-  if (Object.keys(processes).length === 0) {
-    procs.innerHTML = '<span class="text-slate-500">No process info</span>';
+  procs.innerHTML += `<div class="flex justify-between mt-2 pt-1 border-t border-slate-700">
+    <span class="text-slate-400">Overall</span>
+    <span class="${bs.overall === 'healthy' ? 'text-green-400' : bs.overall === 'degraded' ? 'text-yellow-400' : 'text-red-400'}">${(bs.overall || 'offline').toUpperCase()}</span>
+  </div>`;
+  if (bs.errors_today > 0) {
+    procs.innerHTML += `<div class="flex justify-between">
+      <span class="text-slate-400">Erros hoje</span>
+      <span class="text-red-400">${bs.errors_today}</span>
+    </div>`;
   }
 }
 

@@ -1573,7 +1573,8 @@ def api_trades():
     }
 
     if system == "scalping":
-        trades = _get_scalping_history(days=days, limit=150)
+        from database import get_scalping_trades
+        trades = get_scalping_trades(days=days, limit=150)
     else:
         table = table_map.get(system)
         if not table:
