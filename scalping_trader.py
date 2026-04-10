@@ -330,6 +330,26 @@ def _record_scalping_decision(
 #  GERENCIAMENTO DE POSICOES
 # ============================================================
 
+def _sanitize_positions(state: dict) -> int:
+    """Remove posicoes com entry_price invalido do state.
+
+    Returns:
+        Numero de posicoes removidas.
+    """
+    positions = state.get("positions", {})
+    corrupted = [
+        sym for sym, pos in positions.items()
+        if not pos.get("entry_price") or pos["entry_price"] <= 0
+    ]
+    for sym in corrupted:
+        logger.warning(
+            "SANITIZE: removendo posicao corrompida %s (entry_price=%s)",
+            sym, positions[sym].get("entry_price"),
+        )
+        del positions[sym]
+    return len(corrupted)
+
+
 def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame]) -> List[str]:
     """
     Verifica posicoes abertas do scalping para SL/TP hits.
@@ -345,6 +365,43 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
     pos = positions[symbol]
     state_before = _state_snapshot(state)
     entry_price = pos["entry_price"]
+
+    # Guard: posicao corrompida com entry_price invalido
+    if not entry_price or entry_price <= 0:
+        logger.error(
+            "POSICAO CORROMPIDA %s: entry_price=%s — removendo posicao para evitar division by zero",
+            symbol, entry_price,
+        )
+        # Remover posicao corrompida do state
+        del positions[symbol]
+        # Registrar no DB como trade cancelado
+        try:
+            trade = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "symbol": symbol,
+                "type": pos.get("direction", "UNKNOWN"),
+                "entry_price": 0,
+                "exit_price": 0,
+                "sl_price": pos.get("sl_price", 0),
+                "tp_price": pos.get("tp2_price", 0),
+                "position_size_usd": pos.get("position_size_usd", 0),
+                "leverage": pos.get("leverage", 1),
+                "confluence_score": pos.get("confluence_score", 0),
+                "source": pos.get("source", "corrupted"),
+                "pnl_pct": 0,
+                "pnl_usd": 0,
+                "exit_reason": "corrupted_entry_price",
+                "capital_after": state.get("capital", 0),
+                "signal_subtype": pos.get("signal_subtype", "unknown"),
+            }
+            db.insert_scalping_trade(trade)
+        except Exception as e:
+            logger.error("Erro ao registrar trade corrompido: %s", e)
+        messages.append(
+            f"[SCALPING] Posicao corrompida removida: {symbol} (entry_price={entry_price})"
+        )
+        return messages
+
     sl_price = pos["sl_price"]
     tp1_price = pos["tp1_price"]
     tp2_price = pos["tp2_price"]
@@ -610,10 +667,19 @@ def _open_position(
 
     signal_subtype = confluence.liq_signal_subtype
 
+    # Validar entry_price antes de abrir posicao
+    entry_price = best.entry_price
+    if not entry_price or entry_price <= 0:
+        logger.error(
+            "ENTRY_PRICE INVALIDO %s: entry_price=%s source=%s — ABORTANDO abertura",
+            symbol, entry_price, best.source,
+        )
+        return f"[SCALPING] Abertura abortada {symbol}: entry_price invalido ({entry_price})"
+
     positions = state.setdefault("positions", {})
     positions[symbol] = {
         "direction": direction,
-        "entry_price": best.entry_price,
+        "entry_price": entry_price,
         "entry_time": datetime.now().isoformat(),
         "sl_price": risk.sl_price,
         "tp1_price": risk.tp1_price,
@@ -632,7 +698,7 @@ def _open_position(
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "symbol": symbol,
         "type": direction,
-        "entry_price": best.entry_price,
+        "entry_price": entry_price,
         "exit_price": None,
         "sl_price": risk.sl_price,
         "tp_price": risk.tp2_price,
@@ -657,7 +723,7 @@ def _open_position(
     msg = (
         f"[SCALPING] {direction} aberto: {symbol}\n"
         f"Confluencia: {confluence.score}/3 ({confluence.reason})\n"
-        f"Entrada: {best.entry_price:.4f}\n"
+        f"Entrada: {entry_price:.4f}\n"
         f"SL: {risk.sl_price:.4f} ({best.sl_distance_pct:.2f}%)\n"
         f"TP1: {risk.tp1_price:.4f} | TP2: {risk.tp2_price:.4f}\n"
         f"Size: ${risk.position_size_usd:.2f} | Lev: {risk.leverage}x\n"
@@ -667,7 +733,7 @@ def _open_position(
 
     logger.info(
         "ABERTO %s %s: entry=%.4f sl=%.4f tp1=%.4f tp2=%.4f size=$%.2f lev=%dx",
-        symbol, direction, best.entry_price, risk.sl_price,
+        symbol, direction, entry_price, risk.sl_price,
         risk.tp1_price, risk.tp2_price, risk.position_size_usd, risk.leverage
     )
 
@@ -714,6 +780,13 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
     """
     messages = []
     state = load_scalping_state()
+
+    # Sanear posicoes corrompidas (entry_price invalido) antes de qualquer operacao
+    removed = _sanitize_positions(state)
+    if removed:
+        logger.warning("SANITIZE: %d posicoes corrompidas removidas no startup", removed)
+        save_scalping_state(state)
+
     cycle_id = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Limpar cache de candles para dados frescos

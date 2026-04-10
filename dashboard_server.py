@@ -1623,6 +1623,27 @@ def _get_dashboard_db():
     return conn
 
 
+@app.route("/api/microstructure/history")
+def api_microstructure_history():
+    from database import get_microstructure_history
+    symbol = request.args.get("symbol", "BTCUSDT")
+    hours = _safe_int(request.args.get("hours", "24"), 24)
+    resolution = _safe_int(request.args.get("resolution", "5"), 5)
+
+    # Limites de seguranca
+    hours = max(1, min(hours, 24 * 60))        # max 60 dias
+    resolution = max(1, min(resolution, 1440)) # min 1 min, max 1 dia
+
+    data = get_microstructure_history(symbol, hours=hours, resolution_minutes=resolution)
+    return jsonify({
+        "symbol": symbol,
+        "hours": hours,
+        "resolution_minutes": resolution,
+        "count": len(data),
+        "data": data,
+    })
+
+
 @app.route("/api/microstructure/latest")
 def api_microstructure_latest():
     conn = _get_dashboard_db()

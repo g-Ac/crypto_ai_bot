@@ -1,6 +1,7 @@
 import time
 import shutil
 import threading
+from datetime import datetime
 import database as db
 from config import SYMBOLS, INTERVAL, LIMIT, ALERT_PRIORITY_MIN
 from telegram_commands import start_command_listener, is_paused
@@ -56,9 +57,24 @@ def check_disk_space():
     except Exception as e:
         print(f"  [ERRO] Falha ao verificar espaco em disco: {e}")
 
+_last_prune_day = None
+
+
 def run_bot():
+    global _last_prune_day
     # Verificar espaco em disco antes de tudo
     check_disk_space()
+
+    # Pruning diario de microestrutura (manter 60 dias de granularidade)
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    if _last_prune_day != today_str:
+        try:
+            removed = db.prune_microstructure(keep_days=60)
+            if removed:
+                print(f"  [PRUNING] Removidos {removed} registos de microestrutura (>60 dias)")
+            _last_prune_day = today_str
+        except Exception as e:
+            print(f"  [AVISO] Erro no pruning de microestrutura: {e}")
 
     results = []
 

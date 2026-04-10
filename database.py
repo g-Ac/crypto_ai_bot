@@ -7,7 +7,7 @@ gravem ao mesmo tempo sem conflitos.
 """
 import json
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from runtime_config import DB_FILE, ensure_runtime_dirs
 
 # Whitelist de tabelas válidas para queries dinâmicas (B10).
@@ -304,6 +304,30 @@ def init_db():
             conn.commit()
         except Exception:
             pass  # coluna já existe ou tabela ainda não criada
+
+    # Migração: market_microstructure — colunas extras de collect_microstructure
+    for col, coltype in [
+        ("next_funding_time", "TEXT"),
+        ("liquidation_count", "INTEGER DEFAULT 0"),
+        ("liquidation_is_proxy", "INTEGER DEFAULT 0"),
+        ("futures_price", "REAL"),
+        ("spot_price", "REAL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE market_microstructure ADD COLUMN {col} {coltype}")
+            conn.commit()
+        except Exception:
+            pass  # coluna já existe
+
+    # Índice composto para queries historicas eficientes (symbol+time range)
+    try:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_microstructure_sym_ts "
+            "ON market_microstructure(symbol, timestamp)"
+        )
+        conn.commit()
+    except Exception:
+        pass
 
     # Migração: signal_subtype em scalping_decisions e scalping_trades (V2.1b observabilidade)
     for table in ["scalping_decisions", "scalping_trades"]:
@@ -682,8 +706,10 @@ def insert_market_microstructure(data: dict):
                 funding_rate_prev2, ls_ratio_top, ls_ratio_global,
                 liquidation_vol_long, liquidation_vol_short,
                 open_interest, oi_change_1h_pct, oi_change_4h_pct,
-                basis_spread_pct, session
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                basis_spread_pct, session,
+                next_funding_time, liquidation_count, liquidation_is_proxy,
+                futures_price, spot_price
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             data.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             data.get("symbol", ""),
@@ -699,8 +725,92 @@ def insert_market_microstructure(data: dict):
             data.get("oi_change_4h_pct"),
             data.get("basis_spread_pct"),
             data.get("session", ""),
+            data.get("next_funding_time"),
+            data.get("liquidation_count", 0),
+            1 if data.get("liquidation_is_proxy") else 0,
+            data.get("futures_price"),
+            data.get("spot_price"),
         ))
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_microstructure_history(symbol: str, hours: int = 24, resolution_minutes: int = 1) -> list:
+    """Retorna historico de microestrutura com agregacao temporal.
+
+    Args:
+        symbol: Par de trading (ex: BTCUSDT)
+        hours: Quantas horas de historico (default 24)
+        resolution_minutes: Resolucao em minutos (1=granular, 5=5min, 60=1h)
+
+    Returns:
+        Lista de dicts com medias por bucket temporal (ou rows raw se resolution=1)
+    """
+    conn = _get_conn()
+    try:
+        since = (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+
+        if resolution_minutes <= 1:
+            # Dados granulares — retorna tudo
+            cursor = conn.execute("""
+                SELECT * FROM market_microstructure
+                WHERE symbol = ? AND timestamp >= ?
+                ORDER BY timestamp ASC
+            """, (symbol, since))
+        else:
+            # Agregacao por bucket de N minutos
+            cursor = conn.execute("""
+                SELECT
+                    strftime('%Y-%m-%d %H:', timestamp) ||
+                        printf('%02d', (CAST(strftime('%M', timestamp) AS INTEGER) / ?) * ?)
+                        || ':00' AS bucket,
+                    symbol,
+                    AVG(funding_rate) AS funding_rate,
+                    AVG(funding_rate_prev1) AS funding_rate_prev1,
+                    AVG(funding_rate_prev2) AS funding_rate_prev2,
+                    AVG(ls_ratio_top) AS ls_ratio_top,
+                    AVG(ls_ratio_global) AS ls_ratio_global,
+                    SUM(liquidation_vol_long) AS liquidation_vol_long,
+                    SUM(liquidation_vol_short) AS liquidation_vol_short,
+                    AVG(open_interest) AS open_interest,
+                    AVG(oi_change_1h_pct) AS oi_change_1h_pct,
+                    AVG(oi_change_4h_pct) AS oi_change_4h_pct,
+                    AVG(basis_spread_pct) AS basis_spread_pct,
+                    AVG(futures_price) AS futures_price,
+                    AVG(spot_price) AS spot_price,
+                    COUNT(*) AS sample_count
+                FROM market_microstructure
+                WHERE symbol = ? AND timestamp >= ?
+                GROUP BY bucket, symbol
+                ORDER BY bucket ASC
+            """, (resolution_minutes, resolution_minutes, symbol, since))
+
+        columns = [desc[0] for desc in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def prune_microstructure(keep_days: int = 60) -> int:
+    """Remove registos de microestrutura mais antigos que keep_days.
+
+    Returns:
+        Numero de registos removidos.
+    """
+    conn = _get_conn()
+    try:
+        cutoff = (datetime.now() - timedelta(days=keep_days)).strftime("%Y-%m-%d %H:%M:%S")
+        cursor = conn.execute(
+            "DELETE FROM market_microstructure WHERE timestamp < ?",
+            (cutoff,),
+        )
+        removed = cursor.rowcount
+        conn.commit()
+        if removed > 0:
+            # VACUUM periodico para recuperar espaco no SD card
+            conn.execute("VACUUM")
+        return removed
     finally:
         conn.close()
 
