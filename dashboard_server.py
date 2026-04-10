@@ -1698,6 +1698,11 @@ def dashboard_v2():
     return render_template("index_v2.html")
 
 
+@app.route("/v3")
+def index_v3():
+    return render_template("index_v3.html")
+
+
 # ── MAIN ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
