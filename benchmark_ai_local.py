@@ -136,20 +136,21 @@ def run_inference(model_cfg: dict, prompt: str, n_predict: int = 64) -> dict:
                 "-p", full_prompt,
                 "-n", str(n_predict),
                 "--temp", "0.1",
-                "--top-k", "1",       # quasi-deterministico
+                "--top-k", "1",         # quasi-deterministico
+                "-no-cnv",              # single-shot (nao entrar em chat mode)
                 "--no-display-prompt",
-                "-ngl", "0",          # sem GPU (Pi nao tem)
-                "--threads", "4",     # usar os 4 cores
+                "-ngl", "0",            # sem GPU (Pi nao tem)
+                "--threads", "4",       # usar os 4 cores
             ],
             capture_output=True,
             text=True,
-            timeout=30,  # timeout de 30s
+            timeout=60,  # timeout de 60s (Pi 4 e lento no primeiro load)
         )
         elapsed = time.time() - start
         output = result.stdout.strip()
-        stderr_tail = result.stderr[-200:] if result.stderr else ""
+        stderr_tail = result.stderr[-400:] if result.stderr else ""
     except subprocess.TimeoutExpired:
-        elapsed = 30.0
+        elapsed = 60.0
         output = "TIMEOUT"
         stderr_tail = ""
     except Exception as e:
@@ -197,16 +198,30 @@ def benchmark():
 
     results = {}
 
+    # Tamanhos minimos esperados (para detectar downloads incompletos)
+    MIN_SIZES_MB = {
+        "qwen2.5-0.5b-q8": 500,
+        "tinyllama-1.1b-q4": 600,
+        "phi2-2.7b-q4": 1500,
+    }
+
     for model_name, model_cfg in MODELS.items():
         model_path = model_cfg["path"]
         if not os.path.exists(model_path):
             print(f"\n[SKIP] {model_name} — ficheiro nao encontrado: {model_path}")
             continue
 
+        size_mb = os.path.getsize(model_path) / (1024**2)
+        min_mb = MIN_SIZES_MB.get(model_name, 0)
+        if size_mb < min_mb:
+            print(f"\n[SKIP] {model_name} — ficheiro incompleto/corrompido: {size_mb:.0f}MB < {min_mb}MB esperado")
+            print(f"         Re-descarregar: rm {model_path} && wget -c <URL>")
+            continue
+
         print(f"\n{'─' * 70}")
         print(f"MODELO: {model_name}")
         print(f"Ficheiro: {model_path}")
-        print(f"Tamanho: {os.path.getsize(model_path) / (1024**2):.0f} MB")
+        print(f"Tamanho: {size_mb:.0f} MB")
         print(f"Template: {model_cfg['formatter'].__doc__}")
         print(f"{'─' * 70}")
 
@@ -232,7 +247,9 @@ def benchmark():
             if res["reason"]:
                 print(f"    Razao: {res['reason']}")
             if not res["json_valid"]:
-                print(f"    Output bruto: {res['raw_output'][:100]}")
+                print(f"    Output bruto: {res['raw_output'][:200]}")
+                if res.get("stderr_tail"):
+                    print(f"    Stderr: {res['stderr_tail'][:200]}")
 
         # Resumo do modelo
         latencies = [r["elapsed_s"] for r in model_results]

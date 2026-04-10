@@ -82,6 +82,7 @@ def validate_local(symbol, direction, score, reason, best_signal_source, timeout
                 "-n", "64",
                 "--temp", "0.1",
                 "--top-k", "1",
+                "-no-cnv",           # single-shot (evita chat mode)
                 "--no-display-prompt",
                 "-ngl", "0",
                 "--threads", "4",
