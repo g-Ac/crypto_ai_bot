@@ -938,12 +938,23 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                     )
                     continue
 
-            # ---- PASSO 5.5: Claude validation para confluencia borderline (2/3) ----
+            # ---- PASSO 5.5: AI validation para confluencia borderline (2/3) ----
+            # Prioridade: modelo local (ai_gate_local) -> Haiku API -> fail-safe
             ai_used = False
             ai_approved = False
             if confluence.score == 2 and not SCALPING_DISABLE_AI_GATE:
                 ai_used = True
                 try:
+                    from ai_gate_local import validate_local
+                    approved, val_reason = validate_local(
+                        symbol,
+                        confluence.direction.value,
+                        confluence.score,
+                        confluence.reason,
+                        confluence.best_signal.source if confluence.best_signal else "unknown",
+                    )
+                except ImportError:
+                    # ai_gate_local.py nao existe — usar Haiku directo
                     from trade_agents import validate_scalping_signal
                     approved, val_reason = validate_scalping_signal(
                         symbol,
@@ -952,40 +963,42 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                         confluence.reason,
                         confluence.best_signal.source if confluence.best_signal else "unknown",
                     )
-                    if not approved:
-                        ai_approved = False
-                        logger.info("SCALPING %s: Claude rejeitou (2/3) - %s", symbol, val_reason)
-                        messages.append(f"[SCALPING] {symbol} rejeitado por Claude: {val_reason}")
-                        _record_scalping_decision(
-                            cycle_id=cycle_id,
-                            symbol=symbol,
-                            outcome="ai_rejected",
-                            reason=val_reason,
-                            confluence=confluence,
-                            ai_used=ai_used,
-                            ai_approved=ai_approved,
-                        )
-                        _record_scalping_audit(
-                            cycle_id=cycle_id,
-                            symbol=symbol,
-                            outcome="ai_rejected",
-                            reason=val_reason,
-                            opportunity_detected=opportunity_detected,
-                            force_entry_applied=force_entry_applied,
-                            ai_used=ai_used,
-                            ai_approved=ai_approved,
-                            risk=None,
-                            confluence=confluence,
-                            state_before=state_before,
-                            state_after=_state_snapshot(state),
-                            market_context=market_context,
-                        )
-                        continue
-                    ai_approved = True
-                    logger.info("SCALPING %s: Claude aprovou (2/3) - %s", symbol, val_reason)
                 except Exception as val_err:
-                    ai_approved = True
-                    logger.warning("SCALPING %s: erro na validacao Claude, prosseguindo: %s", symbol, val_err)
+                    approved = True
+                    val_reason = f"erro validacao, prosseguindo: {val_err}"
+                    logger.warning("SCALPING %s: %s", symbol, val_reason)
+
+                if not approved:
+                    ai_approved = False
+                    logger.info("SCALPING %s: AI rejeitou (2/3) - %s", symbol, val_reason)
+                    messages.append(f"[SCALPING] {symbol} rejeitado por AI: {val_reason}")
+                    _record_scalping_decision(
+                        cycle_id=cycle_id,
+                        symbol=symbol,
+                        outcome="ai_rejected",
+                        reason=val_reason,
+                        confluence=confluence,
+                        ai_used=ai_used,
+                        ai_approved=ai_approved,
+                    )
+                    _record_scalping_audit(
+                        cycle_id=cycle_id,
+                        symbol=symbol,
+                        outcome="ai_rejected",
+                        reason=val_reason,
+                        opportunity_detected=opportunity_detected,
+                        force_entry_applied=force_entry_applied,
+                        ai_used=ai_used,
+                        ai_approved=ai_approved,
+                        risk=None,
+                        confluence=confluence,
+                        state_before=state_before,
+                        state_after=_state_snapshot(state),
+                        market_context=market_context,
+                    )
+                    continue
+                ai_approved = True
+                logger.info("SCALPING %s: AI aprovou (2/3) - %s", symbol, val_reason)
             elif confluence.score == 2 and SCALPING_DISABLE_AI_GATE:
                 ai_approved = True
                 logger.warning("SCALPING %s: gate de IA ignorado por modo experimental", symbol)

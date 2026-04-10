@@ -63,6 +63,7 @@ def setup_scalping_logging(level: int = logging.INFO) -> None:
         "scalping.outcomes",
         "engine.liquidation",
         "engine.funding",
+        "scalping.ai_gate_local",
     ]:
         logger = logging.getLogger(name)
         logger.setLevel(level)
