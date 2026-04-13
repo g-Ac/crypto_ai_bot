@@ -311,6 +311,90 @@ def audit_scalping(conn: sqlite3.Connection):
                       f"(>{0.8:.1f}%: {blocked}/{n} = {pct_blocked:.0f}% bloqueados)")
 
 
+def audit_comparison(conn: sqlite3.Connection):
+    """Etapa 4: comparativo V2 vs V2.1b side-by-side."""
+    if not _table_exists(conn, "scalping_trades") or not _table_exists(conn, "scalping_trades_v2_1b"):
+        return
+
+    print("\n  V2 vs V2.1b COMPARATIVO:")
+
+    metrics = {}
+    for label, trades_t, decisions_t in [
+        ("V2", "scalping_trades", "scalping_decisions"),
+        ("V2.1b", "scalping_trades_v2_1b", "scalping_decisions_v2_1b"),
+    ]:
+        row = conn.execute(f"""
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN pnl_usd > 0 THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN pnl_usd <= 0 THEN 1 ELSE 0 END) AS losses,
+                SUM(pnl_usd) AS total_pnl,
+                SUM(CASE WHEN pnl_usd > 0 THEN pnl_usd ELSE 0 END) AS gross_profit,
+                SUM(CASE WHEN pnl_usd < 0 THEN ABS(pnl_usd) ELSE 0 END) AS gross_loss,
+                AVG(pnl_pct) AS avg_pnl_pct,
+                MIN(pnl_usd) AS worst_trade,
+                MAX(pnl_usd) AS best_trade
+            FROM {trades_t}
+            WHERE exit_reason != 'open' OR exit_reason IS NULL
+        """).fetchone()
+
+        total = row["total"]
+        wins = row["wins"] or 0
+        losses = row["losses"] or 0
+        pnl = row["total_pnl"] or 0
+        gp = row["gross_profit"] or 0
+        gl = row["gross_loss"] or 0
+        pf = (gp / gl) if gl > 0 else 0
+        wr = (wins / total * 100) if total else 0
+
+        # Decision funnel
+        dec_total = 0
+        dec_opened = 0
+        if _table_exists(conn, decisions_t):
+            funnel = conn.execute(f"""
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN outcome = 'opened' THEN 1 ELSE 0 END) AS opened
+                FROM {decisions_t}
+            """).fetchone()
+            dec_total = funnel["total"]
+            dec_opened = funnel["opened"] or 0
+
+        hit_rate = (dec_opened / dec_total * 100) if dec_total else 0
+
+        metrics[label] = {
+            "total": total, "wins": wins, "losses": losses,
+            "wr": wr, "pnl": pnl, "pf": pf,
+            "avg_pnl": row["avg_pnl_pct"] or 0,
+            "best": row["best_trade"] or 0, "worst": row["worst_trade"] or 0,
+            "decisions": dec_total, "opened": dec_opened, "hit_rate": hit_rate,
+        }
+
+    # Print side-by-side
+    header = f"    {'':>20s}  {'V2':>12s}  {'V2.1b':>12s}"
+    print(header)
+    print(f"    {'-'*20}  {'-'*12}  {'-'*12}")
+
+    v2 = metrics.get("V2", {})
+    v21b = metrics.get("V2.1b", {})
+
+    rows_to_print = [
+        ("Trades (closed)", f"{v2.get('total',0)}", f"{v21b.get('total',0)}"),
+        ("Win rate", f"{v2.get('wr',0):.0f}%", f"{v21b.get('wr',0):.0f}%"),
+        ("PnL total", f"${v2.get('pnl',0):.2f}", f"${v21b.get('pnl',0):.2f}"),
+        ("PnL medio", f"{v2.get('avg_pnl',0):.2f}%", f"{v21b.get('avg_pnl',0):.2f}%"),
+        ("Profit factor", f"{v2.get('pf',0):.2f}", f"{v21b.get('pf',0):.2f}"),
+        ("Melhor trade", f"${v2.get('best',0):.2f}", f"${v21b.get('best',0):.2f}"),
+        ("Pior trade", f"${v2.get('worst',0):.2f}", f"${v21b.get('worst',0):.2f}"),
+        ("Decisoes total", f"{v2.get('decisions',0)}", f"{v21b.get('decisions',0)}"),
+        ("Trades abertos", f"{v2.get('opened',0)}", f"{v21b.get('opened',0)}"),
+        ("Taxa abertura", f"{v2.get('hit_rate',0):.1f}%", f"{v21b.get('hit_rate',0):.1f}%"),
+    ]
+
+    for label, val_v2, val_v21b in rows_to_print:
+        print(f"    {label:>20s}  {val_v2:>12s}  {val_v21b:>12s}")
+
+
 def audit_db_health(db_path: str):
     """Tamanho do ficheiro e integridade basica."""
     size_mb = os.path.getsize(db_path) / (1024 * 1024)
@@ -344,6 +428,7 @@ def main():
         try:
             audit_microstructure(conn)
             audit_scalping(conn)
+            audit_comparison(conn)
         finally:
             conn.close()
 

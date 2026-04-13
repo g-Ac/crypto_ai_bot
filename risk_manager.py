@@ -474,8 +474,10 @@ def evaluate_risk(
         "volume_breakout": config.max_sl_volume_breakout,
         "rsi_bb_reversal": config.max_sl_rsi_bb,
         "ema_crossover": config.max_sl_ema_crossover,
+        "liquidation_cascade": config.max_sl_liquidation_cascade,
+        "funding_rate": config.max_sl_funding_rate,
     }
-    max_sl = max_sl_map.get(best_signal.source, 0.8)
+    max_sl = max_sl_map.get(best_signal.source, 2.5)
 
     if sl_distance_pct > max_sl:
         return RiskDecision(
@@ -491,6 +493,8 @@ def evaluate_risk(
         "volume_breakout": config.min_rr_volume_breakout,
         "rsi_bb_reversal": config.min_rr_rsi_bb,
         "ema_crossover": config.min_rr_ema_crossover,
+        "liquidation_cascade": config.min_rr_liquidation_cascade,
+        "funding_rate": config.min_rr_funding_rate,
     }
     min_rr = min_rr_map.get(best_signal.source, 1.5)
 

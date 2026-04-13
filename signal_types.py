@@ -113,11 +113,15 @@ class ScalpingConfig:
     max_sl_volume_breakout: float = 0.8
     max_sl_rsi_bb: float = 0.6
     max_sl_ema_crossover: float = 0.7
+    max_sl_liquidation_cascade: float = 2.5  # microestrutura: ATR-based, SL mais largo
+    max_sl_funding_rate: float = 2.5
 
     # RR minimo por abordagem
     min_rr_volume_breakout: float = 1.8
     min_rr_rsi_bb: float = 1.5
     min_rr_ema_crossover: float = 2.0
+    min_rr_liquidation_cascade: float = 1.5
+    min_rr_funding_rate: float = 1.5
 
     # News filter
     news_filter_enabled: bool = True
