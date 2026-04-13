@@ -1,2 +1,0 @@
-- [Scalping Architecture](scalping_architecture.md) — 3-engine scalping system with confluence, risk mgmt, and integration to main.py
-- [Library Choices](library_choices.md) — Uses ta (not ta-lib), requests (not ccxt), pandas for the trading bot

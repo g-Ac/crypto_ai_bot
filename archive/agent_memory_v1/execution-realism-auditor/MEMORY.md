@@ -1,2 +1,0 @@
-- [Fee Modeling Audit](audit_fee_modeling.md) — Critical: paper traders have zero fees, backtests are more realistic
-- [Scalping Realism Gaps](audit_scalping_realism.md) — Tight SLs make fees 10-27% of stop distance; leverage amplifies
