@@ -54,6 +54,15 @@ BINANCE_FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"]
 
+# Simbolos para scalping (microestrutura): foco em BTC/ETH para maior
+# densidade de liquidacoes e sinais. Override via env var (comma-separated).
+_scalping_symbols_raw = os.environ.get("SCALPING_SYMBOLS", "").strip()
+SCALPING_SYMBOLS = (
+    [s.strip().upper() for s in _scalping_symbols_raw.split(",") if s.strip()]
+    if _scalping_symbols_raw
+    else ["BTCUSDT", "ETHUSDT"]
+)
+
 INTERVAL = "5m"
 INTERVAL_HTF = "1h"
 LIMIT = 100

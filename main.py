@@ -4,7 +4,7 @@ import threading
 from datetime import datetime
 import database as db
 import config as cfg
-from config import SYMBOLS, INTERVAL, LIMIT, ALERT_PRIORITY_MIN
+from config import SYMBOLS, SCALPING_SYMBOLS, INTERVAL, LIMIT, ALERT_PRIORITY_MIN
 from telegram_commands import start_command_listener, is_paused
 from market import get_candles
 from indicators import add_indicators
@@ -282,7 +282,7 @@ def run_bot():
             scalping_suspended = True  # fallback seguro: so gerencia posicoes
         if scalping_suspended:
             print("  Circuit breaker ativo ou bot pausado - novos trades suspensos, gerenciando posicoes")
-        scalping_msgs = process_scalping(SYMBOLS, open_new=not scalping_suspended, results=results)
+        scalping_msgs = process_scalping(SCALPING_SYMBOLS, open_new=not scalping_suspended, results=results)
         for msg in scalping_msgs:
             print(f"  {msg}")
             send_telegram_message(f"\u26a1 <b>[SCALPING]</b> {msg}")
@@ -302,7 +302,7 @@ def run_bot():
                 v2_1b_suspended = True
             if v2_1b_suspended:
                 print("  V2.1b circuit breaker ativo - gerenciando posicoes")
-            v2_1b_msgs = process_scalping_v2_1b(SYMBOLS, open_new=not v2_1b_suspended, results=results)
+            v2_1b_msgs = process_scalping_v2_1b(SCALPING_SYMBOLS, open_new=not v2_1b_suspended, results=results)
             for msg in v2_1b_msgs:
                 print(f"  {msg}")
                 send_telegram_message(f"\U0001f9ea <b>[V2.1b]</b> {msg}")
@@ -329,10 +329,11 @@ _cycle_lock = threading.Lock()
 if __name__ == "__main__":
     db.init_db()
     setup_scalping_logging()
-    init_liquidation_feed(SYMBOLS)
+    init_liquidation_feed(SCALPING_SYMBOLS)
     print(f"[BOOT] Instancia: {BOT_ID}")
     print(f"[BOOT] Runtime: {runtime_metadata()['runtime_dir']}")
-    print(f"[BOOT] Liquidation feed: {len(SYMBOLS)} simbolos")
+    print(f"[BOOT] Liquidation feed: {SCALPING_SYMBOLS}")
+    print(f"[BOOT] Scalping symbols: {SCALPING_SYMBOLS} | Analysis symbols: {SYMBOLS}")
     if ENABLE_TELEGRAM_COMMANDS:
         start_command_listener()
     else:

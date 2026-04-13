@@ -65,6 +65,7 @@ def audit_microstructure(conn: sqlite3.Connection):
         return
 
     now = datetime.now()
+    t_1h = (now - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
     t_24h = (now - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
     t_7d = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -75,25 +76,26 @@ def audit_microstructure(conn: sqlite3.Connection):
         print("  [!] ZERO registos — bot nao esta a gravar microestrutura")
         return
 
-    # --- Rows por simbolo: 24h e 7d ---
-    print("\n  Rows por simbolo (24h / 7d / total):")
+    # --- Rows por simbolo: 1h, 24h e 7d ---
+    print("\n  Rows por simbolo (1h / 24h / 7d / total):")
     rows = conn.execute("""
         SELECT
             symbol,
+            SUM(CASE WHEN timestamp >= ? THEN 1 ELSE 0 END) AS cnt_1h,
             SUM(CASE WHEN timestamp >= ? THEN 1 ELSE 0 END) AS cnt_24h,
             SUM(CASE WHEN timestamp >= ? THEN 1 ELSE 0 END) AS cnt_7d,
             COUNT(*) AS cnt_total
         FROM market_microstructure
         GROUP BY symbol
         ORDER BY cnt_24h DESC
-    """, (t_24h, t_7d)).fetchall()
+    """, (t_1h, t_24h, t_7d)).fetchall()
 
     for r in rows:
         cycles_24h = r["cnt_24h"]
         expected_24h = 288  # 24h / 5min = 288 ciclos
         pct = (cycles_24h / expected_24h * 100) if expected_24h else 0
         status = "OK" if pct >= 80 else "BAIXO" if pct >= 50 else "CRITICO"
-        print(f"    {r['symbol']:>10s}  {cycles_24h:>4d} / {r['cnt_7d']:>5d} / {r['cnt_total']:>6d}  "
+        print(f"    {r['symbol']:>10s}  {r['cnt_1h']:>3d} / {cycles_24h:>4d} / {r['cnt_7d']:>5d} / {r['cnt_total']:>6d}  "
               f"({pct:.0f}% do esperado 24h) [{status}]")
 
     # --- Atraso do ultimo registro ---
@@ -110,19 +112,38 @@ def audit_microstructure(conn: sqlite3.Connection):
         except ValueError:
             print(f"\n  Ultimo registo: {last_ts_row['last_ts']} (formato nao reconhecido)")
 
-    # --- Liquidacoes: real vs proxy ---
-    print("\n  Liquidacoes (real vs proxy):")
+    # --- Liquidacoes: real vs proxy (1h + 24h) ---
+    print("\n  Liquidacoes real vs proxy (1h):")
+    liq_1h = conn.execute("""
+        SELECT
+            symbol,
+            SUM(CASE WHEN liquidation_is_proxy = 0 THEN 1 ELSE 0 END) AS real_cnt,
+            SUM(CASE WHEN liquidation_is_proxy = 1 THEN 1 ELSE 0 END) AS proxy_cnt,
+            COUNT(*) AS total
+        FROM market_microstructure
+        WHERE timestamp >= ?
+        GROUP BY symbol
+        ORDER BY symbol
+    """, (t_1h,)).fetchall()
+
+    for r in liq_1h:
+        pct = (r["real_cnt"] / r["total"] * 100) if r["total"] else 0
+        tag = "REAL" if pct >= 80 else "MISTO" if pct >= 20 else "PROXY"
+        print(f"    {r['symbol']:>10s}  real={r['real_cnt']:>3d}  proxy={r['proxy_cnt']:>3d}  ({pct:.0f}% real) [{tag}]")
+
+    print("\n  Liquidacoes real vs proxy (24h):")
     liq_rows = conn.execute("""
         SELECT
             symbol,
-            SUM(CASE WHEN timestamp >= ? THEN 1 ELSE 0 END) AS cnt_24h,
-            SUM(CASE WHEN timestamp >= ? AND liquidation_is_proxy = 0 THEN 1 ELSE 0 END) AS real_24h,
-            SUM(CASE WHEN timestamp >= ? AND liquidation_is_proxy = 1 THEN 1 ELSE 0 END) AS proxy_24h,
-            SUM(CASE WHEN timestamp >= ? AND liquidation_is_proxy IS NULL THEN 1 ELSE 0 END) AS null_24h
+            SUM(CASE WHEN liquidation_is_proxy = 0 THEN 1 ELSE 0 END) AS real_24h,
+            SUM(CASE WHEN liquidation_is_proxy = 1 THEN 1 ELSE 0 END) AS proxy_24h,
+            SUM(CASE WHEN liquidation_is_proxy IS NULL THEN 1 ELSE 0 END) AS null_24h,
+            COUNT(*) AS cnt_24h
         FROM market_microstructure
+        WHERE timestamp >= ?
         GROUP BY symbol
         ORDER BY symbol
-    """, (t_24h, t_24h, t_24h, t_24h)).fetchall()
+    """, (t_24h,)).fetchall()
 
     total_real = 0
     total_proxy = 0
@@ -269,6 +290,25 @@ def audit_scalping(conn: sqlite3.Connection):
                 print(f"    Top rejeicoes 24h:")
                 for r in rejections:
                     print(f"      {r['cnt']:>3d}x  {r['reason']}")
+
+            # SL distance distribution (para diagnosticar risk gate)
+            sl_rows = conn.execute(f"""
+                SELECT sl_distance_pct
+                FROM {decisions_t}
+                WHERE timestamp >= ? AND sl_distance_pct IS NOT NULL AND sl_distance_pct > 0
+                ORDER BY sl_distance_pct
+            """, (t_24h,)).fetchall()
+
+            if sl_rows:
+                vals = [r["sl_distance_pct"] for r in sl_rows]
+                n = len(vals)
+                p25 = vals[int(n * 0.25)] if n > 4 else vals[0]
+                p50 = vals[int(n * 0.50)]
+                p75 = vals[int(n * 0.75)] if n > 4 else vals[-1]
+                blocked = sum(1 for v in vals if v > 0.8)
+                pct_blocked = (blocked / n * 100) if n else 0
+                print(f"    SL distance 24h: p25={p25:.2f}% p50={p50:.2f}% p75={p75:.2f}% "
+                      f"(>{0.8:.1f}%: {blocked}/{n} = {pct_blocked:.0f}% bloqueados)")
 
 
 def audit_db_health(db_path: str):
