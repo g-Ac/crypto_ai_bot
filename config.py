@@ -145,6 +145,15 @@ PUMP_CAPITAL = PUMP_INITIAL_CAPITAL  # capital separado para pump trades
 # Mudar para True apos paper test validar OOS
 V2_1B_ENABLED = False
 
+# V2.1b Paper side-by-side: roda V2.1b em paralelo com V2 para comparacao
+# Quando True, ambos V2 e V2.1b rodam a cada ciclo com estado/DB separados
+V2_1B_PAPER_ENABLED = os.environ.get("V2_1B_PAPER_ENABLED", "true").strip().lower() in ("true", "1", "yes")
+
+# Paper/Agent Trader: desligar para focar em microestrutura
+# False = desativa paper_trader e trade_agents no loop principal
+PAPER_TRADER_ENABLED = os.environ.get("PAPER_TRADER_ENABLED", "true").strip().lower() in ("true", "1", "yes")
+AGENT_TRADER_ENABLED = os.environ.get("AGENT_TRADER_ENABLED", "true").strip().lower() in ("true", "1", "yes")
+
 # Dashboard Auth (HTTP Basic Auth para rotas POST)
 # Defina via env vars DASHBOARD_USER / DASHBOARD_PASS no Pi.
 # Se ambas estiverem vazias, auth fica desabilitada (apenas rede local confiavel).

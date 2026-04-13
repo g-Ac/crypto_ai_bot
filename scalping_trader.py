@@ -1233,3 +1233,380 @@ def get_scalping_status() -> str:
         lines.append(f"[SCALPING] Cooldowns: {', '.join(cd_strs)}")
 
     return "\n".join(lines)
+
+
+# ============================================================
+#  V2.1b SIDE-BY-SIDE PAPER MODE
+# ============================================================
+
+def _load_v2_1b_state() -> dict:
+    """Carrega estado V2.1b de arquivo separado."""
+    import json
+    import os
+    from runtime_config import SCALPING_V2_1B_STATE_FILE
+    if not os.path.exists(SCALPING_V2_1B_STATE_FILE):
+        return {
+            "capital": float(SCALPING_INITIAL_CAPITAL),
+            "positions": {},
+            "cooldowns": {},
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "total_pnl_usd": 0.0,
+            "history": [],
+        }
+    with open(SCALPING_V2_1B_STATE_FILE, "r") as f:
+        return json.load(f)
+
+
+def _save_v2_1b_state(state: dict) -> None:
+    """Salva estado V2.1b de forma atomica."""
+    import json
+    import os
+    import tempfile
+    from runtime_config import SCALPING_V2_1B_STATE_FILE
+    data = json.dumps(state, indent=2, default=str)
+    dir_name = os.path.dirname(os.path.abspath(SCALPING_V2_1B_STATE_FILE))
+    with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, suffix=".tmp") as f:
+        f.write(data)
+        tmp_path = f.name
+    os.replace(tmp_path, SCALPING_V2_1B_STATE_FILE)
+
+
+def _check_v2_1b_positions(state: dict, symbol: str, df_1m) -> list:
+    """Verifica SL/TP para posicoes V2.1b (mesma logica, tabela diferente)."""
+    messages = []
+    positions = state.get("positions", {})
+    if symbol not in positions:
+        return messages
+
+    pos = positions[symbol]
+    entry_price = pos.get("entry_price", 0)
+    if not entry_price or entry_price <= 0:
+        del positions[symbol]
+        return [f"[V2.1b] Posicao corrompida removida: {symbol}"]
+
+    sl_price = pos["sl_price"]
+    tp1_price = pos["tp1_price"]
+    tp2_price = pos["tp2_price"]
+    direction = pos["direction"]
+    tp1_hit = pos.get("tp1_hit", False)
+
+    if df_1m is None or len(df_1m) == 0:
+        return messages
+
+    current_price = float(df_1m["close"].iloc[-1])
+    current_high = float(df_1m["high"].iloc[-1])
+    current_low = float(df_1m["low"].iloc[-1])
+
+    if tp1_hit:
+        sl_price = entry_price
+
+    slip = entry_price * (CONFIG.slippage_pct / 100)
+    hit = None
+    exit_price = current_price
+
+    if direction == "LONG":
+        if current_low <= sl_price:
+            hit = "stop_loss" if not tp1_hit else "trailing_stop"
+            exit_price = sl_price - slip
+        elif current_high >= tp2_price:
+            hit = "take_profit_2"
+            exit_price = tp2_price - slip
+        elif not tp1_hit and current_high >= tp1_price:
+            pos["tp1_hit"] = True
+            pos["position_size_usd"] = pos.get("position_size_usd", 0) * 0.5
+            messages.append(f"[V2.1b] {symbol} TP1 atingido, SL -> breakeven")
+            return messages
+    else:
+        if current_high >= sl_price:
+            hit = "stop_loss" if not tp1_hit else "trailing_stop"
+            exit_price = sl_price + slip
+        elif current_low <= tp2_price:
+            hit = "take_profit_2"
+            exit_price = tp2_price + slip
+        elif not tp1_hit and current_low <= tp1_price:
+            pos["tp1_hit"] = True
+            pos["position_size_usd"] = pos.get("position_size_usd", 0) * 0.5
+            messages.append(f"[V2.1b] {symbol} TP1 atingido, SL -> breakeven")
+            return messages
+
+    if hit is None:
+        return messages
+
+    # Fechar posicao
+    if direction == "LONG":
+        pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+    else:
+        pnl_pct = ((entry_price - exit_price) / entry_price) * 100
+
+    pnl_pct -= ROUND_TRIP_FEE_PCT
+    position_size = pos.get("position_size_usd", 0)
+    pnl_usd = position_size * (pnl_pct / 100)
+
+    state["capital"] = state.get("capital", CONFIG.initial_capital) + pnl_usd
+    state["total_trades"] = state.get("total_trades", 0) + 1
+    if pnl_usd >= 0:
+        state["wins"] = state.get("wins", 0) + 1
+    else:
+        state["losses"] = state.get("losses", 0) + 1
+    state["total_pnl_usd"] = state.get("total_pnl_usd", 0) + pnl_usd
+
+    trade = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "symbol": symbol,
+        "type": direction,
+        "entry_price": entry_price,
+        "exit_price": exit_price,
+        "sl_price": pos["sl_price"],
+        "tp_price": tp2_price,
+        "position_size_usd": position_size,
+        "leverage": pos.get("leverage", 1),
+        "confluence_score": pos.get("confluence_score", 0),
+        "source": pos.get("source", "v2_1b"),
+        "pnl_pct": round(pnl_pct, 4),
+        "pnl_usd": round(pnl_usd, 2),
+        "exit_reason": hit,
+        "capital_after": round(state["capital"], 2),
+    }
+    try:
+        db.insert_scalping_trade_v2_1b(trade)
+    except Exception as e:
+        logger.error("V2.1b: erro ao registrar trade: %s", e)
+
+    del positions[symbol]
+
+    # Cooldown
+    state.setdefault("cooldowns", {})[symbol] = {
+        "last_close_time": datetime.now().isoformat(),
+        "candles_remaining": CONFIG.cooldown_candles,
+    }
+
+    emoji = "+" if pnl_usd >= 0 else ""
+    messages.append(
+        f"[V2.1b] {symbol} {hit}: {emoji}{pnl_pct:.2f}% (${pnl_usd:+.2f}) "
+        f"| Capital: ${state['capital']:.2f}"
+    )
+    logger.info("V2.1b FECHADO %s: %s pnl=%.2f%% ($%.2f)", symbol, hit, pnl_pct, pnl_usd)
+
+    return messages
+
+
+def process_scalping_v2_1b(symbols: list, open_new: bool = True, results: Optional[list] = None) -> List[str]:
+    """
+    Executa V2.1b em paper mode side-by-side com V2.
+
+    Mesma logica de trade, mas:
+    - Usa confluence com force_v2_1b=True (motor OI unico)
+    - Estado separado (scalping_v2_1b_state.json)
+    - Tabelas DB separadas (scalping_trades_v2_1b, scalping_decisions_v2_1b)
+    - Sem AI gate (paper puro para medir assertividade)
+    - Sem experimental flags
+    """
+    messages = []
+    state = _load_v2_1b_state()
+
+    # Sanitize
+    positions = state.get("positions", {})
+    corrupted = [s for s, p in positions.items() if not p.get("entry_price") or p["entry_price"] <= 0]
+    for s in corrupted:
+        del positions[s]
+
+    cycle_id = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    clear_cache()
+
+    for symbol in symbols:
+        try:
+            # Passo 1: Verificar posicoes abertas
+            df_1m = fetch_candles(symbol, "1m", 10)
+            pos_msgs = _check_v2_1b_positions(state, symbol, df_1m)
+            messages.extend(pos_msgs)
+
+            if not open_new:
+                continue
+
+            # Tick cooldown
+            cooldowns = state.get("cooldowns", {})
+            if symbol in cooldowns:
+                cooldowns[symbol]["candles_remaining"] -= 1
+                if cooldowns[symbol]["candles_remaining"] <= 0:
+                    del cooldowns[symbol]
+
+            # Skip se em posicao ou cooldown
+            if symbol in state.get("positions", {}):
+                continue
+            if symbol in state.get("cooldowns", {}) and state["cooldowns"][symbol].get("candles_remaining", 0) > 0:
+                continue
+
+            # Regime gate
+            regime_data = get_htf_regime(symbol)
+            regime_label = regime_data.get("regime_label", "UNKNOWN")
+            if regime_label == "CHOPPY":
+                continue
+
+            # Microstructure data
+            micro = None
+            if results is not None:
+                for r in results:
+                    if r.get("symbol") == symbol and "_microstructure" in r:
+                        micro = r["_microstructure"]
+                        break
+            if micro is None:
+                continue
+
+            # Candles 5m
+            df_5m = fetch_candles(symbol, "5m", 100)
+            if df_5m is not None:
+                df_5m = add_scalping_indicators(df_5m)
+
+            # 15m para risk check
+            df_15m = fetch_candles(symbol, "15m", 100)
+            if df_15m is not None:
+                df_15m = add_scalping_indicators(df_15m)
+
+            # Prev basis
+            prev_basis = _get_prev_basis(symbol)
+
+            # Confluencia V2.1b (forcada)
+            confluence = confluence_analyze(
+                symbol, CONFIG,
+                market_data=micro,
+                regime=regime_label,
+                candles_5m=df_5m,
+                prev_basis_pct=prev_basis,
+                force_v2_1b=True,
+            )
+
+            # Registrar decisao
+            decision = {
+                "cycle_id": cycle_id,
+                "symbol": symbol,
+                "outcome": "confluence_block" if not confluence.meets_threshold else "pending_risk",
+                "reason": confluence.reason,
+                "confluence_score": confluence.score,
+                "confluence_direction": confluence.direction.value if confluence.direction else None,
+                "best_signal_source": confluence.best_signal.source if confluence.best_signal else None,
+                "ai_used": False,
+                "ai_approved": False,
+                "risk_approved": False,
+            }
+
+            if not confluence.meets_threshold:
+                decision["outcome"] = "confluence_block"
+                try:
+                    db.insert_scalping_decision_v2_1b(decision)
+                except Exception:
+                    pass
+                continue
+
+            # Risk evaluation
+            risk = evaluate_risk(confluence, symbol, CONFIG, df_15m=df_15m, state=state)
+
+            if not risk.approved:
+                decision["outcome"] = "risk_blocked"
+                decision["reason"] = risk.reason
+                try:
+                    db.insert_scalping_decision_v2_1b(decision)
+                except Exception:
+                    pass
+                continue
+
+            # Abrir posicao
+            best = confluence.best_signal
+            if best is None:
+                continue
+
+            entry_price = best.entry_price if best.entry_price > 0 else best.price
+            if entry_price <= 0:
+                continue
+
+            state.setdefault("positions", {})[symbol] = {
+                "direction": confluence.direction.value,
+                "entry_price": entry_price,
+                "sl_price": risk.sl_price,
+                "tp1_price": risk.tp1_price,
+                "tp2_price": risk.tp2_price,
+                "position_size_usd": risk.position_size_usd,
+                "leverage": risk.leverage,
+                "confluence_score": confluence.score,
+                "source": best.source,
+                "opened_at": datetime.now().isoformat(),
+                "tp1_hit": False,
+            }
+
+            decision["outcome"] = "opened"
+            decision["reason"] = "V2.1b trade aberto"
+            decision["risk_approved"] = True
+            decision["rr_ratio"] = best.rr_ratio
+            decision["sl_distance_pct"] = best.sl_distance_pct
+            try:
+                db.insert_scalping_decision_v2_1b(decision)
+            except Exception:
+                pass
+
+            # Registrar trade aberto
+            trade = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "symbol": symbol,
+                "type": confluence.direction.value,
+                "entry_price": entry_price,
+                "sl_price": risk.sl_price,
+                "tp_price": risk.tp2_price,
+                "position_size_usd": risk.position_size_usd,
+                "leverage": risk.leverage,
+                "confluence_score": confluence.score,
+                "source": best.source,
+                "exit_reason": "open",
+                "capital_after": round(state.get("capital", CONFIG.initial_capital), 2),
+            }
+            try:
+                db.insert_scalping_trade_v2_1b(trade)
+            except Exception:
+                pass
+
+            messages.append(
+                f"[V2.1b] {symbol} {confluence.direction.value} @ {entry_price:.4f} | "
+                f"SL: {risk.sl_price:.4f} | TP: {risk.tp2_price:.4f} | "
+                f"Lev: {risk.leverage}x | ${risk.position_size_usd:.0f}"
+            )
+            logger.info(
+                "V2.1b ABERTO %s %s: entry=%.4f sl=%.4f tp=%.4f size=$%.2f",
+                symbol, confluence.direction.value, entry_price,
+                risk.sl_price, risk.tp2_price, risk.position_size_usd,
+            )
+
+        except Exception as e:
+            logger.error("V2.1b erro %s: %s", symbol, e, exc_info=True)
+
+    _save_v2_1b_state(state)
+    return messages
+
+
+def get_v2_1b_status() -> str:
+    """Retorna status do V2.1b paper."""
+    state = _load_v2_1b_state()
+    capital = state.get("capital", CONFIG.initial_capital)
+    total = state.get("total_trades", 0)
+    wins = state.get("wins", 0)
+    losses = state.get("losses", 0)
+    wr = (wins / total) * 100 if total > 0 else 0
+    ret = ((capital - CONFIG.initial_capital) / CONFIG.initial_capital) * 100
+
+    lines = [
+        f"[V2.1b] Capital: ${capital:.2f} ({ret:+.2f}%)",
+        f"[V2.1b] Trades: {total} | W:{wins} L:{losses} | WR: {wr:.1f}%",
+    ]
+
+    positions = state.get("positions", {})
+    if positions:
+        lines.append(f"[V2.1b] Posicoes: {len(positions)}/{CONFIG.max_positions}")
+        for sym, pos in positions.items():
+            tp1_note = " [TP1 OK]" if pos.get("tp1_hit") else ""
+            lines.append(
+                f"  {sym}: {pos['direction']} @ {pos['entry_price']:.4f} | "
+                f"SL: {pos['sl_price']:.4f} | TP: {pos['tp2_price']:.4f}{tp1_note}"
+            )
+    else:
+        lines.append("[V2.1b] Sem posicoes abertas")
+
+    return "\n".join(lines)

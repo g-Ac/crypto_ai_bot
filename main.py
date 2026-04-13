@@ -3,6 +3,7 @@ import shutil
 import threading
 from datetime import datetime
 import database as db
+import config as cfg
 from config import SYMBOLS, INTERVAL, LIMIT, ALERT_PRIORITY_MIN
 from telegram_commands import start_command_listener, is_paused
 from market import get_candles
@@ -22,7 +23,7 @@ from market_data import collect_microstructure
 from daily_report import check_daily_report, enforce_circuit_breaker
 from scalping_logger import setup_scalping_logging
 from scalping_outcomes import label_scalping_outcomes
-from scalping_trader import process_scalping, get_scalping_status
+from scalping_trader import process_scalping, get_scalping_status, process_scalping_v2_1b, get_v2_1b_status
 from runtime_config import BOT_ID, ENABLE_TELEGRAM_COMMANDS, runtime_metadata
 
 # ── Disk space check ────────────────────────────────────────────────────────
@@ -221,44 +222,52 @@ def run_bot():
     # gerencia posicoes abertas, nao abre novas).
 
     # Paper Trading
-    print("\n========================================")
-    print("PAPER TRADING\n")
+    if cfg.PAPER_TRADER_ENABLED:
+        print("\n========================================")
+        print("PAPER TRADING\n")
 
-    try:
         try:
-            paper_suspended = enforce_circuit_breaker("paper") or is_paused()
+            try:
+                paper_suspended = enforce_circuit_breaker("paper") or is_paused()
+            except Exception as e:
+                print(f"  [ERRO] Falha ao verificar circuit breaker paper: {e}")
+                paper_suspended = True  # fallback seguro: so gerencia posicoes
+            if paper_suspended:
+                print("  Circuit breaker ativo ou bot pausado - novos trades suspensos, gerenciando posicoes")
+            paper_msgs = process_signals(results, open_new=not paper_suspended)
+            for msg in paper_msgs:
+                print(f"  {msg}")
+                send_telegram_message(f"\U0001f4c4 <b>[PAPER]</b> {msg}")
+            print(f"\n  {get_status()}")
         except Exception as e:
-            print(f"  [ERRO] Falha ao verificar circuit breaker paper: {e}")
-            paper_suspended = True  # fallback seguro: so gerencia posicoes
-        if paper_suspended:
-            print("  Circuit breaker ativo ou bot pausado - novos trades suspensos, gerenciando posicoes")
-        paper_msgs = process_signals(results, open_new=not paper_suspended)
-        for msg in paper_msgs:
-            print(f"  {msg}")
-            send_telegram_message(f"\U0001f4c4 <b>[PAPER]</b> {msg}")
-        print(f"\n  {get_status()}")
-    except Exception as e:
-        print(f"  [ERRO] Falha no paper trading (posicoes podem estar sem gerenciamento): {e}")
+            print(f"  [ERRO] Falha no paper trading (posicoes podem estar sem gerenciamento): {e}")
+    else:
+        print("\n========================================")
+        print("PAPER TRADING: DESABILITADO (PAPER_TRADER_ENABLED=false)\n")
 
     # Multi-Agent Trading
-    print("\n========================================")
-    print("MULTI-AGENT TRADING\n")
+    if cfg.AGENT_TRADER_ENABLED:
+        print("\n========================================")
+        print("MULTI-AGENT TRADING\n")
 
-    try:
         try:
-            agent_suspended = enforce_circuit_breaker("agent") or is_paused()
+            try:
+                agent_suspended = enforce_circuit_breaker("agent") or is_paused()
+            except Exception as e:
+                print(f"  [ERRO] Falha ao verificar circuit breaker agent: {e}")
+                agent_suspended = True  # fallback seguro: so gerencia posicoes
+            if agent_suspended:
+                print("  Circuit breaker ativo ou bot pausado - novos trades suspensos, gerenciando posicoes")
+            agent_msgs = orchestrate(results, open_new=not agent_suspended)
+            for msg in agent_msgs:
+                print(f"  {msg}")
+                send_telegram_message(f"\U0001f916 <b>[AGENT]</b> {msg}")
+            print(f"\n  {get_agent_status()}")
         except Exception as e:
-            print(f"  [ERRO] Falha ao verificar circuit breaker agent: {e}")
-            agent_suspended = True  # fallback seguro: so gerencia posicoes
-        if agent_suspended:
-            print("  Circuit breaker ativo ou bot pausado - novos trades suspensos, gerenciando posicoes")
-        agent_msgs = orchestrate(results, open_new=not agent_suspended)
-        for msg in agent_msgs:
-            print(f"  {msg}")
-            send_telegram_message(f"\U0001f916 <b>[AGENT]</b> {msg}")
-        print(f"\n  {get_agent_status()}")
-    except Exception as e:
-        print(f"  [ERRO] Falha no agent trading (posicoes podem estar sem gerenciamento): {e}")
+            print(f"  [ERRO] Falha no agent trading (posicoes podem estar sem gerenciamento): {e}")
+    else:
+        print("\n========================================")
+        print("MULTI-AGENT TRADING: DESABILITADO (AGENT_TRADER_ENABLED=false)\n")
 
     # Scalping Strategy
     print("\n========================================")
@@ -279,6 +288,26 @@ def run_bot():
         print(f"\n  {get_scalping_status()}")
     except Exception as e:
         print(f"  [ERRO] Falha no scalping (posicoes podem estar sem gerenciamento): {e}")
+
+    # Scalping V2.1b (side-by-side paper test)
+    if cfg.V2_1B_PAPER_ENABLED:
+        print("\n========================================")
+        print("SCALPING V2.1b (PAPER SIDE-BY-SIDE)\n")
+
+        try:
+            try:
+                v2_1b_suspended = enforce_circuit_breaker("scalping_v2_1b") or is_paused()
+            except Exception:
+                v2_1b_suspended = True
+            if v2_1b_suspended:
+                print("  V2.1b circuit breaker ativo - gerenciando posicoes")
+            v2_1b_msgs = process_scalping_v2_1b(SYMBOLS, open_new=not v2_1b_suspended, results=results)
+            for msg in v2_1b_msgs:
+                print(f"  {msg}")
+                send_telegram_message(f"\U0001f9ea <b>[V2.1b]</b> {msg}")
+            print(f"\n  {get_v2_1b_status()}")
+        except Exception as e:
+            print(f"  [ERRO] Falha no V2.1b paper: {e}")
 
     # Forward outcome labeling for scalping audit dataset
     print("\n========================================")

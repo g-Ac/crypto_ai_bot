@@ -1,16 +1,13 @@
 """
 Modulo centralizado de coleta de dados de microestrutura de mercado.
 
-Coleta funding rate, long/short ratio, liquidacoes (proxy), open interest,
+Coleta funding rate, long/short ratio, liquidacoes, open interest,
 basis spread e sessao de mercado via Binance Futures API.
 Cache em memoria com TTL de 30s. Retry com backoff exponencial.
 
-Limitacoes conhecidas:
-- get_liquidations() usa proxy via aggTrades (volume extremo ≈ liquidacao).
-  O endpoint real /fapi/v1/forceOrders requer autenticacao USER_DATA.
-  Precisao estimada: ~70%. Para dados exatos, usar WebSocket
-  stream forceOrder@{symbol} (nao implementado ainda).
-- Funding rate historico vem de /fapi/v1/fundingRate (3 ultimos periodos).
+Fontes de liquidacao (em ordem de prioridade):
+1. /fapi/v1/allForceOrders — dados reais de liquidacao forcada (endpoint publico).
+2. Proxy via aggTrades — fallback se allForceOrders falhar (~70% precisao).
 """
 import time
 import logging
@@ -170,30 +167,63 @@ def get_long_short_ratio(symbol: str, period: str = "5m") -> Dict:
     return result
 
 
-def get_liquidations(symbol: str, limit: int = 100) -> Dict:
-    """Estima volume de liquidacoes via proxy de aggTrades com volume extremo.
+def _get_real_liquidations(symbol: str, limit: int = 100) -> Optional[Dict]:
+    """Busca liquidacoes reais via /fapi/v1/allForceOrders (endpoint publico).
 
-    NOTA: O endpoint real /fapi/v1/forceOrders requer autenticacao USER_DATA
-    (API key + signature) e retorna 401 sem ela. Este metodo usa uma
-    heuristica: trades recentes com qty > 10x a media sao classificados
-    como provaveis liquidacoes (~70% de precisao estimada).
+    Retorna dados reais de liquidacao forcada do Binance Futures.
+    Peso da API: 20 (com symbol). Nao requer autenticacao.
 
-    Para dados exatos de liquidacao, implementar WebSocket stream
-    forceOrder@{symbol} em versao futura.
+    Campos retornados pela API por ordem:
+      symbol, price, origQty, executedQty, averagePrice, status,
+      timeInForce, type, side, time
 
-    Returns:
-        {
-            "liquidation_vol_long": float,   # volume USD estimado (liq de longs = seller)
-            "liquidation_vol_short": float,  # volume USD estimado (liq de shorts = buyer)
-            "count": int,                    # qtd de trades extremos detectados
-            "is_proxy": True,                # SEMPRE True neste metodo
-        }
+    side: "SELL" = liquidacao de LONG (venda forcada)
+    side: "BUY"  = liquidacao de SHORT (compra forcada)
     """
-    cache_key = f"liquidations:{symbol}"
-    cached = _get_cached(cache_key)
-    if cached is not None:
-        return cached
+    data = _api_get(
+        f"{FAPI_BASE}/fapi/v1/allForceOrders",
+        {"symbol": symbol, "limit": limit},
+    )
+    if data is None or not isinstance(data, list):
+        return None
 
+    vol_long = 0.0
+    vol_short = 0.0
+    count = 0
+
+    for order in data:
+        qty = float(order.get("executedQty", order.get("origQty", 0)))
+        price = float(order.get("averagePrice", order.get("price", 0)))
+        if qty <= 0 or price <= 0:
+            continue
+
+        notional = qty * price
+        side = order.get("side", "")
+        count += 1
+
+        if side == "SELL":
+            # Liquidacao de LONG: posicao long fechada com venda forcada
+            vol_long += notional
+        elif side == "BUY":
+            # Liquidacao de SHORT: posicao short fechada com compra forcada
+            vol_short += notional
+
+    if count > 0:
+        logger.info(
+            "LIQ REAL %s: %d liquidacoes, vol_long=$%.0f vol_short=$%.0f",
+            symbol, count, vol_long, vol_short,
+        )
+
+    return {
+        "liquidation_vol_long": round(vol_long, 2),
+        "liquidation_vol_short": round(vol_short, 2),
+        "count": count,
+        "is_proxy": False,
+    }
+
+
+def _get_proxy_liquidations(symbol: str, limit: int = 100) -> Dict:
+    """Fallback: estima liquidacoes via aggTrades com volume extremo (~70% precisao)."""
     default = {
         "liquidation_vol_long": 0.0, "liquidation_vol_short": 0.0,
         "count": 0, "is_proxy": True,
@@ -204,19 +234,17 @@ def get_liquidations(symbol: str, limit: int = 100) -> Dict:
         {"symbol": symbol, "limit": limit},
     )
     if data is None or not isinstance(data, list) or len(data) < 20:
-        logger.warning("Falha ao obter aggTrades para proxy de liquidacoes: %s", symbol)
         return default
 
-    # Calcular media de qty para baseline
     quantities = [float(t.get("q", 0)) for t in data]
     avg_qty = sum(quantities) / len(quantities) if quantities else 0.0
     if avg_qty <= 0:
         return default
 
-    threshold = avg_qty * 10  # trades > 10x a media = provaveis liquidacoes
+    threshold = avg_qty * 10
 
-    vol_long = 0.0   # liquidacao de long = isMakerBuy=false (seller aggressor, taker vende)
-    vol_short = 0.0  # liquidacao de short = isMakerBuy=true (buyer aggressor, taker compra)
+    vol_long = 0.0
+    vol_short = 0.0
     count = 0
 
     for trade in data:
@@ -228,9 +256,6 @@ def get_liquidations(symbol: str, limit: int = 100) -> Dict:
         notional = qty * price
         count += 1
 
-        # isMakerBuy (campo "m"): true = buyer is maker, seller is taker (sell aggressor)
-        # Liquidacao de LONG = venda forcada = seller e taker (m=true)
-        # Liquidacao de SHORT = compra forcada = buyer e taker (m=false)
         is_maker_buyer = trade.get("m", False)
         if is_maker_buyer:
             vol_long += notional
@@ -251,6 +276,38 @@ def get_liquidations(symbol: str, limit: int = 100) -> Dict:
             symbol, count, 10.0, vol_long, vol_short,
         )
 
+    return result
+
+
+def get_liquidations(symbol: str, limit: int = 100) -> Dict:
+    """Busca dados de liquidacao: real (allForceOrders) com fallback para proxy.
+
+    Tenta primeiro o endpoint real /fapi/v1/allForceOrders que retorna
+    liquidacoes forcadas reais do mercado. Se falhar (rate limit, erro),
+    usa fallback via aggTrades (~70% precisao).
+
+    Returns:
+        {
+            "liquidation_vol_long": float,   # volume USD (liq de longs)
+            "liquidation_vol_short": float,  # volume USD (liq de shorts)
+            "count": int,                    # qtd de liquidacoes detectadas
+            "is_proxy": bool,                # False = dados reais, True = proxy
+        }
+    """
+    cache_key = f"liquidations:{symbol}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
+
+    # Tentar dados reais primeiro
+    result = _get_real_liquidations(symbol, limit)
+    if result is not None:
+        _set_cache(cache_key, result)
+        return result
+
+    # Fallback para proxy
+    logger.info("LIQ %s: allForceOrders indisponivel, usando proxy aggTrades", symbol)
+    result = _get_proxy_liquidations(symbol, limit)
     _set_cache(cache_key, result)
     return result
 

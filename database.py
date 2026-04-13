@@ -238,6 +238,46 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_scalping_outcome_scenario ON scalping_outcome_labels(scenario_type);
         CREATE INDEX IF NOT EXISTS idx_scalping_outcome_verdict ON scalping_outcome_labels(verdict);
 
+        -- V2.1b paper side-by-side: tabelas espelho para comparacao
+        CREATE TABLE IF NOT EXISTS scalping_trades_v2_1b (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp           TEXT,
+            symbol              TEXT,
+            type                TEXT,
+            entry_price         REAL,
+            exit_price          REAL,
+            sl_price            REAL,
+            tp_price            REAL,
+            position_size_usd   REAL,
+            leverage            INTEGER,
+            confluence_score    INTEGER,
+            source              TEXT,
+            pnl_pct             REAL,
+            pnl_usd             REAL,
+            exit_reason         TEXT,
+            capital_after       REAL
+        );
+
+        CREATE TABLE IF NOT EXISTS scalping_decisions_v2_1b (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp            TEXT,
+            cycle_id             TEXT,
+            symbol               TEXT,
+            outcome              TEXT,
+            reason               TEXT,
+            confluence_score     INTEGER,
+            confluence_direction TEXT,
+            best_signal_source   TEXT,
+            ai_used              INTEGER,
+            ai_approved          INTEGER,
+            risk_approved        INTEGER,
+            rr_ratio             REAL,
+            sl_distance_pct      REAL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_scalping_v2_1b_trades_ts ON scalping_trades_v2_1b(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_scalping_v2_1b_decisions_ts ON scalping_decisions_v2_1b(timestamp);
+
         CREATE TABLE IF NOT EXISTS market_microstructure (
             id                      INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp               TEXT,
@@ -584,6 +624,69 @@ def insert_scalping_audit_log(audit: dict):
             audit.get("pnl_pct"),
             audit.get("pnl_usd"),
             details_json,
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_scalping_trade_v2_1b(trade: dict):
+    """Insere trade na tabela V2.1b (espelho de scalping_trades)."""
+    conn = _get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO scalping_trades_v2_1b (
+                timestamp, symbol, type, entry_price, exit_price,
+                sl_price, tp_price, position_size_usd, leverage,
+                confluence_score, source, pnl_pct, pnl_usd,
+                exit_reason, capital_after
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            trade["timestamp"],
+            trade["symbol"],
+            trade["type"],
+            trade["entry_price"],
+            trade.get("exit_price"),
+            trade.get("sl_price"),
+            trade.get("tp_price"),
+            trade.get("position_size_usd"),
+            trade.get("leverage"),
+            trade.get("confluence_score"),
+            trade.get("source"),
+            trade.get("pnl_pct"),
+            round(trade.get("pnl_usd", 0), 2),
+            trade.get("exit_reason", "open"),
+            round(trade.get("capital_after", 0), 2),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_scalping_decision_v2_1b(decision: dict):
+    """Insere decisao na tabela V2.1b (espelho de scalping_decisions)."""
+    conn = _get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO scalping_decisions_v2_1b (
+                timestamp, cycle_id, symbol, outcome, reason,
+                confluence_score, confluence_direction, best_signal_source,
+                ai_used, ai_approved, risk_approved, rr_ratio, sl_distance_pct
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            decision.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            decision.get("cycle_id", ""),
+            decision.get("symbol", ""),
+            decision.get("outcome", ""),
+            decision.get("reason", ""),
+            decision.get("confluence_score"),
+            decision.get("confluence_direction"),
+            decision.get("best_signal_source"),
+            int(bool(decision.get("ai_used", False))),
+            int(bool(decision.get("ai_approved", False))),
+            int(bool(decision.get("risk_approved", False))),
+            decision.get("rr_ratio"),
+            decision.get("sl_distance_pct"),
         ))
         conn.commit()
     finally:

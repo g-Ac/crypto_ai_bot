@@ -182,6 +182,7 @@ def analyze(
     regime: str = "UNKNOWN",
     candles_5m: Optional[pd.DataFrame] = None,
     prev_basis_pct: Optional[float] = None,
+    force_v2_1b: bool = False,
 ) -> ConfluenceResult:
     """Executa motores permitidos pelo regime e calcula confluencia.
 
@@ -192,12 +193,13 @@ def analyze(
         regime: regime de mercado do regime gate
         candles_5m: DataFrame OHLCV 5m para Motor 2 (VWAP/range)
         prev_basis_pct: basis anterior para Motor 3 (velocidade)
+        force_v2_1b: se True, usa fluxo V2.1b independente do feature flag global
 
     Returns:
         ConfluenceResult com score 0-3, direcao e continuous_score
     """
-    # ── V2.1b FEATURE FLAG ────────────────────────────────────────
-    if cfg.V2_1B_ENABLED and market_data is not None:
+    # ── V2.1b: via feature flag global OU via parametro explicito ──
+    if (cfg.V2_1B_ENABLED or force_v2_1b) and market_data is not None:
         return _analyze_v2_1b(symbol, config, market_data, regime, candles_5m)
 
     no_trade = ConfluenceResult(

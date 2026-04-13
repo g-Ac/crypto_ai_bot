@@ -4,25 +4,23 @@ Motor 1 -- Funding Rate + Long/Short Ratio.
 Quando o mercado esta desequilibrado (muitos longs ou shorts) e pagando caro
 para manter posicao, a reversao tem edge estatistico.
 
-Sinais SHORT (funding extremo positivo):
-  - Funding rate atual > 0.03%
-  - L/S ratio top traders > 65% long (ratio > 1.86)
-  - Funding subindo nos ultimos 3 periodos
-  - Regime NAO e TRENDING forte (ADX > 35 na direcao do funding)
-
-Sinais LONG (funding extremo negativo):
-  - Funding rate atual < -0.02%
-  - L/S ratio top traders > 60% short (ratio < 0.67)
-  - Funding caindo nos ultimos 3 periodos
+Tiers de funding:
+  EXTREMO (original):
+    SHORT: funding > 0.03%, LONG: funding < -0.02%
+    Score maximo: 40 pts funding magnitude
+  MODERADO (novo):
+    SHORT: funding > 0.015%, LONG: funding < -0.01%
+    Score maximo: 25 pts funding magnitude (capeado)
+    Position size reduzido via metadata "funding_tier": "moderate"
 
 Score 0-100:
-  - Funding magnitude:       0-40 pts
+  - Funding magnitude:       0-40 pts (max 25 no tier moderado)
   - L/S ratio desequilibrio: 0-30 pts
   - Tendencia de crowding:   0-20 pts
   - Alinhamento com regime:  0-10 pts
 
 Filtros:
-  - Funding entre -0.01% e 0.02% (zona neutra)
+  - Funding entre -0.005% e 0.01% (zona neutra — reduzida de -0.01%/0.02%)
   - Menos de 2h para proximo pagamento de funding
 """
 import logging
@@ -33,11 +31,20 @@ from signal_types import Direction, Signal
 
 logger = logging.getLogger("engine.funding")
 
-# Thresholds
+# Thresholds — tier EXTREMO (original)
 _FUNDING_SHORT_THRESHOLD = 0.0003   # 0.03%
 _FUNDING_LONG_THRESHOLD = -0.0002   # -0.02%
-_FUNDING_NEUTRAL_LOW = -0.0001      # -0.01%
-_FUNDING_NEUTRAL_HIGH = 0.0002      # 0.02%
+
+# Thresholds — tier MODERADO (novo)
+_FUNDING_SHORT_MODERATE = 0.00015   # 0.015%
+_FUNDING_LONG_MODERATE = -0.0001    # -0.01%
+
+# Zona neutra (reduzida para capturar mais sinais moderados)
+_FUNDING_NEUTRAL_LOW = -0.00005     # -0.005%
+_FUNDING_NEUTRAL_HIGH = 0.0001      # 0.01%
+
+# Score cap para tier moderado (max 25 de 40 pts no componente funding)
+_MODERATE_FUNDING_SCORE_CAP = 25
 
 # L/S ratio thresholds (ratio > 1 = mais longs)
 _LS_CROWDED_LONG = 1.86   # ~65% long
@@ -93,13 +100,22 @@ class FundingEngine:
             return self._neutral(symbol, now_str, funding, ls_ratio_top,
                                  f"Muito proximo ao pagamento ({mins_to_funding}min)")
 
-        # ── Determinar direcao ───────────────────────────────────────
+        # ── Determinar direcao e tier ────────────────────────────────
         direction = Direction.NEUTRAL
+        funding_tier = "none"
 
         if funding >= _FUNDING_SHORT_THRESHOLD:
             direction = Direction.SHORT
+            funding_tier = "extreme"
+        elif funding >= _FUNDING_SHORT_MODERATE:
+            direction = Direction.SHORT
+            funding_tier = "moderate"
         elif funding <= _FUNDING_LONG_THRESHOLD:
             direction = Direction.LONG
+            funding_tier = "extreme"
+        elif funding <= _FUNDING_LONG_MODERATE:
+            direction = Direction.LONG
+            funding_tier = "moderate"
 
         if direction == Direction.NEUTRAL:
             return self._neutral(symbol, now_str, funding, ls_ratio_top,
@@ -113,6 +129,9 @@ class FundingEngine:
 
         # ── Score components ─────────────────────────────────────────
         score_funding = self._score_funding_magnitude(funding, direction)
+        # Cap funding score para tier moderado
+        if funding_tier == "moderate" and score_funding > _MODERATE_FUNDING_SCORE_CAP:
+            score_funding = _MODERATE_FUNDING_SCORE_CAP
         score_ls = self._score_ls_ratio(ls_ratio_top, ls_ratio_global, direction)
         score_crowding = self._score_crowding_trend(funding, funding_prev1, funding_prev2, direction)
         score_regime = self._score_regime(regime, direction)
@@ -126,9 +145,9 @@ class FundingEngine:
         reason = self._build_reason(direction, funding, ls_ratio_top, total)
 
         logger.info(
-            "[FUNDING] %s fund=%.4f%% ls_top=%.2f dir=%s "
+            "[FUNDING] %s fund=%.4f%% ls_top=%.2f dir=%s tier=%s "
             "score=%d (fund=%d ls=%d crowd=%d reg=%d) valid=%s",
-            symbol, funding * 100, ls_ratio_top, direction.value,
+            symbol, funding * 100, ls_ratio_top, direction.value, funding_tier,
             total, score_funding, score_ls, score_crowding, score_regime, valid,
         )
 
@@ -154,25 +173,43 @@ class FundingEngine:
                 "ls_ratio_global": ls_ratio_global,
                 "minutes_to_funding": mins_to_funding,
                 "regime": regime,
+                "funding_tier": funding_tier,
             },
         )
 
     # ── Score components ─────────────────────────────────────────────
 
     def _score_funding_magnitude(self, funding: float, direction: Direction) -> int:
-        """Funding magnitude: 0-40 pontos."""
+        """Funding magnitude: 0-40 pontos.
+
+        Usa threshold moderado como piso (score base 5) e extremo como
+        ponto de inflexao (score 10+). Isso permite que sinais moderados
+        contribuam ao score total, mesmo que com peso menor.
+        """
         abs_funding = abs(funding)
 
         if direction == Direction.SHORT:
-            if abs_funding < _FUNDING_SHORT_THRESHOLD:
+            if abs_funding < _FUNDING_SHORT_MODERATE:
                 return 0
-            # 0.03% = 10pts, 0.06% = 25pts, 0.10%+ = 40pts
+            # Tier moderado: 0.015% = 5pts base
+            if abs_funding < _FUNDING_SHORT_THRESHOLD:
+                ratio = (abs_funding - _FUNDING_SHORT_MODERATE) / (
+                    _FUNDING_SHORT_THRESHOLD - _FUNDING_SHORT_MODERATE
+                )
+                return int(5 + ratio * 5)  # 5-10 pts
+            # Tier extremo: 0.03% = 10pts, 0.06% = 25pts, 0.10%+ = 40pts
             excess = abs_funding - _FUNDING_SHORT_THRESHOLD
             return int(min(40, 10 + (excess / 0.0007) * 30))
         elif direction == Direction.LONG:
+            moderate_abs = abs(_FUNDING_LONG_MODERATE)
             threshold_abs = abs(_FUNDING_LONG_THRESHOLD)
-            if abs_funding < threshold_abs:
+            if abs_funding < moderate_abs:
                 return 0
+            # Tier moderado
+            if abs_funding < threshold_abs:
+                ratio = (abs_funding - moderate_abs) / (threshold_abs - moderate_abs)
+                return int(5 + ratio * 5)  # 5-10 pts
+            # Tier extremo
             excess = abs_funding - threshold_abs
             return int(min(40, 10 + (excess / 0.0008) * 30))
         return 0
