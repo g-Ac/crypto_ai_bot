@@ -377,6 +377,82 @@ def init_db():
         except Exception:
             pass  # coluna já existe
 
+    # ── Migração: Auditoria Operacional (edge-validator) ─────────────────────
+    # Campos novos em scalping_trades e scalping_trades_v2_1b
+    _audit_trade_cols = [
+        ("signal_price", "REAL"),
+        ("expected_entry_price", "REAL"),
+        ("realized_entry_price", "REAL"),
+        ("entry_slippage_bps", "REAL DEFAULT 0"),
+        ("expected_exit_price", "REAL"),
+        ("realized_exit_price", "REAL"),
+        ("exit_slippage_bps", "REAL DEFAULT 0"),
+        ("spread_bps_est", "REAL DEFAULT 0"),
+        ("signal_to_order_ms", "REAL DEFAULT 0"),
+        ("fill_model", "TEXT DEFAULT 'paper_close'"),
+        ("capital_before", "REAL"),
+        ("param_version", "TEXT DEFAULT 'unknown'"),
+        ("git_sha", "TEXT DEFAULT 'unknown'"),
+        ("risk_amount_usd", "REAL DEFAULT 0"),
+        ("tp1_price", "REAL"),
+        ("sl_distance_pct", "REAL"),
+        ("rr_ratio_planned", "REAL"),
+        ("gross_pnl_pct", "REAL"),
+        ("gross_pnl_usd", "REAL"),
+        ("fee_entry_bps", "REAL DEFAULT 0"),
+        ("fee_exit_bps", "REAL DEFAULT 0"),
+        ("funding_cost_bps", "REAL DEFAULT 0"),
+        ("total_cost_bps", "REAL DEFAULT 0"),
+        ("net_pnl_pct", "REAL"),
+        ("net_pnl_usd", "REAL"),
+        ("market_regime", "TEXT"),
+        ("session_bucket", "TEXT"),
+        ("hour_bucket", "INTEGER"),
+        ("weekday_bucket", "INTEGER"),
+        ("event_bucket", "TEXT DEFAULT 'none'"),
+        ("asset_bucket", "TEXT"),
+        ("strategy_family", "TEXT DEFAULT 'microstructure'"),
+        ("ai_gate_used", "INTEGER DEFAULT 0"),
+        ("ai_gate_approved", "INTEGER DEFAULT 0"),
+        ("forced_entry", "INTEGER DEFAULT 0"),
+    ]
+    for table in ["scalping_trades", "scalping_trades_v2_1b"]:
+        for col, coltype in _audit_trade_cols:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+                conn.commit()
+            except Exception:
+                pass
+
+    # Campos novos em scalping_decisions e scalping_decisions_v2_1b
+    _audit_decision_cols = [
+        ("param_version", "TEXT DEFAULT 'unknown'"),
+        ("git_sha", "TEXT DEFAULT 'unknown'"),
+        ("market_regime", "TEXT"),
+        ("session_bucket", "TEXT"),
+        ("hour_bucket", "INTEGER"),
+        ("expected_entry_price", "REAL"),
+        ("signal_price", "REAL"),
+        ("asset_bucket", "TEXT"),
+        ("final_outcome", "TEXT"),
+        ("blocked_by", "TEXT DEFAULT 'none'"),
+        ("ablation_without_ai", "INTEGER DEFAULT 0"),
+        ("ablation_without_funding", "INTEGER DEFAULT 0"),
+        ("ablation_without_basis", "INTEGER DEFAULT 0"),
+        ("ablation_without_liquidation", "INTEGER DEFAULT 0"),
+        ("ablation_primary_only", "INTEGER DEFAULT 0"),
+        ("funding_rate", "REAL"),
+        ("basis_spread_pct", "REAL"),
+        ("oi_change_1h_pct", "REAL"),
+    ]
+    for table in ["scalping_decisions", "scalping_decisions_v2_1b"]:
+        for col, coltype in _audit_decision_cols:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+                conn.commit()
+            except Exception:
+                pass
+
     conn.close()
 
 
@@ -539,8 +615,18 @@ def insert_scalping_trade(trade: dict):
                 timestamp, symbol, type, entry_price, exit_price,
                 sl_price, tp_price, position_size_usd, leverage,
                 confluence_score, source, pnl_pct, pnl_usd,
-                exit_reason, capital_after, signal_subtype
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                exit_reason, capital_after, signal_subtype,
+                signal_price, expected_entry_price, realized_entry_price,
+                entry_slippage_bps, expected_exit_price, realized_exit_price,
+                exit_slippage_bps, spread_bps_est, signal_to_order_ms,
+                fill_model, capital_before, param_version, git_sha,
+                risk_amount_usd, tp1_price, sl_distance_pct, rr_ratio_planned,
+                gross_pnl_pct, gross_pnl_usd, fee_entry_bps, fee_exit_bps,
+                funding_cost_bps, total_cost_bps, net_pnl_pct, net_pnl_usd,
+                market_regime, session_bucket, hour_bucket, weekday_bucket,
+                event_bucket, asset_bucket, strategy_family,
+                ai_gate_used, ai_gate_approved, forced_entry
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             trade["timestamp"],
             trade["symbol"],
@@ -558,6 +644,41 @@ def insert_scalping_trade(trade: dict):
             trade.get("exit_reason", "open"),
             round(trade.get("capital_after", 0), 2),
             trade.get("signal_subtype", "unknown"),
+            trade.get("signal_price"),
+            trade.get("expected_entry_price"),
+            trade.get("realized_entry_price"),
+            trade.get("entry_slippage_bps", 0),
+            trade.get("expected_exit_price"),
+            trade.get("realized_exit_price"),
+            trade.get("exit_slippage_bps", 0),
+            trade.get("spread_bps_est", 0),
+            trade.get("signal_to_order_ms", 0),
+            trade.get("fill_model", "paper_close"),
+            trade.get("capital_before"),
+            trade.get("param_version", "unknown"),
+            trade.get("git_sha", "unknown"),
+            trade.get("risk_amount_usd", 0),
+            trade.get("tp1_price"),
+            trade.get("sl_distance_pct"),
+            trade.get("rr_ratio_planned"),
+            trade.get("gross_pnl_pct"),
+            trade.get("gross_pnl_usd"),
+            trade.get("fee_entry_bps", 0),
+            trade.get("fee_exit_bps", 0),
+            trade.get("funding_cost_bps", 0),
+            trade.get("total_cost_bps", 0),
+            trade.get("net_pnl_pct"),
+            trade.get("net_pnl_usd"),
+            trade.get("market_regime"),
+            trade.get("session_bucket"),
+            trade.get("hour_bucket"),
+            trade.get("weekday_bucket"),
+            trade.get("event_bucket", "none"),
+            trade.get("asset_bucket"),
+            trade.get("strategy_family", "microstructure"),
+            int(bool(trade.get("ai_gate_used", False))),
+            int(bool(trade.get("ai_gate_approved", False))),
+            int(bool(trade.get("forced_entry", False))),
         ))
         conn.commit()
     finally:
@@ -572,8 +693,15 @@ def insert_scalping_decision(decision: dict):
                 timestamp, cycle_id, symbol, outcome, reason,
                 confluence_score, confluence_direction, best_signal_source,
                 ai_used, ai_approved, risk_approved, rr_ratio, sl_distance_pct,
-                signal_subtype
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                signal_subtype,
+                param_version, git_sha, market_regime, session_bucket,
+                hour_bucket, expected_entry_price, signal_price, asset_bucket,
+                final_outcome, blocked_by,
+                ablation_without_ai, ablation_without_funding,
+                ablation_without_basis, ablation_without_liquidation,
+                ablation_primary_only,
+                funding_rate, basis_spread_pct, oi_change_1h_pct
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             decision.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             decision.get("cycle_id", ""),
@@ -589,6 +717,24 @@ def insert_scalping_decision(decision: dict):
             decision.get("rr_ratio"),
             decision.get("sl_distance_pct"),
             decision.get("signal_subtype", "unknown"),
+            decision.get("param_version", "unknown"),
+            decision.get("git_sha", "unknown"),
+            decision.get("market_regime"),
+            decision.get("session_bucket"),
+            decision.get("hour_bucket"),
+            decision.get("expected_entry_price"),
+            decision.get("signal_price"),
+            decision.get("asset_bucket"),
+            decision.get("final_outcome"),
+            decision.get("blocked_by", "none"),
+            int(bool(decision.get("ablation_without_ai", False))),
+            int(bool(decision.get("ablation_without_funding", False))),
+            int(bool(decision.get("ablation_without_basis", False))),
+            int(bool(decision.get("ablation_without_liquidation", False))),
+            int(bool(decision.get("ablation_primary_only", False))),
+            decision.get("funding_rate"),
+            decision.get("basis_spread_pct"),
+            decision.get("oi_change_1h_pct"),
         ))
         conn.commit()
     finally:
@@ -639,8 +785,18 @@ def insert_scalping_trade_v2_1b(trade: dict):
                 timestamp, symbol, type, entry_price, exit_price,
                 sl_price, tp_price, position_size_usd, leverage,
                 confluence_score, source, pnl_pct, pnl_usd,
-                exit_reason, capital_after
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                exit_reason, capital_after,
+                signal_price, expected_entry_price, realized_entry_price,
+                entry_slippage_bps, expected_exit_price, realized_exit_price,
+                exit_slippage_bps, spread_bps_est, signal_to_order_ms,
+                fill_model, capital_before, param_version, git_sha,
+                risk_amount_usd, tp1_price, sl_distance_pct, rr_ratio_planned,
+                gross_pnl_pct, gross_pnl_usd, fee_entry_bps, fee_exit_bps,
+                funding_cost_bps, total_cost_bps, net_pnl_pct, net_pnl_usd,
+                market_regime, session_bucket, hour_bucket, weekday_bucket,
+                event_bucket, asset_bucket, strategy_family,
+                ai_gate_used, ai_gate_approved, forced_entry
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             trade["timestamp"],
             trade["symbol"],
@@ -657,6 +813,41 @@ def insert_scalping_trade_v2_1b(trade: dict):
             round(trade.get("pnl_usd", 0), 2),
             trade.get("exit_reason", "open"),
             round(trade.get("capital_after", 0), 2),
+            trade.get("signal_price"),
+            trade.get("expected_entry_price"),
+            trade.get("realized_entry_price"),
+            trade.get("entry_slippage_bps", 0),
+            trade.get("expected_exit_price"),
+            trade.get("realized_exit_price"),
+            trade.get("exit_slippage_bps", 0),
+            trade.get("spread_bps_est", 0),
+            trade.get("signal_to_order_ms", 0),
+            trade.get("fill_model", "paper_close"),
+            trade.get("capital_before"),
+            trade.get("param_version", "unknown"),
+            trade.get("git_sha", "unknown"),
+            trade.get("risk_amount_usd", 0),
+            trade.get("tp1_price"),
+            trade.get("sl_distance_pct"),
+            trade.get("rr_ratio_planned"),
+            trade.get("gross_pnl_pct"),
+            trade.get("gross_pnl_usd"),
+            trade.get("fee_entry_bps", 0),
+            trade.get("fee_exit_bps", 0),
+            trade.get("funding_cost_bps", 0),
+            trade.get("total_cost_bps", 0),
+            trade.get("net_pnl_pct"),
+            trade.get("net_pnl_usd"),
+            trade.get("market_regime"),
+            trade.get("session_bucket"),
+            trade.get("hour_bucket"),
+            trade.get("weekday_bucket"),
+            trade.get("event_bucket", "none"),
+            trade.get("asset_bucket"),
+            trade.get("strategy_family", "microstructure"),
+            int(bool(trade.get("ai_gate_used", False))),
+            int(bool(trade.get("ai_gate_approved", False))),
+            int(bool(trade.get("forced_entry", False))),
         ))
         conn.commit()
     finally:
@@ -671,8 +862,15 @@ def insert_scalping_decision_v2_1b(decision: dict):
             INSERT INTO scalping_decisions_v2_1b (
                 timestamp, cycle_id, symbol, outcome, reason,
                 confluence_score, confluence_direction, best_signal_source,
-                ai_used, ai_approved, risk_approved, rr_ratio, sl_distance_pct
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ai_used, ai_approved, risk_approved, rr_ratio, sl_distance_pct,
+                param_version, git_sha, market_regime, session_bucket,
+                hour_bucket, expected_entry_price, signal_price, asset_bucket,
+                final_outcome, blocked_by,
+                ablation_without_ai, ablation_without_funding,
+                ablation_without_basis, ablation_without_liquidation,
+                ablation_primary_only,
+                funding_rate, basis_spread_pct, oi_change_1h_pct
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             decision.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             decision.get("cycle_id", ""),
@@ -687,6 +885,24 @@ def insert_scalping_decision_v2_1b(decision: dict):
             int(bool(decision.get("risk_approved", False))),
             decision.get("rr_ratio"),
             decision.get("sl_distance_pct"),
+            decision.get("param_version", "unknown"),
+            decision.get("git_sha", "unknown"),
+            decision.get("market_regime"),
+            decision.get("session_bucket"),
+            decision.get("hour_bucket"),
+            decision.get("expected_entry_price"),
+            decision.get("signal_price"),
+            decision.get("asset_bucket"),
+            decision.get("final_outcome"),
+            decision.get("blocked_by", "none"),
+            int(bool(decision.get("ablation_without_ai", False))),
+            int(bool(decision.get("ablation_without_funding", False))),
+            int(bool(decision.get("ablation_without_basis", False))),
+            int(bool(decision.get("ablation_without_liquidation", False))),
+            int(bool(decision.get("ablation_primary_only", False))),
+            decision.get("funding_rate"),
+            decision.get("basis_spread_pct"),
+            decision.get("oi_change_1h_pct"),
         ))
         conn.commit()
     finally:

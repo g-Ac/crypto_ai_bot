@@ -39,6 +39,18 @@ from runtime_config import (
     SCALPING_IGNORE_RISK_FILTERS,
     SCALPING_MAX_POSITIONS_OVERRIDE,
 )
+from audit_helpers import (
+    get_git_sha,
+    get_param_version,
+    get_session_bucket,
+    get_hour_bucket,
+    get_weekday_bucket,
+    get_event_bucket,
+    get_asset_bucket,
+    calc_slippage_bps,
+    calc_gross_pnl,
+    calc_total_cost_bps,
+)
 
 logger = logging.getLogger("scalping.trader")
 
@@ -291,6 +303,60 @@ def _force_risk_approval(
     )
 
 
+def _compute_ablation_flags(
+    outcome: str,
+    confluence: Optional[ConfluenceResult],
+    ai_used: bool,
+    ai_approved: bool,
+) -> dict:
+    """Computa flags de ablacao: o que teria passado SEM cada filtro.
+
+    Cada flag = 1 significa "sem esse filtro, o resultado seria diferente (passaria)".
+    Ou seja: se outcome='ai_rejected' e ai_used=True, ablation_without_ai=1.
+    """
+    flags = {
+        "ablation_without_ai": 0,
+        "ablation_without_funding": 0,
+        "ablation_without_basis": 0,
+        "ablation_without_liquidation": 0,
+        "ablation_primary_only": 0,
+    }
+    if not confluence:
+        return flags
+
+    # AI ablation: se AI rejeitou, sem AI teria passado
+    if outcome == "ai_rejected" and ai_used:
+        flags["ablation_without_ai"] = 1
+
+    # Motor ablation: se confluencia bloqueou, verificar quais motores votaram
+    signals = confluence.signals or []
+    valid_sources = {s.source for s in signals if s.valid}
+
+    # Se apenas 1 motor era valido, primary_only=1
+    if len(valid_sources) == 1:
+        flags["ablation_primary_only"] = 1
+
+    # Funding motor (M1) ablation
+    if "funding_rate" in valid_sources and len(valid_sources) > 1:
+        flags["ablation_without_funding"] = 0  # removing it would reduce score
+    elif "funding_rate" not in valid_sources and outcome == "confluence_block":
+        flags["ablation_without_funding"] = 1  # funding didn't contribute
+
+    # Basis motor (M3) ablation
+    if "basis_momentum" in valid_sources and len(valid_sources) > 1:
+        flags["ablation_without_basis"] = 0
+    elif "basis_momentum" not in valid_sources and outcome == "confluence_block":
+        flags["ablation_without_basis"] = 1
+
+    # Liquidation motor (M2) ablation
+    if "liquidation_cascade" in valid_sources and len(valid_sources) > 1:
+        flags["ablation_without_liquidation"] = 0
+    elif "liquidation_cascade" not in valid_sources and outcome == "confluence_block":
+        flags["ablation_without_liquidation"] = 1
+
+    return flags
+
+
 def _record_scalping_decision(
     cycle_id: str,
     symbol: str,
@@ -300,10 +366,28 @@ def _record_scalping_decision(
     ai_used: bool = False,
     ai_approved: bool = False,
     risk: Optional[RiskDecision] = None,
+    regime_label: str = None,
+    micro: Optional[dict] = None,
 ) -> None:
     """Persiste o resultado final do funil do scalping para comparacao entre instancias."""
     best_signal = confluence.best_signal if confluence else None
     signal_subtype = confluence.liq_signal_subtype if confluence else "none"
+
+    # Ablation flags
+    ablation = _compute_ablation_flags(outcome, confluence, ai_used, ai_approved)
+
+    # Blocked_by mapping
+    _outcome_to_blocker = {
+        "confluence_block": "confluence",
+        "ai_rejected": "ai",
+        "risk_blocked": "risk",
+        "regime_blocked": "regime",
+        "cooldown": "cooldown",
+        "in_position": "in_position",
+        "error": "error",
+    }
+    blocked_by = _outcome_to_blocker.get(outcome, "none")
+
     payload = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "cycle_id": cycle_id,
@@ -319,6 +403,23 @@ def _record_scalping_decision(
         "rr_ratio": best_signal.rr_ratio if best_signal else None,
         "sl_distance_pct": best_signal.sl_distance_pct if best_signal else None,
         "signal_subtype": signal_subtype,
+        # New audit fields
+        "param_version": get_param_version(),
+        "git_sha": get_git_sha(),
+        "market_regime": regime_label,
+        "session_bucket": get_session_bucket(),
+        "hour_bucket": get_hour_bucket(),
+        "expected_entry_price": best_signal.entry_price if best_signal else None,
+        "signal_price": best_signal.price if best_signal else None,
+        "asset_bucket": get_asset_bucket(symbol),
+        "final_outcome": outcome,
+        "blocked_by": blocked_by,
+        # Ablation
+        **ablation,
+        # Microstructure snapshot
+        "funding_rate": micro.get("funding_rate") if micro else None,
+        "basis_spread_pct": micro.get("basis_spread_pct") if micro else None,
+        "oi_change_1h_pct": micro.get("oi_change_1h_pct") if micro else None,
     }
     try:
         db.insert_scalping_decision(payload)
@@ -579,6 +680,25 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
         })
         state["history"] = state["history"][-20:]
 
+        # Audit: calcular PnL bruto e custos
+        position_size = pos.get("position_size_usd", 0)
+        gross_pnl_pct, gross_pnl_usd = calc_gross_pnl(
+            entry_price, exit_price, direction, position_size * remaining_pct,
+        )
+        fee_entry_bps = SINGLE_SIDE_FEE_PCT * 100  # pct -> bps
+        fee_exit_bps = SINGLE_SIDE_FEE_PCT * 100
+        total_cost = calc_total_cost_bps(fee_entry_bps, fee_exit_bps)
+
+        # Expected exit price (theoretical SL/TP level without slippage)
+        if hit == "stop_loss":
+            expected_exit = sl_price
+        elif hit == "take_profit_2":
+            expected_exit = tp2_price
+        else:
+            expected_exit = exit_price
+
+        exit_slip_bps = calc_slippage_bps(expected_exit, exit_price, direction)
+
         # Log no banco
         trade = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -588,7 +708,7 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
             "exit_price": exit_price,
             "sl_price": pos["sl_price"],
             "tp_price": tp2_price,
-            "position_size_usd": pos.get("position_size_usd"),
+            "position_size_usd": position_size,
             "leverage": pos.get("leverage"),
             "confluence_score": pos.get("confluence_score"),
             "source": pos.get("source"),
@@ -597,6 +717,41 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
             "exit_reason": hit,
             "capital_after": round(state["capital"], 2),
             "signal_subtype": pos.get("signal_subtype", "unknown"),
+            # Audit fields
+            "signal_price": pos.get("signal_price"),
+            "expected_entry_price": pos.get("expected_entry_price"),
+            "realized_entry_price": entry_price,
+            "entry_slippage_bps": 0,  # paper mode: no entry slippage
+            "expected_exit_price": expected_exit,
+            "realized_exit_price": exit_price,
+            "exit_slippage_bps": exit_slip_bps,
+            "spread_bps_est": 0,
+            "signal_to_order_ms": 0,
+            "fill_model": "paper_close",
+            "capital_before": pos.get("capital_before"),
+            "param_version": pos.get("param_version", get_param_version()),
+            "git_sha": pos.get("git_sha", get_git_sha()),
+            "risk_amount_usd": pos.get("risk_amount_usd", 0),
+            "tp1_price": pos.get("tp1_price"),
+            "sl_distance_pct": pos.get("sl_distance_pct"),
+            "rr_ratio_planned": pos.get("rr_ratio_planned"),
+            "gross_pnl_pct": gross_pnl_pct,
+            "gross_pnl_usd": gross_pnl_usd,
+            "fee_entry_bps": fee_entry_bps,
+            "fee_exit_bps": fee_exit_bps,
+            "total_cost_bps": total_cost,
+            "net_pnl_pct": round(pnl_pct, 4),
+            "net_pnl_usd": round(pnl_usd, 2),
+            "market_regime": pos.get("market_regime"),
+            "session_bucket": get_session_bucket(),
+            "hour_bucket": get_hour_bucket(),
+            "weekday_bucket": get_weekday_bucket(),
+            "event_bucket": get_event_bucket(),
+            "asset_bucket": get_asset_bucket(symbol),
+            "strategy_family": "microstructure",
+            "ai_gate_used": pos.get("ai_gate_used", False),
+            "ai_gate_approved": pos.get("ai_gate_approved", False),
+            "forced_entry": pos.get("forced_entry", False),
         }
         try:
             db.insert_scalping_trade(trade)
@@ -676,6 +831,8 @@ def _open_position(
         )
         return f"[SCALPING] Abertura abortada {symbol}: entry_price invalido ({entry_price})"
 
+    capital_before = float(state.get("capital", CONFIG.initial_capital))
+
     positions = state.setdefault("positions", {})
     positions[symbol] = {
         "direction": direction,
@@ -691,6 +848,18 @@ def _open_position(
         "tp1_hit": False,
         "forced_entry": bool(force_entry_applied),
         "signal_subtype": signal_subtype,
+        # Audit fields stored in position for use at close
+        "signal_price": best.price,
+        "expected_entry_price": best.entry_price,
+        "capital_before": capital_before,
+        "param_version": get_param_version(),
+        "git_sha": get_git_sha(),
+        "risk_amount_usd": risk.risk_amount_usd,
+        "sl_distance_pct": best.sl_distance_pct,
+        "rr_ratio_planned": best.rr_ratio,
+        "market_regime": state.get("_last_regime_label"),
+        "ai_gate_used": state.get("_last_ai_used", False),
+        "ai_gate_approved": state.get("_last_ai_approved", False),
     }
 
     # Log no banco
@@ -711,6 +880,29 @@ def _open_position(
         "exit_reason": "open",
         "capital_after": state["capital"],
         "signal_subtype": signal_subtype,
+        # Audit fields
+        "signal_price": best.price,
+        "expected_entry_price": best.entry_price,
+        "realized_entry_price": entry_price,
+        "entry_slippage_bps": 0,
+        "fill_model": "paper_close",
+        "capital_before": capital_before,
+        "param_version": get_param_version(),
+        "git_sha": get_git_sha(),
+        "risk_amount_usd": risk.risk_amount_usd,
+        "tp1_price": risk.tp1_price,
+        "sl_distance_pct": best.sl_distance_pct,
+        "rr_ratio_planned": best.rr_ratio,
+        "market_regime": state.get("_last_regime_label"),
+        "session_bucket": get_session_bucket(),
+        "hour_bucket": get_hour_bucket(),
+        "weekday_bucket": get_weekday_bucket(),
+        "event_bucket": get_event_bucket(),
+        "asset_bucket": get_asset_bucket(symbol),
+        "strategy_family": "microstructure",
+        "ai_gate_used": state.get("_last_ai_used", False),
+        "ai_gate_approved": state.get("_last_ai_approved", False),
+        "forced_entry": bool(force_entry_applied),
     }
     try:
         db.insert_scalping_trade(trade)
@@ -819,6 +1011,7 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                     symbol=symbol,
                     outcome="in_position",
                     reason="Ja existe posicao aberta no simbolo",
+                    regime_label=None, micro=None,
                 )
                 _record_scalping_audit(
                     cycle_id=cycle_id,
@@ -847,6 +1040,7 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                     symbol=symbol,
                     outcome="cooldown",
                     reason=f"Cooldown ativo: {remaining} candles restantes",
+                    regime_label=None, micro=None,
                 )
                 _record_scalping_audit(
                     cycle_id=cycle_id,
@@ -882,6 +1076,7 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                     cycle_id=cycle_id, symbol=symbol,
                     outcome="regime_blocked",
                     reason=f"Regime CHOPPY (ADX={regime_data.get('adx_1h', 0)}, BB={regime_data.get('bb_width_1h', 0)}%)",
+                    regime_label=regime_label, micro=None,
                 )
                 _record_scalping_audit(
                     cycle_id=cycle_id, symbol=symbol,
@@ -965,6 +1160,7 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                             outcome="confluence_block",
                             reason=confluence.reason,
                             confluence=confluence,
+                            regime_label=regime_label, micro=micro,
                         )
                         _record_scalping_audit(
                             cycle_id=cycle_id,
@@ -993,6 +1189,7 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                         outcome="confluence_block",
                         reason=confluence.reason,
                         confluence=confluence,
+                        regime_label=regime_label, micro=micro,
                     )
                     _record_scalping_audit(
                         cycle_id=cycle_id,
@@ -1053,6 +1250,7 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                         confluence=confluence,
                         ai_used=ai_used,
                         ai_approved=ai_approved,
+                        regime_label=regime_label, micro=micro,
                     )
                     _record_scalping_audit(
                         cycle_id=cycle_id,
@@ -1105,6 +1303,7 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                         ai_used=ai_used,
                         ai_approved=ai_approved,
                         risk=risk,
+                        regime_label=regime_label, micro=micro,
                     )
                     _record_scalping_audit(
                         cycle_id=cycle_id,
@@ -1124,6 +1323,11 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                     continue
 
             # ---- PASSO 7: Abrir posicao ----
+            # Store AI gate state for _open_position to capture in position
+            state["_last_regime_label"] = regime_label
+            state["_last_ai_used"] = ai_used
+            state["_last_ai_approved"] = ai_approved
+
             open_msg = _open_position(
                 state,
                 symbol,
@@ -1141,6 +1345,7 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                 ai_used=ai_used,
                 ai_approved=ai_approved,
                 risk=risk,
+                regime_label=regime_label, micro=micro,
             )
             _record_scalping_audit(
                 cycle_id=cycle_id,
@@ -1176,6 +1381,7 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                 symbol=symbol,
                 outcome="error",
                 reason=str(e),
+                regime_label=None, micro=None,
             )
             _record_scalping_audit(
                 cycle_id=cycle_id,
@@ -1352,6 +1558,22 @@ def _check_v2_1b_positions(state: dict, symbol: str, df_1m) -> list:
         state["losses"] = state.get("losses", 0) + 1
     state["total_pnl_usd"] = state.get("total_pnl_usd", 0) + pnl_usd
 
+    # Audit: PnL bruto e custos
+    gross_pnl_pct, gross_pnl_usd = calc_gross_pnl(
+        entry_price, exit_price, direction, position_size,
+    )
+    fee_entry_bps = SINGLE_SIDE_FEE_PCT * 100
+    fee_exit_bps = SINGLE_SIDE_FEE_PCT * 100
+    total_cost = calc_total_cost_bps(fee_entry_bps, fee_exit_bps)
+
+    if hit == "stop_loss" or hit == "trailing_stop":
+        expected_exit = sl_price
+    elif hit == "take_profit_2":
+        expected_exit = tp2_price
+    else:
+        expected_exit = exit_price
+    exit_slip_bps = calc_slippage_bps(expected_exit, exit_price, direction)
+
     trade = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "symbol": symbol,
@@ -1368,6 +1590,36 @@ def _check_v2_1b_positions(state: dict, symbol: str, df_1m) -> list:
         "pnl_usd": round(pnl_usd, 2),
         "exit_reason": hit,
         "capital_after": round(state["capital"], 2),
+        # Audit fields
+        "signal_price": pos.get("signal_price"),
+        "expected_entry_price": pos.get("expected_entry_price"),
+        "realized_entry_price": entry_price,
+        "entry_slippage_bps": 0,
+        "expected_exit_price": expected_exit,
+        "realized_exit_price": exit_price,
+        "exit_slippage_bps": exit_slip_bps,
+        "fill_model": "paper_close",
+        "capital_before": pos.get("capital_before"),
+        "param_version": pos.get("param_version", get_param_version()),
+        "git_sha": pos.get("git_sha", get_git_sha()),
+        "risk_amount_usd": pos.get("risk_amount_usd", 0),
+        "tp1_price": pos.get("tp1_price"),
+        "sl_distance_pct": pos.get("sl_distance_pct"),
+        "rr_ratio_planned": pos.get("rr_ratio_planned"),
+        "gross_pnl_pct": gross_pnl_pct,
+        "gross_pnl_usd": gross_pnl_usd,
+        "fee_entry_bps": fee_entry_bps,
+        "fee_exit_bps": fee_exit_bps,
+        "total_cost_bps": total_cost,
+        "net_pnl_pct": round(pnl_pct, 4),
+        "net_pnl_usd": round(pnl_usd, 2),
+        "market_regime": pos.get("market_regime"),
+        "session_bucket": get_session_bucket(),
+        "hour_bucket": get_hour_bucket(),
+        "weekday_bucket": get_weekday_bucket(),
+        "event_bucket": get_event_bucket(),
+        "asset_bucket": get_asset_bucket(symbol),
+        "strategy_family": "microstructure",
     }
     try:
         db.insert_scalping_trade_v2_1b(trade)
@@ -1477,6 +1729,25 @@ def process_scalping_v2_1b(symbols: list, open_new: bool = True, results: Option
                 force_v2_1b=True,
             )
 
+            # Audit: base decision fields
+            _v2_1b_audit_base = {
+                "param_version": get_param_version(),
+                "git_sha": get_git_sha(),
+                "market_regime": regime_label,
+                "session_bucket": get_session_bucket(),
+                "hour_bucket": get_hour_bucket(),
+                "asset_bucket": get_asset_bucket(symbol),
+                "funding_rate": micro.get("funding_rate") if micro else None,
+                "basis_spread_pct": micro.get("basis_spread_pct") if micro else None,
+                "oi_change_1h_pct": micro.get("oi_change_1h_pct") if micro else None,
+            }
+
+            # Ablation: compute for V2.1b (no AI gate)
+            ablation = _compute_ablation_flags(
+                "confluence_block" if not confluence.meets_threshold else "pending",
+                confluence, False, False,
+            )
+
             # Registrar decisao
             decision = {
                 "cycle_id": cycle_id,
@@ -1489,10 +1760,18 @@ def process_scalping_v2_1b(symbols: list, open_new: bool = True, results: Option
                 "ai_used": False,
                 "ai_approved": False,
                 "risk_approved": False,
+                "signal_price": confluence.best_signal.price if confluence.best_signal else None,
+                "expected_entry_price": confluence.best_signal.entry_price if confluence.best_signal else None,
+                "blocked_by": "none",
+                "final_outcome": None,
+                **_v2_1b_audit_base,
+                **ablation,
             }
 
             if not confluence.meets_threshold:
                 decision["outcome"] = "confluence_block"
+                decision["final_outcome"] = "confluence_block"
+                decision["blocked_by"] = "confluence"
                 try:
                     db.insert_scalping_decision_v2_1b(decision)
                 except Exception:
@@ -1505,6 +1784,8 @@ def process_scalping_v2_1b(symbols: list, open_new: bool = True, results: Option
             if not risk.approved:
                 decision["outcome"] = "risk_blocked"
                 decision["reason"] = risk.reason
+                decision["final_outcome"] = "risk_blocked"
+                decision["blocked_by"] = "risk"
                 try:
                     db.insert_scalping_decision_v2_1b(decision)
                 except Exception:
@@ -1520,6 +1801,8 @@ def process_scalping_v2_1b(symbols: list, open_new: bool = True, results: Option
             if entry_price <= 0:
                 continue
 
+            capital_before = float(state.get("capital", CONFIG.initial_capital))
+
             state.setdefault("positions", {})[symbol] = {
                 "direction": confluence.direction.value,
                 "entry_price": entry_price,
@@ -1532,6 +1815,16 @@ def process_scalping_v2_1b(symbols: list, open_new: bool = True, results: Option
                 "source": best.source,
                 "opened_at": datetime.now().isoformat(),
                 "tp1_hit": False,
+                # Audit fields for use at close
+                "signal_price": best.price,
+                "expected_entry_price": best.entry_price,
+                "capital_before": capital_before,
+                "param_version": get_param_version(),
+                "git_sha": get_git_sha(),
+                "risk_amount_usd": risk.risk_amount_usd,
+                "sl_distance_pct": best.sl_distance_pct,
+                "rr_ratio_planned": best.rr_ratio,
+                "market_regime": regime_label,
             }
 
             decision["outcome"] = "opened"
@@ -1539,6 +1832,8 @@ def process_scalping_v2_1b(symbols: list, open_new: bool = True, results: Option
             decision["risk_approved"] = True
             decision["rr_ratio"] = best.rr_ratio
             decision["sl_distance_pct"] = best.sl_distance_pct
+            decision["final_outcome"] = "opened"
+            decision["blocked_by"] = "none"
             try:
                 db.insert_scalping_decision_v2_1b(decision)
             except Exception:
@@ -1558,6 +1853,25 @@ def process_scalping_v2_1b(symbols: list, open_new: bool = True, results: Option
                 "source": best.source,
                 "exit_reason": "open",
                 "capital_after": round(state.get("capital", CONFIG.initial_capital), 2),
+                # Audit fields
+                "signal_price": best.price,
+                "expected_entry_price": best.entry_price,
+                "realized_entry_price": entry_price,
+                "fill_model": "paper_close",
+                "capital_before": capital_before,
+                "param_version": get_param_version(),
+                "git_sha": get_git_sha(),
+                "risk_amount_usd": risk.risk_amount_usd,
+                "tp1_price": risk.tp1_price,
+                "sl_distance_pct": best.sl_distance_pct,
+                "rr_ratio_planned": best.rr_ratio,
+                "market_regime": regime_label,
+                "session_bucket": get_session_bucket(),
+                "hour_bucket": get_hour_bucket(),
+                "weekday_bucket": get_weekday_bucket(),
+                "event_bucket": get_event_bucket(),
+                "asset_bucket": get_asset_bucket(symbol),
+                "strategy_family": "microstructure",
             }
             try:
                 db.insert_scalping_trade_v2_1b(trade)
