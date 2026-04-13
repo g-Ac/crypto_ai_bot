@@ -25,6 +25,7 @@ from scalping_logger import setup_scalping_logging
 from scalping_outcomes import label_scalping_outcomes
 from scalping_trader import process_scalping, get_scalping_status, process_scalping_v2_1b, get_v2_1b_status
 from runtime_config import BOT_ID, ENABLE_TELEGRAM_COMMANDS, runtime_metadata
+from liquidation_feed import init_feed as init_liquidation_feed
 
 # ── Disk space check ────────────────────────────────────────────────────────
 DISK_MIN_FREE_MB = 500
@@ -328,8 +329,10 @@ _cycle_lock = threading.Lock()
 if __name__ == "__main__":
     db.init_db()
     setup_scalping_logging()
+    init_liquidation_feed(SYMBOLS)
     print(f"[BOOT] Instancia: {BOT_ID}")
     print(f"[BOOT] Runtime: {runtime_metadata()['runtime_dir']}")
+    print(f"[BOOT] Liquidation feed: {len(SYMBOLS)} simbolos")
     if ENABLE_TELEGRAM_COMMANDS:
         start_command_listener()
     else:

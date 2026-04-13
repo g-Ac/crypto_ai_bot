@@ -6,8 +6,8 @@ basis spread e sessao de mercado via Binance Futures API.
 Cache em memoria com TTL de 30s. Retry com backoff exponencial.
 
 Fontes de liquidacao (em ordem de prioridade):
-1. /fapi/v1/allForceOrders — dados reais de liquidacao forcada (endpoint publico).
-2. Proxy via aggTrades — fallback se allForceOrders falhar (~70% precisao).
+1. WebSocket forceOrder stream — dados reais via liquidation_feed.py (background thread).
+2. Proxy via aggTrades — fallback se feed nao estiver conectado (~70% precisao).
 """
 import time
 import logging
@@ -167,59 +167,35 @@ def get_long_short_ratio(symbol: str, period: str = "5m") -> Dict:
     return result
 
 
-def _get_real_liquidations(symbol: str, limit: int = 100) -> Optional[Dict]:
-    """Busca liquidacoes reais via /fapi/v1/allForceOrders (endpoint publico).
+def _get_feed_liquidations(symbol: str) -> Optional[Dict]:
+    """Busca liquidacoes reais do WebSocket feed (liquidation_feed.py).
 
-    Retorna dados reais de liquidacao forcada do Binance Futures.
-    Peso da API: 20 (com symbol). Nao requer autenticacao.
-
-    Campos retornados pela API por ordem:
-      symbol, price, origQty, executedQty, averagePrice, status,
-      timeInForce, type, side, time
-
-    side: "SELL" = liquidacao de LONG (venda forcada)
-    side: "BUY"  = liquidacao de SHORT (compra forcada)
+    O feed roda em background e agrega liquidacoes numa janela rolante de 15min.
+    Retorna None se o feed nao estiver conectado ou sem dados.
     """
-    data = _api_get(
-        f"{FAPI_BASE}/fapi/v1/allForceOrders",
-        {"symbol": symbol, "limit": limit},
-    )
-    if data is None or not isinstance(data, list):
+    try:
+        from liquidation_feed import get_symbol_liquidations, is_connected
+
+        if not is_connected():
+            logger.debug("LIQ FEED %s: feed nao conectado", symbol)
+            return None
+
+        result = get_symbol_liquidations(symbol)
+
+        if result["count"] > 0:
+            logger.info(
+                "LIQ REAL %s: %d liquidacoes (feed), vol_long=$%.0f vol_short=$%.0f",
+                symbol, result["count"], result["liquidation_vol_long"],
+                result["liquidation_vol_short"],
+            )
+
+        return result
+    except ImportError:
+        logger.debug("LIQ FEED: modulo liquidation_feed nao disponivel")
         return None
-
-    vol_long = 0.0
-    vol_short = 0.0
-    count = 0
-
-    for order in data:
-        qty = float(order.get("executedQty", order.get("origQty", 0)))
-        price = float(order.get("averagePrice", order.get("price", 0)))
-        if qty <= 0 or price <= 0:
-            continue
-
-        notional = qty * price
-        side = order.get("side", "")
-        count += 1
-
-        if side == "SELL":
-            # Liquidacao de LONG: posicao long fechada com venda forcada
-            vol_long += notional
-        elif side == "BUY":
-            # Liquidacao de SHORT: posicao short fechada com compra forcada
-            vol_short += notional
-
-    if count > 0:
-        logger.info(
-            "LIQ REAL %s: %d liquidacoes, vol_long=$%.0f vol_short=$%.0f",
-            symbol, count, vol_long, vol_short,
-        )
-
-    return {
-        "liquidation_vol_long": round(vol_long, 2),
-        "liquidation_vol_short": round(vol_short, 2),
-        "count": count,
-        "is_proxy": False,
-    }
+    except Exception as e:
+        logger.warning("LIQ FEED %s: erro ao consultar feed: %s", symbol, e)
+        return None
 
 
 def _get_proxy_liquidations(symbol: str, limit: int = 100) -> Dict:
@@ -280,11 +256,11 @@ def _get_proxy_liquidations(symbol: str, limit: int = 100) -> Dict:
 
 
 def get_liquidations(symbol: str, limit: int = 100) -> Dict:
-    """Busca dados de liquidacao: real (allForceOrders) com fallback para proxy.
+    """Busca dados de liquidacao: WebSocket feed com fallback para proxy.
 
-    Tenta primeiro o endpoint real /fapi/v1/allForceOrders que retorna
-    liquidacoes forcadas reais do mercado. Se falhar (rate limit, erro),
-    usa fallback via aggTrades (~70% precisao).
+    Tenta primeiro o feed WebSocket em background (liquidation_feed.py) que
+    agrega liquidacoes reais numa janela rolante de 15min.
+    Se o feed nao estiver conectado, usa fallback via aggTrades (~70% precisao).
 
     Returns:
         {
@@ -299,14 +275,14 @@ def get_liquidations(symbol: str, limit: int = 100) -> Dict:
     if cached is not None:
         return cached
 
-    # Tentar dados reais primeiro
-    result = _get_real_liquidations(symbol, limit)
+    # Tentar feed WebSocket (dados reais)
+    result = _get_feed_liquidations(symbol)
     if result is not None:
         _set_cache(cache_key, result)
         return result
 
     # Fallback para proxy
-    logger.info("LIQ %s: allForceOrders indisponivel, usando proxy aggTrades", symbol)
+    logger.info("LIQ %s: feed indisponivel, usando proxy aggTrades", symbol)
     result = _get_proxy_liquidations(symbol, limit)
     _set_cache(cache_key, result)
     return result
