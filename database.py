@@ -24,6 +24,8 @@ VALID_TABLES = frozenset({
     "scalping_outcome_labels",
     "ai_decisions",
     "market_microstructure",
+    "momentum_trades",
+    "momentum_decisions",
 })
 
 
@@ -321,6 +323,60 @@ def init_db():
     """)
     conn.commit()
 
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS momentum_trades (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp           TEXT,
+            symbol              TEXT,
+            direction           TEXT,
+            regime              TEXT,
+            entry_price         REAL,
+            exit_price          REAL,
+            sl_price            REAL,
+            tp1_price           REAL,
+            tp2_price           REAL,
+            position_size_usd   REAL,
+            pnl_pct             REAL,
+            pnl_usd             REAL,
+            exit_reason         TEXT,
+            capital_after       REAL,
+            param_version       TEXT,
+            duration_candles    INTEGER,
+            mfe_pct             REAL DEFAULT 0,
+            mae_pct             REAL DEFAULT 0,
+            session_bucket      TEXT DEFAULT '',
+            asset_bucket        TEXT DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS momentum_decisions (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp           TEXT,
+            cycle_id            TEXT,
+            symbol              TEXT,
+            regime              TEXT,
+            outcome             TEXT,
+            direction           TEXT,
+            blocked_by          TEXT DEFAULT 'none',
+            ema_fast_value      REAL DEFAULT 0,
+            ema_slow_value      REAL DEFAULT 0,
+            ema_gap_pct         REAL DEFAULT 0,
+            retracement_pct     REAL DEFAULT 0,
+            impulse_start_price REAL DEFAULT 0,
+            impulse_end_price   REAL DEFAULT 0,
+            pullback_rejection  TEXT DEFAULT '',
+            param_version       TEXT DEFAULT '',
+            session_bucket      TEXT DEFAULT '',
+            asset_bucket        TEXT DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_momentum_trades_ts ON momentum_trades(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_momentum_trades_symbol ON momentum_trades(symbol);
+        CREATE INDEX IF NOT EXISTS idx_momentum_decisions_ts ON momentum_decisions(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_momentum_decisions_cycle ON momentum_decisions(cycle_id);
+        CREATE INDEX IF NOT EXISTS idx_momentum_decisions_outcome ON momentum_decisions(outcome);
+    """)
+    conn.commit()
+
     # Migração: adiciona colunas novas em tabelas já existentes
     for col, coltype in [("sl_price", "REAL"), ("tp_price", "REAL")]:
         try:
@@ -601,6 +657,81 @@ def insert_pump_trade(trade: dict):
             trade["duration_min"],
             trade["peak_price"],
             round(trade["capital_after"], 2),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_momentum_trade(trade: dict):
+    conn = _get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO momentum_trades (
+                timestamp, symbol, direction, regime,
+                entry_price, exit_price, sl_price, tp1_price, tp2_price,
+                position_size_usd, pnl_pct, pnl_usd,
+                exit_reason, capital_after, param_version,
+                duration_candles, mfe_pct, mae_pct,
+                session_bucket, asset_bucket
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            trade["timestamp"],
+            trade["symbol"],
+            trade["direction"],
+            trade.get("regime", ""),
+            trade["entry_price"],
+            trade.get("exit_price"),
+            trade.get("sl_price"),
+            trade.get("tp1_price"),
+            trade.get("tp2_price"),
+            trade.get("position_size_usd"),
+            trade.get("pnl_pct"),
+            round(trade.get("pnl_usd", 0), 2),
+            trade.get("exit_reason", "open"),
+            round(trade.get("capital_after", 0), 2),
+            trade.get("param_version", "momentum-pullback-v1.1"),
+            trade.get("duration_candles"),
+            trade.get("mfe_pct", 0),
+            trade.get("mae_pct", 0),
+            trade.get("session_bucket", ""),
+            trade.get("asset_bucket", ""),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_momentum_decision(decision: dict):
+    conn = _get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO momentum_decisions (
+                timestamp, cycle_id, symbol, regime,
+                outcome, direction, blocked_by,
+                ema_fast_value, ema_slow_value, ema_gap_pct,
+                retracement_pct, impulse_start_price, impulse_end_price,
+                pullback_rejection, param_version,
+                session_bucket, asset_bucket
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            decision["timestamp"],
+            decision.get("cycle_id", ""),
+            decision["symbol"],
+            decision.get("regime", ""),
+            decision["outcome"],
+            decision.get("direction", ""),
+            decision.get("blocked_by", "none"),
+            decision.get("ema_fast_value", 0),
+            decision.get("ema_slow_value", 0),
+            decision.get("ema_gap_pct", 0),
+            decision.get("retracement_pct", 0),
+            decision.get("impulse_start_price", 0),
+            decision.get("impulse_end_price", 0),
+            decision.get("pullback_rejection", ""),
+            decision.get("param_version", "momentum-pullback-v1.1"),
+            decision.get("session_bucket", ""),
+            decision.get("asset_bucket", ""),
         ))
         conn.commit()
     finally:
@@ -1481,6 +1612,62 @@ def get_trades_range(table: str, days: int = 7, limit: int = 100) -> list:
     ).fetchall()]
     conn.close()
     return rows
+
+
+def get_scalping_decisions_summary(hours: int = 24) -> dict:
+    """Resumo de decisoes do scalping agrupado por blocked_by."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT blocked_by, COUNT(*) as count "
+            "FROM scalping_decisions "
+            "WHERE timestamp > datetime('now', ?)"
+            "GROUP BY blocked_by ORDER BY count DESC",
+            (f"-{hours} hours",),
+        ).fetchall()
+        return {row["blocked_by"] or "none": int(row["count"]) for row in rows}
+    finally:
+        conn.close()
+
+
+def get_scalping_trades_by_regime(hours: int = 24) -> list:
+    """Trades do scalping agrupados por regime com stats (janela rolante)."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT market_regime, COUNT(*) as count, "
+            "ROUND(AVG(pnl_pct), 4) as avg_pnl, "
+            "ROUND(SUM(pnl_pct), 4) as total_pnl, "
+            "SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins, "
+            "SUM(CASE WHEN pnl_pct < 0 THEN 1 ELSE 0 END) as losses "
+            "FROM scalping_trades WHERE timestamp > datetime('now', ?) "
+            "AND exit_reason != 'open' "
+            "GROUP BY market_regime ORDER BY count DESC",
+            (f"-{hours} hours",),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_scalping_trades_by_session(hours: int = 24) -> list:
+    """Trades do scalping agrupados por sessao com stats (janela rolante)."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT session_bucket, COUNT(*) as count, "
+            "ROUND(AVG(pnl_pct), 4) as avg_pnl, "
+            "ROUND(SUM(pnl_pct), 4) as total_pnl, "
+            "SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins, "
+            "SUM(CASE WHEN pnl_pct < 0 THEN 1 ELSE 0 END) as losses "
+            "FROM scalping_trades WHERE timestamp > datetime('now', ?) "
+            "AND exit_reason != 'open' "
+            "GROUP BY session_bucket ORDER BY count DESC",
+            (f"-{hours} hours",),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def get_closed_trades_in_period(table: str, days: int = 30) -> list:
