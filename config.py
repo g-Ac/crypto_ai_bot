@@ -16,6 +16,7 @@ _DEFAULT_INITIAL_CAPITALS = {
     "agent": 10000.0,
     "pump": 5000.0,
     "scalping": 10000.0,
+    "momentum": 1000.0,
 }
 
 _portfolio_target_capital = _optional_float_env("BOT_PORTFOLIO_TARGET_CAPITAL")
@@ -34,6 +35,7 @@ for _system_key, _env_name in {
     "agent": "BOT_AGENT_INITIAL_CAPITAL",
     "pump": "BOT_PUMP_INITIAL_CAPITAL",
     "scalping": "BOT_SCALPING_INITIAL_CAPITAL",
+    "momentum": "BOT_MOMENTUM_INITIAL_CAPITAL",
 }.items():
     _override = _optional_float_env(_env_name)
     if _override is not None and _override > 0:
@@ -44,13 +46,20 @@ for _system_key, _env_name in {
 # False = usa api.binance.com (Spot) — fallback
 USE_FUTURES_API = True
 
-# Endpoints derivados
-BINANCE_KLINES_URL = (
-    "https://fapi.binance.com/fapi/v1/klines"
-    if USE_FUTURES_API
-    else "https://api.binance.com/api/v3/klines"
-)
+# ── Spot endpoints (api.binance.com) ──
+BINANCE_SPOT_KLINES_URL = "https://api.binance.com/api/v3/klines"
+BINANCE_SPOT_TICKER_URL = "https://api.binance.com/api/v3/ticker/price"
+BINANCE_SPOT_TICKER_24HR_URL = "https://api.binance.com/api/v3/ticker/24hr"
+
+# ── Futures endpoints (fapi.binance.com) ──
+BINANCE_FUTURES_KLINES_URL = "https://fapi.binance.com/fapi/v1/klines"
 BINANCE_FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
+BINANCE_FUTURES_BALANCE_URL = "https://fapi.binance.com/fapi/v2/balance"
+
+# Endpoint derivado (scalping usa Futures, resto usa Spot)
+BINANCE_KLINES_URL = (
+    BINANCE_FUTURES_KLINES_URL if USE_FUTURES_API else BINANCE_SPOT_KLINES_URL
+)
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"]
 
@@ -120,13 +129,14 @@ AGENT_INITIAL_CAPITAL = _resolved_initial_capitals["agent"]
 # Pump Trading capital
 PUMP_INITIAL_CAPITAL = _resolved_initial_capitals["pump"]
 SCALPING_INITIAL_CAPITAL = _resolved_initial_capitals["scalping"]
+MOMENTUM_INITIAL_CAPITAL = _resolved_initial_capitals["momentum"]
 PORTFOLIO_INITIAL_CAPITAL = sum(_resolved_initial_capitals.values())
 
 # Pump Scanner
 PUMP_VOLUME_MULTIPLIER = 5       # volume atual > 5x a media = anomalia
 PUMP_PRICE_CHANGE_MIN = 2.0      # % minima de mudanca de preco para alertar
-PUMP_SCAN_INTERVAL = 60          # segundos entre scans
-PUMP_TOP_COINS = 50              # quantas moedas monitorar
+PUMP_SCAN_INTERVAL = 30          # segundos entre scans (acelerando coleta de dados)
+PUMP_TOP_COINS = 100             # quantas moedas monitorar (acelerando coleta de dados)
 
 # Agent Execution Policy
 AGENT_REAL_EXECUTION_ENABLED = os.environ.get("AGENT_REAL_EXECUTION_ENABLED", "").strip().lower() in ("true", "1", "yes")
@@ -137,7 +147,7 @@ AGENT_REAL_BLOCKED_INVALIDATION_QUALITY = {"unclear", "missing"}
 
 # Circuit Breaker
 DAILY_LOSS_LIMIT_PCT = 5.0       # para de operar se perder X% num dia
-DAILY_MAX_TRADES = 20            # maximo de trades por dia
+DAILY_MAX_TRADES = 9999          # sem limite (paper trading, acelerando coleta de dados)
 
 # Pump Trading
 PUMP_MAX_POSITIONS = 5           # maximo de posicoes simultaneas
@@ -162,6 +172,9 @@ V2_1B_PAPER_ENABLED = os.environ.get("V2_1B_PAPER_ENABLED", "true").strip().lowe
 # False = desativa paper_trader e trade_agents no loop principal
 PAPER_TRADER_ENABLED = os.environ.get("PAPER_TRADER_ENABLED", "true").strip().lower() in ("true", "1", "yes")
 AGENT_TRADER_ENABLED = os.environ.get("AGENT_TRADER_ENABLED", "true").strip().lower() in ("true", "1", "yes")
+MOMENTUM_TRADER_ENABLED = os.environ.get("MOMENTUM_TRADER_ENABLED", "false").strip().lower() in ("true", "1", "yes")
+MOMENTUM_SYMBOLS = [s.strip() for s in os.environ.get("MOMENTUM_SYMBOLS", "BTCUSDT,ETHUSDT").split(",") if s.strip()]
+MOMENTUM_MAX_POSITIONS = 1
 
 # Dashboard Auth (HTTP Basic Auth para rotas POST)
 # Defina via env vars DASHBOARD_USER / DASHBOARD_PASS no Pi.

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from config import (
     AGENT_INITIAL_CAPITAL,
+    MOMENTUM_INITIAL_CAPITAL,
     PAPER_INITIAL_CAPITAL,
     PORTFOLIO_INITIAL_CAPITAL,
     PUMP_INITIAL_CAPITAL,
@@ -133,6 +134,7 @@ AGENT_STATE_FILE = runtime_path("agent_state.json")
 PUMP_STATE_FILE = runtime_path("pump_positions.json")
 SCALPING_STATE_FILE = runtime_path("scalping_state.json")
 SCALPING_V2_1B_STATE_FILE = runtime_path("scalping_v2_1b_state.json")
+MOMENTUM_STATE_FILE = runtime_path("momentum_state.json")
 CONTROL_FILE = runtime_path("bot_control.json")
 PUMP_COOLDOWN_FILE = runtime_path("pump_cooldown.json")
 LAST_ALERT_FILE = runtime_path("last_alert.json")
@@ -164,6 +166,7 @@ def runtime_metadata() -> dict:
             "agent": round(float(AGENT_INITIAL_CAPITAL), 2),
             "pump": round(float(PUMP_INITIAL_CAPITAL), 2),
             "scalping": round(float(SCALPING_INITIAL_CAPITAL), 2),
+            "momentum": round(float(MOMENTUM_INITIAL_CAPITAL), 2),
         },
         "scalping_experiment": {
             "force_entries": SCALPING_EXPERIMENTAL_FORCE_ENTRIES,
