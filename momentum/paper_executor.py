@@ -161,8 +161,14 @@ def open_position(state: dict, signal: MomentumSignal, cycle_id: str) -> list[st
     return msgs
 
 
-def manage_positions(state: dict, candles: dict[str, dict]) -> list[str]:
-    """Check all open positions against current candles. Returns messages."""
+def manage_positions(state: dict, candles: dict[str, dict],
+                     new_candle_symbols: set[str] | None = None) -> list[str]:
+    """Check all open positions against current candles. Returns messages.
+
+    new_candle_symbols: set of symbols where a new 15m candle has closed.
+    candles_elapsed only increments for these symbols (avoids 5m overcounting).
+    If None, increments for all (backward-compat / tests).
+    """
     msgs: list[str] = []
     config = MomentumConfig()
     closed_symbols: list[str] = []
@@ -197,9 +203,10 @@ def manage_positions(state: dict, candles: dict[str, dict]) -> list[str]:
 
             if pnl_pct > 0:
                 state["wins"] += 1
-            else:
+            elif pnl_pct < 0:
                 state["losses"] += 1
                 state.setdefault("cooldowns", {})[symbol] = 2
+            # else: breakeven — counted in total_trades but neither win nor loss
 
             try:
                 db.insert_momentum_trade({
@@ -237,7 +244,9 @@ def manage_positions(state: dict, candles: dict[str, dict]) -> list[str]:
         else:
             pos["mfe_pct"] = result["mfe_pct"]
             pos["mae_pct"] = result["mae_pct"]
-            pos["candles_elapsed"] = pos.get("candles_elapsed", 0) + 1
+            # Only count candle if a new 15m candle has closed
+            if new_candle_symbols is None or symbol in new_candle_symbols:
+                pos["candles_elapsed"] = pos.get("candles_elapsed", 0) + 1
 
     for sym in closed_symbols:
         del state["positions"][sym]
@@ -320,8 +329,8 @@ def process_momentum_cycle(
     msgs: list[str] = []
     cycle_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     candle_cache: dict[str, dict] = {}
-
-    _tick_cooldowns(state)
+    new_candle_symbols: set[str] = set()
+    last_candle_ts = state.get("last_candle_ts", {})
 
     # Phase 1: evaluate signals per symbol
     for symbol in symbols:
@@ -330,11 +339,18 @@ def process_momentum_cycle(
             continue
 
         last = candles.iloc[-1]
+        candle_ts = str(last.get("time", ""))
         candle_cache[symbol] = {
             "high": float(last["high"]),
             "low": float(last["low"]),
             "close": float(last["close"]),
+            "time": candle_ts,
         }
+
+        # Track whether this is a new 15m candle (vs same candle seen last cycle)
+        if candle_ts != last_candle_ts.get(symbol, ""):
+            new_candle_symbols.add(symbol)
+            last_candle_ts[symbol] = candle_ts
 
         regime_data = regime_fn(symbol)
         regime = (
@@ -359,10 +375,15 @@ def process_momentum_cycle(
             blocked = signal.outcome.value if signal.outcome != MomentumOutcome.TRADE else "suspended"
             _log_decision(signal, cycle_id, blocked_by=blocked)
 
+    # Only tick cooldowns when at least one new 15m candle arrived
+    if new_candle_symbols:
+        _tick_cooldowns(state)
+
     # Phase 2: manage existing positions
-    exit_msgs = manage_positions(state, candle_cache)
+    exit_msgs = manage_positions(state, candle_cache, new_candle_symbols)
     msgs.extend(exit_msgs)
 
+    state["last_candle_ts"] = last_candle_ts
     save_state(state)
     return msgs
 
