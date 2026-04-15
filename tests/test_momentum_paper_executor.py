@@ -291,3 +291,107 @@ class TestProcessCycle:
         assert len(rows) >= 1
         # The flat candles should produce a reject (no trend)
         assert rows[0]["outcome"] != "trade" or rows[0]["blocked_by"] != "none"
+
+
+class TestCandleTracking15m:
+    """candles_elapsed must only increment on new 15m candles, not every 5m cycle."""
+
+    def test_same_candle_does_not_increment(self, state_file, tmp_db):
+        from momentum.paper_executor import load_state, save_state, open_position, manage_positions
+
+        state = load_state()
+        signal = _make_trade_signal()
+        open_position(state, signal, "cycle1")
+
+        candle = {"high": 85200.0, "low": 84900.0, "close": 85100.0}
+        # First call: new candle → should increment
+        manage_positions(state, {"BTCUSDT": candle}, new_candle_symbols={"BTCUSDT"})
+        assert state["positions"]["BTCUSDT"]["candles_elapsed"] == 1
+
+        # Second call: same candle (5m later) → should NOT increment
+        manage_positions(state, {"BTCUSDT": candle}, new_candle_symbols=set())
+        assert state["positions"]["BTCUSDT"]["candles_elapsed"] == 1
+
+        # Third call: still same candle → still 1
+        manage_positions(state, {"BTCUSDT": candle}, new_candle_symbols=set())
+        assert state["positions"]["BTCUSDT"]["candles_elapsed"] == 1
+
+        # Fourth call: new candle arrives → increments to 2
+        manage_positions(state, {"BTCUSDT": candle}, new_candle_symbols={"BTCUSDT"})
+        assert state["positions"]["BTCUSDT"]["candles_elapsed"] == 2
+        save_state(state)
+
+
+class TestCooldown:
+    def test_cooldown_blocks_entry(self, state_file, tmp_db):
+        from momentum.paper_executor import load_state, save_state, open_position
+
+        state = load_state()
+        # Manually set cooldown for BTCUSDT
+        state["cooldowns"] = {"BTCUSDT": 2}
+
+        signal = _make_trade_signal(symbol="BTCUSDT")
+        msgs = open_position(state, signal, "cycle1")
+        save_state(state)
+
+        assert "BTCUSDT" not in state["positions"]
+        assert msgs == []
+
+    def test_cooldown_ticks_and_expires(self, state_file):
+        from momentum.paper_executor import load_state, save_state, _tick_cooldowns
+
+        state = load_state()
+        state["cooldowns"] = {"BTCUSDT": 2, "ETHUSDT": 1}
+
+        _tick_cooldowns(state)
+        # BTCUSDT: 2 → 1, ETHUSDT: 1 → expired
+        assert state["cooldowns"] == {"BTCUSDT": 1}
+
+        _tick_cooldowns(state)
+        # BTCUSDT: 1 → expired
+        assert state["cooldowns"] == {}
+        save_state(state)
+
+
+class TestShortDirection:
+    def test_short_position_sl_hit(self, state_file, tmp_db):
+        from momentum.paper_executor import load_state, save_state, open_position, manage_positions
+
+        state = load_state()
+        # SHORT @ 85000, SL 85500 (above entry), TP1 84200, TP2 83500
+        signal = _make_trade_signal(
+            direction="SHORT", entry=85000.0, sl=85500.0,
+            tp1=84200.0, tp2=83500.0,
+        )
+        open_position(state, signal, "cycle1")
+
+        assert "BTCUSDT" in state["positions"]
+        assert state["positions"]["BTCUSDT"]["direction"] == "SHORT"
+
+        # Candle hits SL (high goes above 85500)
+        candle = {"high": 85600.0, "low": 84900.0, "close": 85550.0}
+        msgs = manage_positions(state, {"BTCUSDT": candle})
+        save_state(state)
+
+        assert "BTCUSDT" not in state["positions"]
+        assert state["losses"] == 1
+        assert state["capital"] < 1000.0
+
+    def test_short_position_tp1_hit(self, state_file, tmp_db):
+        from momentum.paper_executor import load_state, save_state, open_position, manage_positions
+
+        state = load_state()
+        signal = _make_trade_signal(
+            direction="SHORT", entry=85000.0, sl=85500.0,
+            tp1=84200.0, tp2=83500.0,
+        )
+        open_position(state, signal, "cycle1")
+
+        # Candle hits TP1 (low goes below 84200)
+        candle = {"high": 85000.0, "low": 84100.0, "close": 84150.0}
+        msgs = manage_positions(state, {"BTCUSDT": candle})
+        save_state(state)
+
+        assert "BTCUSDT" not in state["positions"]
+        assert state["wins"] == 1
+        assert state["capital"] > 1000.0
