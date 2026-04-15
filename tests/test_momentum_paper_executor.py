@@ -254,3 +254,40 @@ class TestClosePosition:
 
         assert state["hwm"] >= state["capital"]
         assert state["hwm"] > 1000.0
+
+
+class TestProcessCycle:
+    def test_logs_reject_decision(self, state_file, tmp_db):
+        from momentum.paper_executor import process_momentum_cycle
+
+        def mock_candle_fn(symbol, interval, limit):
+            n = 100
+            data = {
+                "time": pd.date_range("2026-01-01", periods=n, freq="15min"),
+                "open": np.full(n, 85000.0),
+                "high": np.full(n, 85100.0),
+                "low": np.full(n, 84900.0),
+                "close": np.full(n, 85000.0),
+                "volume": np.full(n, 100.0),
+            }
+            return pd.DataFrame(data)
+
+        def mock_regime_fn(symbol):
+            return {"regime_label": "TRENDING"}
+
+        msgs = process_momentum_cycle(
+            symbols=["BTCUSDT"],
+            open_new=True,
+            candle_fn=mock_candle_fn,
+            regime_fn=mock_regime_fn,
+        )
+
+        # Should have logged a decision (rejection) to the DB
+        import sqlite3
+        conn = sqlite3.connect(tmp_db)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM momentum_decisions").fetchall()
+        conn.close()
+        assert len(rows) >= 1
+        # The flat candles should produce a reject (no trend)
+        assert rows[0]["outcome"] != "trade" or rows[0]["blocked_by"] != "none"

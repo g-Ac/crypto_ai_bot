@@ -15,9 +15,10 @@ import os
 import tempfile
 import threading
 from datetime import datetime, timezone
+from typing import Callable, Optional
 
 from config import MOMENTUM_INITIAL_CAPITAL, MOMENTUM_MAX_POSITIONS
-from momentum.momentum_trader import MomentumSignal
+from momentum.momentum_trader import MomentumSignal, evaluate_momentum_pullback
 from momentum.config import MomentumOutcome, MomentumConfig
 from momentum.research_runner import check_exit
 import database as db
@@ -276,3 +277,96 @@ def _log_decision(signal: MomentumSignal, cycle_id: str, blocked_by: str = "none
         "session_bucket": session,
         "asset_bucket": asset,
     })
+
+
+def _tick_cooldowns(state: dict) -> None:
+    """Decrement cooldown counters. Remove expired ones."""
+    expired = []
+    for symbol, remaining in state.get("cooldowns", {}).items():
+        remaining -= 1
+        if remaining <= 0:
+            expired.append(symbol)
+        else:
+            state["cooldowns"][symbol] = remaining
+    for sym in expired:
+        del state["cooldowns"][sym]
+
+
+def process_momentum_cycle(
+    symbols: list[str],
+    open_new: bool = True,
+    *,
+    candle_fn: Optional[Callable] = None,
+    regime_fn: Optional[Callable] = None,
+) -> list[str]:
+    """One full momentum cycle: evaluate signals + manage positions.
+
+    Args:
+        symbols: Symbols to evaluate.
+        open_new: If False, only manage existing positions (circuit breaker).
+        candle_fn: Override for testing. (symbol, interval, limit) -> DataFrame.
+        regime_fn: Override for testing. (symbol) -> dict with regime_label.
+
+    Returns:
+        List of Telegram-ready messages.
+    """
+    if candle_fn is None:
+        from market import get_candles
+        candle_fn = get_candles
+    if regime_fn is None:
+        regime_fn = _regime_fn_default
+
+    state = load_state()
+    msgs: list[str] = []
+    cycle_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    candle_cache: dict[str, dict] = {}
+
+    _tick_cooldowns(state)
+
+    # Phase 1: evaluate signals per symbol
+    for symbol in symbols:
+        candles = candle_fn(symbol, "15m", 100)
+        if candles is None or len(candles) == 0:
+            continue
+
+        last = candles.iloc[-1]
+        candle_cache[symbol] = {
+            "high": float(last["high"]),
+            "low": float(last["low"]),
+            "close": float(last["close"]),
+        }
+
+        regime_data = regime_fn(symbol)
+        regime = (
+            regime_data.get("regime_label", "UNKNOWN")
+            if isinstance(regime_data, dict)
+            else str(regime_data)
+        )
+
+        signal = evaluate_momentum_pullback(
+            candles, regime, MomentumConfig(),
+            symbol=symbol,
+            timestamp=str(last.get("time", "")),
+        )
+
+        if signal.outcome == MomentumOutcome.TRADE and open_new:
+            entry_msgs = open_position(state, signal, cycle_id)
+            msgs.extend(entry_msgs)
+            if not entry_msgs:
+                blocked = "max_positions" if len(state["positions"]) >= MOMENTUM_MAX_POSITIONS else "cooldown"
+                _log_decision(signal, cycle_id, blocked_by=blocked)
+        else:
+            blocked = signal.outcome.value if signal.outcome != MomentumOutcome.TRADE else "suspended"
+            _log_decision(signal, cycle_id, blocked_by=blocked)
+
+    # Phase 2: manage existing positions
+    exit_msgs = manage_positions(state, candle_cache)
+    msgs.extend(exit_msgs)
+
+    save_state(state)
+    return msgs
+
+
+def _regime_fn_default(symbol: str) -> dict:
+    from htf import get_htf_regime
+    return get_htf_regime(symbol)
