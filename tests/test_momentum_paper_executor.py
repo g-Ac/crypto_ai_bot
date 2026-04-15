@@ -172,3 +172,85 @@ class TestStateManagement:
         assert "MOMENTUM" in status
         assert "$1000.00" in status
         assert "0W" in status
+
+
+class TestClosePosition:
+    def test_sl_hit_closes_position(self, state_file, tmp_db):
+        from momentum.paper_executor import load_state, save_state, open_position, manage_positions
+
+        state = load_state()
+        signal = _make_trade_signal()  # LONG @ 85000, SL 84500
+        open_position(state, signal, "cycle1")
+
+        # Simulate candle that hits SL
+        candle = {"high": 85100.0, "low": 84400.0, "close": 84450.0}
+        msgs = manage_positions(state, {"BTCUSDT": candle})
+        save_state(state)
+
+        assert "BTCUSDT" not in state["positions"]
+        assert state["losses"] == 1
+        assert state["total_trades"] == 1
+        assert state["capital"] < 1000.0
+        assert len(msgs) > 0
+
+    def test_tp1_hit_closes_position(self, state_file, tmp_db):
+        from momentum.paper_executor import load_state, save_state, open_position, manage_positions
+
+        state = load_state()
+        signal = _make_trade_signal()  # LONG @ 85000, TP1 85800
+        open_position(state, signal, "cycle1")
+
+        candle = {"high": 85900.0, "low": 85000.0, "close": 85850.0}
+        msgs = manage_positions(state, {"BTCUSDT": candle})
+        save_state(state)
+
+        assert "BTCUSDT" not in state["positions"]
+        assert state["wins"] == 1
+        assert state["capital"] > 1000.0
+
+    def test_timeout_closes_position(self, state_file, tmp_db):
+        from momentum.paper_executor import load_state, save_state, open_position, manage_positions
+
+        state = load_state()
+        signal = _make_trade_signal()
+        open_position(state, signal, "cycle1")
+
+        # Simulate 16 candles elapsed (timeout)
+        state["positions"]["BTCUSDT"]["candles_elapsed"] = 16
+
+        candle = {"high": 85100.0, "low": 84900.0, "close": 85050.0}
+        msgs = manage_positions(state, {"BTCUSDT": candle})
+        save_state(state)
+
+        assert "BTCUSDT" not in state["positions"]
+        assert state["total_trades"] == 1
+
+    def test_no_exit_when_no_hit(self, state_file, tmp_db):
+        from momentum.paper_executor import load_state, save_state, open_position, manage_positions
+
+        state = load_state()
+        signal = _make_trade_signal()
+        open_position(state, signal, "cycle1")
+
+        # Normal candle, no SL/TP hit
+        candle = {"high": 85200.0, "low": 84900.0, "close": 85100.0}
+        msgs = manage_positions(state, {"BTCUSDT": candle})
+        save_state(state)
+
+        assert "BTCUSDT" in state["positions"]
+        assert state["total_trades"] == 0
+        assert state["positions"]["BTCUSDT"]["candles_elapsed"] == 1
+
+    def test_hwm_updates_on_profit(self, state_file, tmp_db):
+        from momentum.paper_executor import load_state, save_state, open_position, manage_positions
+
+        state = load_state()
+        signal = _make_trade_signal()
+        open_position(state, signal, "cycle1")
+
+        candle = {"high": 85900.0, "low": 85000.0, "close": 85850.0}
+        manage_positions(state, {"BTCUSDT": candle})
+        save_state(state)
+
+        assert state["hwm"] >= state["capital"]
+        assert state["hwm"] > 1000.0

@@ -18,7 +18,8 @@ from datetime import datetime, timezone
 
 from config import MOMENTUM_INITIAL_CAPITAL, MOMENTUM_MAX_POSITIONS
 from momentum.momentum_trader import MomentumSignal
-from momentum.config import MomentumOutcome
+from momentum.config import MomentumOutcome, MomentumConfig
+from momentum.research_runner import check_exit
 import database as db
 
 logger = logging.getLogger("momentum.paper")
@@ -155,6 +156,90 @@ def open_position(state: dict, signal: MomentumSignal, cycle_id: str) -> list[st
     )
     msgs.append(msg)
     logger.info("OPEN %s", msg)
+
+    return msgs
+
+
+def manage_positions(state: dict, candles: dict[str, dict]) -> list[str]:
+    """Check all open positions against current candles. Returns messages."""
+    msgs: list[str] = []
+    config = MomentumConfig()
+    closed_symbols: list[str] = []
+
+    for symbol, pos in list(state["positions"].items()):
+        candle = candles.get(symbol)
+        if candle is None:
+            continue
+
+        result = check_exit(
+            direction=pos["direction"],
+            entry_price=pos["entry_price"],
+            sl_price=pos["sl_price"],
+            tp1_price=pos["tp1_price"],
+            tp2_price=pos["tp2_price"],
+            candle_high=candle["high"],
+            candle_low=candle["low"],
+            candle_close=candle["close"],
+            current_mfe=pos.get("mfe_pct", 0),
+            current_mae=pos.get("mae_pct", 0),
+            duration_candles=pos.get("candles_elapsed", 0),
+            timeout_candles=config.timeout_candles,
+            breakeven_trigger_pct=config.breakeven_trigger_pct,
+        )
+
+        if result["closed"]:
+            pnl_pct = result["pnl_pct"]
+            pnl_usd = pos["position_size_usd"] * pnl_pct / 100
+            state["capital"] += pnl_usd
+            state["total_pnl_usd"] += pnl_usd
+            state["total_trades"] += 1
+
+            if pnl_pct > 0:
+                state["wins"] += 1
+            else:
+                state["losses"] += 1
+                state.setdefault("cooldowns", {})[symbol] = 2
+
+            try:
+                db.insert_momentum_trade({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "symbol": symbol,
+                    "direction": pos["direction"],
+                    "regime": pos.get("regime", ""),
+                    "entry_price": pos["entry_price"],
+                    "exit_price": result["exit_price"],
+                    "sl_price": pos["sl_price"],
+                    "tp1_price": pos["tp1_price"],
+                    "tp2_price": pos["tp2_price"],
+                    "position_size_usd": pos["position_size_usd"],
+                    "pnl_pct": round(pnl_pct, 4),
+                    "pnl_usd": round(pnl_usd, 2),
+                    "exit_reason": result["exit_reason"],
+                    "capital_after": round(state["capital"], 2),
+                    "param_version": "momentum-pullback-v1.1",
+                    "duration_candles": pos.get("candles_elapsed", 0),
+                    "mfe_pct": round(result["mfe_pct"], 4),
+                    "mae_pct": round(result["mae_pct"], 4),
+                })
+            except Exception as e:
+                logger.warning("Failed to log momentum trade: %s", e)
+
+            msg = (
+                f"CLOSE {symbol} {pos['direction']} | "
+                f"{result['exit_reason']} @ {result['exit_price']:.2f} | "
+                f"PnL {pnl_pct:+.2f}% (${pnl_usd:+.2f}) | "
+                f"Cap ${state['capital']:.2f}"
+            )
+            msgs.append(msg)
+            logger.info(msg)
+            closed_symbols.append(symbol)
+        else:
+            pos["mfe_pct"] = result["mfe_pct"]
+            pos["mae_pct"] = result["mae_pct"]
+            pos["candles_elapsed"] = pos.get("candles_elapsed", 0) + 1
+
+    for sym in closed_symbols:
+        del state["positions"][sym]
 
     return msgs
 
