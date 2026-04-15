@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GABRIEL'S TERMINAL</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pipboy.css') }}">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body class="pip-body">
+  <!-- CRT Effects -->
+  <div class="crt-overlay"></div>
+  <div class="crt-vignette"></div>
+
+  <!-- Header -->
+  <header class="pip-header">
+    <div class="pip-header-top">
+      <div class="pip-branding">
+        <span class="pip-status-dot"></span>
+        <span class="pip-title glow">GABRIEL'S TERMINAL</span>
+      </div>
+      <nav class="pip-tabs">
+        <a href="/pip/status" class="pip-tab {% if active_tab == 'status' %}active{% endif %}">STATUS</a>
+        <a href="/pip/trades" class="pip-tab {% if active_tab == 'trades' %}active{% endif %}">TRADES</a>
+        <a href="/pip/analysis" class="pip-tab {% if active_tab == 'analysis' %}active{% endif %}">ANALYSIS</a>
+        <a href="/pip/logs" class="pip-tab {% if active_tab == 'logs' %}active{% endif %}">LOGS</a>
+        <a href="/pip/system" class="pip-tab {% if active_tab == 'system' %}active{% endif %}">SYSTEM</a>
+      </nav>
+    </div>
+    <div class="pip-divider"></div>
+    <div class="pip-ticker"
+         hx-get="/pip/partial/ticker"
+         hx-trigger="load, every 30s">
+      > CONNECTING...
+    </div>
+  </header>
+
+  <!-- Content -->
+  <main class="pip-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/pipboy.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
