@@ -1,6 +1,22 @@
 # Paper Readiness Framework — Momentum Pullback v1.1
 
+```
+Status:             Approved / Active governance baseline
+Strategy baseline:  Momentum Pullback v1.1 (sl_floor=0.5%)
+Robustness:         3/3 PASS (2026-04-15) — see context/decisoes/2026-04-15-momentum-v1_1-robustez-confirmada.md
+Paper status:       Not yet started
+Owner approval:     Required before paper begins
+```
+
 Framework de governanca para a fase de paper trading da estrategia Momentum Pullback v1.1 (B1).
+
+### Definicoes
+
+- **Paper**: execucao virtual (sem ordens reais) da estrategia em dados de mercado ao vivo, com capital simulado
+- **Smoke test**: periodo de 24-48h pos-deploy para validar que a integracao funciona corretamente, antes de iniciar o paper oficial
+- **Checkpoint**: portao de avaliacao formal com criterios numericos (PASS / WATCH / FAIL)
+- **Kill condition**: gatilho que interrompe o paper independentemente do checkpoint, por risco ou anomalia
+- **Desvio controlado**: ajuste operacional minimo aprovado e documentado que nao altera a logica da estrategia (Classe 2)
 
 ---
 
