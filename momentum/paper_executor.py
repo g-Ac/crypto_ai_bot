@@ -16,7 +16,10 @@ import tempfile
 import threading
 from datetime import datetime, timezone
 
-from config import MOMENTUM_INITIAL_CAPITAL
+from config import MOMENTUM_INITIAL_CAPITAL, MOMENTUM_MAX_POSITIONS
+from momentum.momentum_trader import MomentumSignal
+from momentum.config import MomentumOutcome
+import database as db
 
 logger = logging.getLogger("momentum.paper")
 
@@ -91,3 +94,100 @@ def get_momentum_status() -> str:
                 f"  {sym} {pos['direction']} @ {pos['entry_price']:.2f}"
             )
     return "\n".join(lines)
+
+
+def _calculate_position_size(capital: float, entry: float, sl: float) -> float:
+    """Size position so that a full SL hit loses ~2% of capital."""
+    sl_distance_pct = abs(entry - sl) / entry * 100
+    if sl_distance_pct <= 0:
+        return 0.0
+    risk_amount = capital * 0.02  # 2% risk per trade
+    position_size = risk_amount / (sl_distance_pct / 100)
+    return min(position_size, capital)
+
+
+def open_position(state: dict, signal: MomentumSignal, cycle_id: str) -> list[str]:
+    """Open a paper position from a TRADE signal. Returns Telegram messages."""
+    msgs: list[str] = []
+    symbol = signal.symbol
+
+    if symbol in state["positions"]:
+        return msgs
+    if len(state["positions"]) >= MOMENTUM_MAX_POSITIONS:
+        return msgs
+    if symbol in state.get("cooldowns", {}):
+        return msgs
+
+    entry = signal.entry_price
+    sl = signal.sl_price
+    tp1 = signal.tp1_price
+    tp2 = signal.tp2_price
+    direction = signal.direction.value
+
+    size = _calculate_position_size(state["capital"], entry, sl)
+    if size <= 0:
+        return msgs
+
+    state["positions"][symbol] = {
+        "direction": direction,
+        "entry_price": entry,
+        "sl_price": sl,
+        "tp1_price": tp1,
+        "tp2_price": tp2,
+        "position_size_usd": round(size, 2),
+        "open_time": signal.timestamp,
+        "regime": signal.regime,
+        "mfe_pct": 0.0,
+        "mae_pct": 0.0,
+        "candles_elapsed": 0,
+    }
+
+    try:
+        _log_decision(signal, cycle_id, blocked_by="none")
+    except Exception as e:
+        logger.warning("Failed to log momentum decision: %s", e)
+
+    sl_dist = abs(entry - sl) / entry * 100
+    msg = (
+        f"{symbol} {direction} @ {entry:.2f} | "
+        f"SL={sl:.2f} ({sl_dist:.2f}%) TP1={tp1:.2f} TP2={tp2:.2f} | "
+        f"Size=${size:.2f}"
+    )
+    msgs.append(msg)
+    logger.info("OPEN %s", msg)
+
+    return msgs
+
+
+def _log_decision(signal: MomentumSignal, cycle_id: str, blocked_by: str = "none"):
+    """Log a momentum decision to bot.db."""
+    try:
+        from audit_helpers import get_session_bucket, get_asset_bucket
+        ts_dt = datetime.fromisoformat(signal.timestamp) if signal.timestamp else None
+        session = get_session_bucket(ts_dt) if ts_dt else ""
+        asset = get_asset_bucket(signal.symbol)
+    except Exception:
+        session = ""
+        asset = ""
+
+    db.insert_momentum_decision({
+        "timestamp": signal.timestamp or "",
+        "cycle_id": cycle_id,
+        "symbol": signal.symbol,
+        "regime": signal.regime,
+        "outcome": signal.outcome.value,
+        "direction": signal.direction.value,
+        "blocked_by": blocked_by,
+        "ema_fast_value": signal.ema_fast_value,
+        "ema_slow_value": signal.ema_slow_value,
+        "ema_gap_pct": signal.ema_gap_pct,
+        "retracement_pct": signal.retracement_pct,
+        "impulse_start_price": signal.impulse_start_price,
+        "impulse_end_price": signal.impulse_end_price,
+        "pullback_rejection": (
+            signal.pullback_rejection.value if signal.pullback_rejection else ""
+        ),
+        "param_version": signal.param_version,
+        "session_bucket": session,
+        "asset_bucket": asset,
+    })
