@@ -87,7 +87,7 @@ class TestMomentumDecisionInsert:
 
 
 class TestCircuitBreakerMomentum:
-    def test_momentum_in_table_map(self):
+    def test_momentum_in_table_map(self, tmp_db):
         """Circuit breaker functions should recognize 'momentum' system."""
         from daily_report import check_circuit_breaker
         result = check_circuit_breaker("momentum")
