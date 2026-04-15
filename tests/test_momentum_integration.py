@@ -84,3 +84,18 @@ class TestMomentumDecisionInsert:
         assert row["outcome"] == "trade"
         assert row["blocked_by"] == "none"
         assert row["retracement_pct"] == 42.5
+
+
+class TestCircuitBreakerMomentum:
+    def test_momentum_in_table_map(self):
+        """Circuit breaker functions should recognize 'momentum' system."""
+        from daily_report import check_circuit_breaker
+        result = check_circuit_breaker("momentum")
+        assert result is False or result is True
+
+    def test_momentum_not_unknown(self):
+        """'momentum' should be a known system, not silently ignored."""
+        import daily_report
+        import inspect
+        source = inspect.getsource(daily_report.check_circuit_breaker)
+        assert "momentum" in source

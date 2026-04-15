@@ -24,6 +24,7 @@ from daily_report import check_daily_report, enforce_circuit_breaker
 from scalping_logger import setup_scalping_logging
 from scalping_outcomes import label_scalping_outcomes
 from scalping_trader import process_scalping, get_scalping_status, process_scalping_v2_1b, get_v2_1b_status
+from momentum.paper_executor import process_momentum_cycle, get_momentum_status
 from runtime_config import BOT_ID, ENABLE_TELEGRAM_COMMANDS, runtime_metadata
 from liquidation_feed import init_feed as init_liquidation_feed
 
@@ -310,18 +311,61 @@ def run_bot():
         except Exception as e:
             print(f"  [ERRO] Falha no V2.1b paper: {e}")
 
+    # Momentum Pullback Strategy
+    if cfg.MOMENTUM_TRADER_ENABLED:
+        print("\n========================================")
+        print("MOMENTUM PULLBACK STRATEGY\n")
+
+        try:
+            try:
+                momentum_suspended = enforce_circuit_breaker("momentum") or is_paused()
+            except Exception as e:
+                print(f"  [ERRO] Falha ao verificar circuit breaker momentum: {e}")
+                momentum_suspended = True
+            if momentum_suspended:
+                print("  Circuit breaker ativo ou bot pausado - gerenciando posicoes")
+            momentum_msgs = process_momentum_cycle(
+                cfg.MOMENTUM_SYMBOLS,
+                open_new=not momentum_suspended,
+            )
+            for msg in momentum_msgs:
+                print(f"  {msg}")
+                send_telegram_message(f"\U0001f4c8 <b>[MOMENTUM]</b> {msg}")
+            print(f"\n  {get_momentum_status()}")
+        except Exception as e:
+            print(f"  [ERRO] Falha no momentum pullback: {e}")
+    else:
+        print("\n========================================")
+        print("MOMENTUM PULLBACK: DESABILITADO (MOMENTUM_TRADER_ENABLED=false)\n")
+
     # Forward outcome labeling for scalping audit dataset
     print("\n========================================")
     print("SCALPING OUTCOME LABELER\n")
-    label_stats = label_scalping_outcomes(batch_size=40, days=7)
-    print(
-        "  Labels processados: {processed} | atualizados: {updated} | pulados: {skipped} | erros: {errors}".format(
-            **label_stats
+    try:
+        label_stats = label_scalping_outcomes(batch_size=40, days=7)
+        print(
+            "  Labels processados: {processed} | atualizados: {updated} | pulados: {skipped} | erros: {errors}".format(
+                **label_stats
+            )
         )
-    )
+    except Exception:
+        import traceback
+        print(f"  [ERRO] Falha no outcome labeling:\n{traceback.format_exc()}")
 
     # Daily Report (envia 1x por dia apos meia-noite)
-    check_daily_report()
+    try:
+        check_daily_report()
+    except Exception:
+        import traceback
+        print(f"  [ERRO] Falha no daily report:\n{traceback.format_exc()}")
+
+    # Alertas proativos (drawdown, zero trades, erros repetidos)
+    try:
+        from proactive_alerts import check_proactive_alerts
+        check_proactive_alerts()
+    except Exception:
+        import traceback
+        print(f"  [ERRO] Falha nos alertas proativos:\n{traceback.format_exc()}")
 
 
 _cycle_lock = threading.Lock()

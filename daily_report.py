@@ -9,7 +9,7 @@ from datetime import datetime, date
 from config import (
     DAILY_LOSS_LIMIT_PCT, DAILY_MAX_TRADES,
     PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL,
-    SCALPING_INITIAL_CAPITAL,
+    SCALPING_INITIAL_CAPITAL, MOMENTUM_INITIAL_CAPITAL,
 )
 from telegram_notifier import send_telegram_message, send_circuit_breaker_alert
 import database as db
@@ -19,6 +19,7 @@ from runtime_config import (
     AGENT_STATE_FILE,
     PUMP_STATE_FILE,
     SCALPING_STATE_FILE,
+    MOMENTUM_STATE_FILE,
 )
 
 
@@ -209,7 +210,59 @@ def generate_report():
         lines.append("")
         lines.append("Nenhum trade ou posicao aberta hoje.")
 
+    # ── Scalping breakdown ──────────────────────────────────────
+    try:
+        _append_scalping_breakdown(lines)
+    except Exception:
+        pass  # nao quebrar relatorio por causa de breakdown
+
     return "\n".join(lines)
+
+
+def _append_scalping_breakdown(lines: list):
+    """Adiciona secao de breakdown do scalping ao relatorio."""
+    # Funil de decisoes (24h)
+    decisions = db.get_scalping_decisions_summary(hours=24)
+    if decisions:
+        total_dec = sum(decisions.values())
+        passed = decisions.get("none", 0)
+        pct = (passed / total_dec * 100) if total_dec > 0 else 0
+        blockers = " | ".join(
+            f"{k} {v}" for k, v in decisions.items() if k != "none"
+        )
+        lines.append("")
+        lines.append(f"Scalping Funil (24h):")
+        lines.append(f"  Decisoes: {total_dec} | Passou: {passed} ({pct:.1f}%)")
+        if blockers:
+            lines.append(f"  Bloqueado: {blockers}")
+
+    # Trades por regime
+    by_regime = db.get_scalping_trades_by_regime(hours=24)
+    if by_regime:
+        lines.append("")
+        lines.append("Scalping por Regime:")
+        for r in by_regime:
+            regime = r["market_regime"] or "N/A"
+            count = r["count"]
+            total_pnl = r["total_pnl"] or 0
+            wins = r["wins"] or 0
+            wr = f"{wins / count * 100:.0f}%" if count > 0 else "N/A"
+            lines.append(
+                f"  {regime:12s} {count} trades | {total_pnl:+.2f}% | WR {wr}"
+            )
+
+    # Trades por sessao
+    by_session = db.get_scalping_trades_by_session(hours=24)
+    if by_session:
+        lines.append("")
+        lines.append("Scalping por Sessao:")
+        for s in by_session:
+            session = s["session_bucket"] or "N/A"
+            count = s["count"]
+            total_pnl = s["total_pnl"] or 0
+            lines.append(
+                f"  {session:12s} {count} trades | {total_pnl:+.2f}%"
+            )
 
 
 def should_send_report():
@@ -264,12 +317,14 @@ def _get_current_capital(system):
         "agent": AGENT_STATE_FILE,
         "pump": PUMP_STATE_FILE,
         "scalping": SCALPING_STATE_FILE,
+        "momentum": MOMENTUM_STATE_FILE,
     }
     fallback = {
         "paper": PAPER_INITIAL_CAPITAL,
         "agent": AGENT_INITIAL_CAPITAL,
         "pump": PUMP_INITIAL_CAPITAL,
         "scalping": SCALPING_INITIAL_CAPITAL,
+        "momentum": MOMENTUM_INITIAL_CAPITAL,
     }
     path = state_files.get(system)
     if path and os.path.isfile(path):
@@ -288,6 +343,7 @@ def check_circuit_breaker(system="agent"):
         "pump": "pump_trades",
         "paper": "paper_trades",
         "scalping": "scalping_trades",
+        "momentum": "momentum_trades",
     }
     table = table_map.get(system)
     if not table:
@@ -304,6 +360,7 @@ def check_circuit_breaker(system="agent"):
         "agent": AGENT_INITIAL_CAPITAL,
         "pump": PUMP_INITIAL_CAPITAL,
         "scalping": SCALPING_INITIAL_CAPITAL,
+        "momentum": MOMENTUM_INITIAL_CAPITAL,
     }
     baseline = initial_capitals.get(system, 10000)
     current_capital = _get_current_capital(system)
@@ -329,6 +386,7 @@ def enforce_circuit_breaker(system="agent"):
         "pump": "pump_trades",
         "paper": "paper_trades",
         "scalping": "scalping_trades",
+        "momentum": "momentum_trades",
     }
     table = table_map.get(system)
     if not table:
@@ -347,6 +405,7 @@ def enforce_circuit_breaker(system="agent"):
         "agent": AGENT_INITIAL_CAPITAL,
         "pump": PUMP_INITIAL_CAPITAL,
         "scalping": SCALPING_INITIAL_CAPITAL,
+        "momentum": MOMENTUM_INITIAL_CAPITAL,
     }
     baseline = initial_capitals.get(system, 10000)
     current_capital = _get_current_capital(system)
