@@ -292,6 +292,42 @@ class TestProcessCycle:
         # The flat candles should produce a reject (no trend)
         assert rows[0]["outcome"] != "trade" or rows[0]["blocked_by"] != "none"
 
+    def test_same_15m_candle_does_not_duplicate_decision_log(self, state_file, tmp_db):
+        from momentum.paper_executor import process_momentum_cycle
+
+        def mock_candle_fn(symbol, interval, limit):
+            n = 100
+            data = {
+                "time": pd.date_range("2026-01-01", periods=n, freq="15min"),
+                "open": np.full(n, 85000.0),
+                "high": np.full(n, 85100.0),
+                "low": np.full(n, 84900.0),
+                "close": np.full(n, 85000.0),
+                "volume": np.full(n, 100.0),
+            }
+            return pd.DataFrame(data)
+
+        def mock_regime_fn(symbol):
+            return {"regime_label": "TRENDING"}
+
+        process_momentum_cycle(
+            symbols=["BTCUSDT"],
+            open_new=True,
+            candle_fn=mock_candle_fn,
+            regime_fn=mock_regime_fn,
+        )
+        process_momentum_cycle(
+            symbols=["BTCUSDT"],
+            open_new=True,
+            candle_fn=mock_candle_fn,
+            regime_fn=mock_regime_fn,
+        )
+
+        conn = sqlite3.connect(tmp_db)
+        rows = conn.execute("SELECT COUNT(*) FROM momentum_decisions").fetchone()[0]
+        conn.close()
+        assert rows == 1
+
 
 class TestCandleTracking15m:
     """candles_elapsed must only increment on new 15m candles, not every 5m cycle."""

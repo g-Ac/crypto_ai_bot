@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Equity Curve{% endblock %}
+
+{% block head %}
+<style>
+.equity-hero {
+  height: calc(100vh - 280px);
+  min-height: 350px;
+  position: relative;
+}
+
+.equity-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  flex-wrap: wrap;
+}
+
+.equity-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--gap-md);
+  padding: var(--gap-md);
+}
+
+.eq-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.eq-stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+}
+
+.eq-stat-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .equity-hero { height: calc(100vh - 320px); min-height: 280px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<section class="panel mb-md">
+  <div class="panel-header">
+    <h3>Equity Curve</h3>
+    <div class="equity-filters">
+      <div class="btn-group" id="period-btns">
+        <button class="btn" data-days="7">7d</button>
+        <button class="btn active" data-days="30">30d</button>
+        <button class="btn" data-days="90">90d</button>
+      </div>
+      <div class="btn-group" id="system-btns">
+        <button class="btn active" data-sys="all">All</button>
+        <button class="btn" data-sys="pump">Pump</button>
+        <button class="btn" data-sys="scalping">Scalping</button>
+      </div>
+    </div>
+  </div>
+  <div class="panel-body no-pad">
+    <div class="equity-hero" id="equity-container"></div>
+  </div>
+</section>
+
+<!-- Stats -->
+<section class="panel">
+  <div class="equity-stats">
+    <div class="eq-stat">
+      <span class="eq-stat-label">Total PnL</span>
+      <span class="eq-stat-value" id="stat-total-pnl">---</span>
+    </div>
+    <div class="eq-stat">
+      <span class="eq-stat-label">Peak</span>
+      <span class="eq-stat-value" id="stat-peak">---</span>
+    </div>
+    <div class="eq-stat">
+      <span class="eq-stat-label">Max Drawdown</span>
+      <span class="eq-stat-value" id="stat-drawdown">---</span>
+    </div>
+    <div class="eq-stat">
+      <span class="eq-stat-label">Best Day</span>
+      <span class="eq-stat-value" id="stat-best">---</span>
+    </div>
+    <div class="eq-stat">
+      <span class="eq-stat-label">Worst Day</span>
+      <span class="eq-stat-value" id="stat-worst">---</span>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+(function() {
+  let chart = null;
+  let pumpSeries = null;
+  let scalpSeries = null;
+  let currentDays = 30;
+  let currentSys = 'all';
+  let rawData = null;
+
+  function initChart() {
+    const container = document.getElementById('equity-container');
+    chart = LightweightCharts.createChart(container, {
+      layout: {
+        background: { type: 'solid', color: 'transparent' },
+        textColor: '#94a3b8',
+        fontFamily: "'Inter', sans-serif",
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: 'rgba(99,145,255,0.05)' },
+        horzLines: { color: 'rgba(99,145,255,0.05)' },
+      },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: {
+        borderColor: 'rgba(99,145,255,0.1)',
+        autoScale: true,
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+      },
+      timeScale: {
+        borderColor: 'rgba(99,145,255,0.1)',
+        timeVisible: false,
+      },
+      handleScroll: true,
+      handleScale: true,
+    });
+
+    pumpSeries = chart.addAreaSeries({
+      lineColor: '#06b6d4',
+      topColor: 'rgba(6, 182, 212, 0.15)',
+      bottomColor: 'rgba(6, 182, 212, 0.01)',
+      lineWidth: 2,
+      title: 'Pump',
+    });
+
+    scalpSeries = chart.addAreaSeries({
+      lineColor: '#8b5cf6',
+      topColor: 'rgba(139, 92, 246, 0.15)',
+      bottomColor: 'rgba(139, 92, 246, 0.01)',
+      lineWidth: 2,
+      title: 'Scalping',
+    });
+
+    // Responsive resize
+    const ro = new ResizeObserver(() => {
+      chart.applyOptions({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
+    });
+    ro.observe(container);
+  }
+
+  function toChartData(arr) {
+    return (arr || []).map(p => ({
+      time: p.day,
+      value: p.pnl,
+    }));
+  }
+
+  function updateSeries() {
+    if (!rawData) return;
+
+    const pumpData = toChartData(rawData.pump);
+    const scalpData = toChartData(rawData.scalping);
+
+    const showPump = currentSys === 'all' || currentSys === 'pump';
+    const showScalp = currentSys === 'all' || currentSys === 'scalping';
+
+    pumpSeries.setData(showPump ? pumpData : []);
+    scalpSeries.setData(showScalp ? scalpData : []);
+
+    chart.timeScale().fitContent();
+    updateStats();
+  }
+
+  function updateStats() {
+    if (!rawData) return;
+
+    // Merge daily PnL
+    const dailyMap = {};
+    const series = [];
+    if (currentSys === 'all' || currentSys === 'pump') series.push(rawData.pump || []);
+    if (currentSys === 'all' || currentSys === 'scalping') series.push(rawData.scalping || []);
+
+    series.forEach(arr => {
+      let prev = 0;
+      arr.forEach(p => {
+        const daily = p.pnl - prev;
+        dailyMap[p.day] = (dailyMap[p.day] || 0) + daily;
+        prev = p.pnl;
+      });
+    });
+
+    const days = Object.keys(dailyMap).sort();
+    let acc = 0, peak = 0, maxDd = 0;
+    let bestDay = { day: '', val: -Infinity };
+    let worstDay = { day: '', val: Infinity };
+
+    days.forEach(day => {
+      const d = dailyMap[day];
+      acc += d;
+      if (acc > peak) peak = acc;
+      const dd = peak - acc;
+      if (dd > maxDd) maxDd = dd;
+      if (d > bestDay.val) bestDay = { day, val: d };
+      if (d < worstDay.val) worstDay = { day, val: d };
+    });
+
+    const el = id => document.getElementById(id);
+    const pnlEl = el('stat-total-pnl');
+    pnlEl.textContent = fmtPnl(acc, '$');
+    pnlEl.className = 'eq-stat-value ' + pnlClass(acc);
+
+    el('stat-peak').textContent = '$' + peak.toFixed(2);
+    el('stat-peak').className = 'eq-stat-value positive';
+
+    const ddEl = el('stat-drawdown');
+    ddEl.textContent = '-$' + maxDd.toFixed(2);
+    ddEl.className = 'eq-stat-value ' + (maxDd > 0 ? 'negative' : 'neutral');
+
+    const bestEl = el('stat-best');
+    bestEl.textContent = bestDay.day ? fmtPnl(bestDay.val, '$') + ' (' + bestDay.day.slice(5) + ')' : '---';
+    bestEl.className = 'eq-stat-value positive';
+
+    const worstEl = el('stat-worst');
+    worstEl.textContent = worstDay.day ? fmtPnl(worstDay.val, '$') + ' (' + worstDay.day.slice(5) + ')' : '---';
+    worstEl.className = 'eq-stat-value negative';
+  }
+
+  async function loadData(days) {
+    try {
+      const r = await fetch('/api/equity?days=' + days);
+      rawData = await r.json();
+      updateSeries();
+    } catch (e) {
+      console.error('Equity load error:', e);
+    }
+  }
+
+  // Period buttons
+  document.querySelectorAll('#period-btns .btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#period-btns .btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentDays = parseInt(btn.dataset.days);
+      loadData(currentDays);
+    });
+  });
+
+  // System buttons
+  document.querySelectorAll('#system-btns .btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#system-btns .btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSys = btn.dataset.sys;
+      updateSeries();
+    });
+  });
+
+  // Init
+  initChart();
+  loadData(currentDays);
+})();
+</script>
+{% endblock %}

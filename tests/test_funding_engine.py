@@ -111,13 +111,13 @@ class TestNeutralZone:
     """Funding em zona neutra -> sem sinal."""
 
     def test_neutral_positive(self, engine):
-        data = _base_market_data(funding_rate=0.0001)  # 0.01%
+        data = _base_market_data(funding_rate=0.00004)  # 0.004% — inside [-0.003%, 0.005%]
         sig = engine.analyze("BTCUSDT", data, "RANGING", FAR_FROM_FUNDING)
         assert sig.direction == Direction.NEUTRAL
         assert sig.valid is False
 
     def test_neutral_negative(self, engine):
-        data = _base_market_data(funding_rate=-0.00005)  # -0.005%
+        data = _base_market_data(funding_rate=-0.00002)  # -0.002% — inside [-0.003%, 0.005%]
         sig = engine.analyze("BTCUSDT", data, "RANGING", FAR_FROM_FUNDING)
         assert sig.direction == Direction.NEUTRAL
         assert sig.valid is False
@@ -126,6 +126,19 @@ class TestNeutralZone:
         data = _base_market_data(funding_rate=0.0)
         sig = engine.analyze("BTCUSDT", data, "RANGING", FAR_FROM_FUNDING)
         assert sig.direction == Direction.NEUTRAL
+
+    def test_moderate_long_outside_neutral(self, engine):
+        """BTC typical funding -0.005% should now trigger moderate LONG (not neutral)."""
+        data = _base_market_data(
+            funding_rate=-0.00005,  # -0.005% — outside new neutral, at moderate threshold
+            funding_rate_prev1=-0.00004,
+            funding_rate_prev2=-0.00003,
+            ls_ratio_top=0.8,
+            ls_ratio_global=0.9,
+        )
+        sig = engine.analyze("BTCUSDT", data, "RANGING", FAR_FROM_FUNDING)
+        assert sig.direction == Direction.LONG
+        assert sig.metadata["funding_tier"] == "moderate"
 
 
 class TestFundingProximityFilter:

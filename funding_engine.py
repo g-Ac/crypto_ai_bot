@@ -35,13 +35,13 @@ logger = logging.getLogger("engine.funding")
 _FUNDING_SHORT_THRESHOLD = 0.0003   # 0.03%
 _FUNDING_LONG_THRESHOLD = -0.0002   # -0.02%
 
-# Thresholds — tier MODERADO (novo)
-_FUNDING_SHORT_MODERATE = 0.00015   # 0.015%
-_FUNDING_LONG_MODERATE = -0.0001    # -0.01%
+# Thresholds — tier MODERADO (calibrado para condicoes normais de mercado)
+_FUNDING_SHORT_MODERATE = 0.00008   # 0.008%
+_FUNDING_LONG_MODERATE = -0.00005   # -0.005%
 
-# Zona neutra (reduzida para capturar mais sinais moderados)
-_FUNDING_NEUTRAL_LOW = -0.00005     # -0.005%
-_FUNDING_NEUTRAL_HIGH = 0.0001      # 0.01%
+# Zona neutra (estreita: apenas funding realmente neutro)
+_FUNDING_NEUTRAL_LOW = -0.00003     # -0.003%
+_FUNDING_NEUTRAL_HIGH = 0.00005     # 0.005%
 
 # Score cap para tier moderado (max 25 de 40 pts no componente funding)
 _MODERATE_FUNDING_SCORE_CAP = 25

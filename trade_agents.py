@@ -27,6 +27,7 @@ from config import (
     AGENT_REAL_BLOCKED_ENTRY_QUALITY,
     AGENT_REAL_BLOCKED_INVALIDATION_QUALITY,
     ROUND_TRIP_FEE_PCT,
+    BINANCE_SPOT_KLINES_URL,
 )
 from runtime_config import AGENT_STATE_FILE
 
@@ -445,7 +446,7 @@ def get_atr(symbol, period=14):
     for attempt in range(3):
         try:
             resp = requests.get(
-                f"https://api.binance.com/api/v3/klines"
+                f"{BINANCE_SPOT_KLINES_URL}"
                 f"?symbol={symbol}&interval=1h&limit={period + 5}",
                 timeout=10,
             )

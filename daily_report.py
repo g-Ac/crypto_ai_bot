@@ -59,65 +59,29 @@ def calc_daily_stats(trades):
 
 
 def get_open_positions():
-    """Get open positions from all systems."""
+    """Get open positions from active systems."""
     positions = []
 
-    # Paper trader
-    if os.path.isfile(PAPER_STATE_FILE):
-        with open(PAPER_STATE_FILE, "r") as f:
-            state = json.load(f)
-        for sym, pos in state.get("positions", {}).items():
-            positions.append(f"  {sym}: {pos['type']} @ {pos['entry_price']:.4f} (paper)")
-
-    # Agent trader
-    if os.path.isfile(AGENT_STATE_FILE):
-        with open(AGENT_STATE_FILE, "r") as f:
-            state = json.load(f)
-        for sym, pos in state.get("positions", {}).items():
-            positions.append(
-                f"  {sym}: {pos['type']} @ {pos['entry_price']:.4f} "
-                f"SL:{pos['sl_price']:.4f} TP:{pos['tp_price']:.4f} (agent)"
-            )
-
-    # Pump trader
-    if os.path.isfile(PUMP_STATE_FILE):
-        with open(PUMP_STATE_FILE, "r") as f:
-            state = json.load(f)
-        for sym, pos in state.get("positions", {}).items():
-            positions.append(f"  {sym}: {pos['type']} @ {pos['entry_price']:.6f} (pump)")
-
-    # Scalping
-    if os.path.isfile(SCALPING_STATE_FILE):
-        with open(SCALPING_STATE_FILE, "r") as f:
+    # Momentum
+    if os.path.isfile(MOMENTUM_STATE_FILE):
+        with open(MOMENTUM_STATE_FILE, "r") as f:
             state = json.load(f)
         for sym, pos in state.get("positions", {}).items():
             positions.append(
                 f"  {sym}: {pos['direction']} @ {pos['entry_price']:.4f} "
-                f"SL:{pos['sl_price']:.4f} TP1:{pos['tp1_price']:.4f} (scalping)"
+                f"SL:{pos['sl_price']:.4f} TP1:{pos['tp1_price']:.4f} (momentum)"
             )
 
     return positions
 
 
 def get_capital_status():
-    """Get capital from all systems."""
+    """Get capital from active systems."""
     caps = {}
 
-    if os.path.isfile(PAPER_STATE_FILE):
-        with open(PAPER_STATE_FILE, "r") as f:
-            caps["Paper"] = json.load(f).get("capital", 0)
-
-    if os.path.isfile(AGENT_STATE_FILE):
-        with open(AGENT_STATE_FILE, "r") as f:
-            caps["Agent"] = json.load(f).get("capital", 0)
-
-    if os.path.isfile(PUMP_STATE_FILE):
-        with open(PUMP_STATE_FILE, "r") as f:
-            caps["Pump"] = json.load(f).get("capital", 0)
-
-    if os.path.isfile(SCALPING_STATE_FILE):
-        with open(SCALPING_STATE_FILE, "r") as f:
-            caps["Scalping"] = json.load(f).get("capital", 0)
+    if os.path.isfile(MOMENTUM_STATE_FILE):
+        with open(MOMENTUM_STATE_FILE, "r") as f:
+            caps["Momentum"] = json.load(f).get("capital", 0)
 
     return caps
 
@@ -127,15 +91,8 @@ def generate_report():
     today = date.today().strftime("%d/%m/%Y")
 
     # Collect trades from each system
-    paper_trades = db.get_trades_today("paper_trades")
-    agent_trades = db.get_trades_today("agent_trades")
-    pump_trades = db.get_trades_today("pump_trades")
-    scalping_trades = db.get_trades_today("scalping_trades")
-
-    paper_stats = calc_daily_stats(paper_trades)
-    agent_stats = calc_daily_stats(agent_trades)
-    pump_stats = calc_daily_stats(pump_trades)
-    scalping_stats = calc_daily_stats(scalping_trades)
+    momentum_trades = db.get_trades_today("momentum_trades")
+    momentum_stats = calc_daily_stats(momentum_trades)
 
     capitals = get_capital_status()
     positions = get_open_positions()
@@ -146,48 +103,18 @@ def generate_report():
         "",
     ]
 
-    # Paper trading
-    if "Paper" in capitals:
-        ps = paper_stats
+    # Momentum
+    if "Momentum" in capitals:
+        mo = momentum_stats
         lines.append(
-            f"Paper Trading: {ps['count']} trades | "
-            f"{ps['pnl_pct']:+.2f}% (${ps['pnl_usd']:+.2f}) | "
-            f"W:{ps['wins']} L:{ps['losses']} | "
-            f"Capital: ${capitals['Paper']:.2f}"
-        )
-
-    # Agent trading
-    if "Agent" in capitals:
-        ag = agent_stats
-        lines.append(
-            f"Multi-Agent: {ag['count']} trades | "
-            f"{ag['pnl_pct']:+.2f}% (${ag['pnl_usd']:+.2f}) | "
-            f"W:{ag['wins']} L:{ag['losses']} | "
-            f"Capital: ${capitals['Agent']:.2f}"
-        )
-
-    # Pump trading
-    if "Pump" in capitals:
-        pm = pump_stats
-        lines.append(
-            f"Pump Scanner: {pm['count']} trades | "
-            f"{pm['pnl_pct']:+.2f}% (${pm['pnl_usd']:+.2f}) | "
-            f"W:{pm['wins']} L:{pm['losses']} | "
-            f"Capital: ${capitals['Pump']:.2f}"
-        )
-
-    # Scalping
-    if "Scalping" in capitals:
-        sc = scalping_stats
-        lines.append(
-            f"Scalping: {sc['count']} trades | "
-            f"{sc['pnl_pct']:+.2f}% (${sc['pnl_usd']:+.2f}) | "
-            f"W:{sc['wins']} L:{sc['losses']} | "
-            f"Capital: ${capitals['Scalping']:.2f}"
+            f"Momentum: {mo['count']} trades | "
+            f"{mo['pnl_pct']:+.2f}% (${mo['pnl_usd']:+.2f}) | "
+            f"W:{mo['wins']} L:{mo['losses']} | "
+            f"Capital: ${capitals['Momentum']:.2f}"
         )
 
     # Total
-    all_stats = [paper_stats, agent_stats, pump_stats, scalping_stats]
+    all_stats = [momentum_stats]
     total_trades = sum(s["count"] for s in all_stats)
     total_pnl = sum(s["pnl_usd"] for s in all_stats)
     total_wins = sum(s["wins"] for s in all_stats)
@@ -209,12 +136,6 @@ def generate_report():
     if total_trades == 0 and not positions:
         lines.append("")
         lines.append("Nenhum trade ou posicao aberta hoje.")
-
-    # ── Scalping breakdown ──────────────────────────────────────
-    try:
-        _append_scalping_breakdown(lines)
-    except Exception:
-        pass  # nao quebrar relatorio por causa de breakdown
 
     return "\n".join(lines)
 

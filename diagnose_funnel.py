@@ -1,186 +1,220 @@
 #!/usr/bin/env python3
 """
-diagnose_funnel.py - Diagnose why scalping signals are being blocked.
+diagnose_funnel.py — Diagnostico do funil de decisoes do scalping.
 
-Runs the 3 engines on current data for all symbols and reports
-what each engine sees and why signals are blocked.
+Usa dados do banco (scalping_decisions) para mostrar onde os sinais
+estao sendo bloqueados. Funciona tanto como CLI quanto como modulo
+importavel pelo dashboard.
+
+Metricas:
+  - Distribuicao por blocked_by (confluence, risk, cooldown, etc.)
+  - Distribuicao por regime (TRENDING, RANGING, etc.)
+  - Distribuicao por sessao (us, europe, asia, dead)
+  - Taxa de passagem (blocked_by = 'none')
 """
-import sys, os
+import sys
+import os
+import json
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from datetime import datetime
-from config import SYMBOLS
-from signal_types import Direction, ScalpingConfig
-from scalping_data import add_scalping_indicators
-from market import get_candles
-
-import volume_breakout
-import rsi_bb_reversal
-import ema_crossover
-
-ENGINE_NAMES = {
-    "volume_breakout": "Volume Breakout",
-    "rsi_bb_reversal": "RSI/BB Reversal",
-    "ema_crossover": "EMA Crossover",
-}
+import database as db
 
 
-def fetch_data(symbol):
-    """Fetch 3m, 5m, 15m data for a symbol."""
+def get_funnel_data(hours: int = 24) -> dict:
+    """Retorna dados do funil de decisoes do scalping.
+
+    Args:
+        hours: janela de tempo (default 24h)
+
+    Returns:
+        dict com total_decisions, funnel (by blocked_by), by_regime, by_session
+    """
+    conn = db._get_conn()
     try:
-        df_3m = get_candles(symbol, "3m", 100)
-        df_5m = get_candles(symbol, "5m", 100)
-        df_15m = get_candles(symbol, "15m", 100)
-        return df_3m, df_5m, df_15m
-    except Exception as e:
-        print(f"  ERRO ao buscar dados: {e}")
-        return None, None, None
+        # Funil principal: blocked_by
+        blocked_rows = conn.execute(
+            "SELECT blocked_by, COUNT(*) as count "
+            "FROM scalping_decisions "
+            "WHERE timestamp > datetime('now', ?) "
+            "GROUP BY blocked_by ORDER BY count DESC",
+            (f"-{hours} hours",),
+        ).fetchall()
+        funnel = {(r["blocked_by"] or "none"): int(r["count"]) for r in blocked_rows}
+        total = sum(funnel.values())
+
+        # Por regime (decisions count)
+        regime_rows = conn.execute(
+            "SELECT market_regime, COUNT(*) as count "
+            "FROM scalping_decisions "
+            "WHERE timestamp > datetime('now', ?) "
+            "GROUP BY market_regime ORDER BY count DESC",
+            (f"-{hours} hours",),
+        ).fetchall()
+        regime_decisions = {(r["market_regime"] or "N/A"): int(r["count"]) for r in regime_rows}
+
+        # Por regime (trade-level stats from scalping_trades)
+        regime_trade_rows = conn.execute(
+            "SELECT market_regime, COUNT(*) as trades, "
+            "SUM(CASE WHEN pnl_usd > 0 THEN 1 ELSE 0 END) as wins, "
+            "ROUND(SUM(pnl_pct), 4) as pnl "
+            "FROM scalping_trades "
+            "WHERE timestamp > datetime('now', ?) "
+            "GROUP BY market_regime",
+            (f"-{hours} hours",),
+        ).fetchall()
+        regime_trades = {(r["market_regime"] or "N/A"): {
+            "trades": int(r["trades"]), "wins": int(r["wins"]), "pnl": float(r["pnl"] or 0)
+        } for r in regime_trade_rows}
+
+        # Merge: by_regime = {regime: {decisions, trades, wins, pnl}}
+        all_regimes = set(regime_decisions) | set(regime_trades)
+        by_regime = {}
+        for regime in all_regimes:
+            t = regime_trades.get(regime, {"trades": 0, "wins": 0, "pnl": 0})
+            by_regime[regime] = {
+                "decisions": regime_decisions.get(regime, 0),
+                "trades": t["trades"],
+                "wins": t["wins"],
+                "pnl": t["pnl"],
+            }
+
+        # Por sessao (decisions count)
+        session_rows = conn.execute(
+            "SELECT session_bucket, COUNT(*) as count "
+            "FROM scalping_decisions "
+            "WHERE timestamp > datetime('now', ?) "
+            "GROUP BY session_bucket ORDER BY count DESC",
+            (f"-{hours} hours",),
+        ).fetchall()
+        session_decisions = {(r["session_bucket"] or "N/A"): int(r["count"]) for r in session_rows}
+
+        # Por sessao (trade-level stats from scalping_trades)
+        session_trade_rows = conn.execute(
+            "SELECT session_bucket, COUNT(*) as trades, "
+            "SUM(CASE WHEN pnl_usd > 0 THEN 1 ELSE 0 END) as wins, "
+            "ROUND(SUM(pnl_pct), 4) as pnl "
+            "FROM scalping_trades "
+            "WHERE timestamp > datetime('now', ?) "
+            "GROUP BY session_bucket",
+            (f"-{hours} hours",),
+        ).fetchall()
+        session_trades = {(r["session_bucket"] or "N/A"): {
+            "trades": int(r["trades"]), "wins": int(r["wins"]), "pnl": float(r["pnl"] or 0)
+        } for r in session_trade_rows}
+
+        # Merge: by_session = {session: {decisions, trades, wins, pnl}}
+        all_sessions = set(session_decisions) | set(session_trades)
+        by_session = {}
+        for session in all_sessions:
+            t = session_trades.get(session, {"trades": 0, "wins": 0, "pnl": 0})
+            by_session[session] = {
+                "decisions": session_decisions.get(session, 0),
+                "trades": t["trades"],
+                "wins": t["wins"],
+                "pnl": t["pnl"],
+            }
+
+        # Por confluence_score
+        score_rows = conn.execute(
+            "SELECT confluence_score, COUNT(*) as count "
+            "FROM scalping_decisions "
+            "WHERE timestamp > datetime('now', ?) "
+            "GROUP BY confluence_score ORDER BY confluence_score",
+            (f"-{hours} hours",),
+        ).fetchall()
+        by_score = {str(r["confluence_score"] or 0): int(r["count"]) for r in score_rows}
+
+        # Motivos mais frequentes de bloqueio
+        reason_rows = conn.execute(
+            "SELECT reason, COUNT(*) as count "
+            "FROM scalping_decisions "
+            "WHERE timestamp > datetime('now', ?) "
+            "AND blocked_by != 'none' "
+            "GROUP BY reason ORDER BY count DESC LIMIT 10",
+            (f"-{hours} hours",),
+        ).fetchall()
+        top_reasons = [
+            {"reason": r["reason"] or "?", "count": int(r["count"])}
+            for r in reason_rows
+        ]
+
+        passed = funnel.get("none", 0)
+        pass_rate = (passed / total * 100) if total > 0 else 0
+
+        return {
+            "period_hours": hours,
+            "total_decisions": total,
+            "passed": passed,
+            "pass_rate_pct": round(pass_rate, 1),
+            "funnel": funnel,
+            "by_regime": by_regime,
+            "by_session": by_session,
+            "by_confluence_score": by_score,
+            "top_block_reasons": top_reasons,
+        }
+    finally:
+        conn.close()
 
 
-def diagnose_symbol(symbol, config):
-    """Run all 3 engines and report results."""
-    df_3m, df_5m, df_15m = fetch_data(symbol)
-    if df_3m is None or df_5m is None:
-        return {"error": "dados insuficientes"}
+def get_funnel_json(hours: int = 24) -> str:
+    """Retorna funil como JSON string (para API)."""
+    return json.dumps(get_funnel_data(hours), indent=2, ensure_ascii=False)
 
-    # Add indicators
-    df_3m_ind = add_scalping_indicators(df_3m.copy())
-    df_5m_ind = add_scalping_indicators(df_5m.copy())
-    df_15m_ind = None
-    if df_15m is not None and len(df_15m) >= 50:
-        df_15m_ind = add_scalping_indicators(df_15m.copy())
 
-    results = {}
+def print_funnel(hours: int = 24):
+    """Imprime funil formatado no terminal."""
+    data = get_funnel_data(hours)
 
-    # Volume Breakout
-    sig_vb = volume_breakout.analyze(symbol, config, df_3m=df_3m_ind, df_5m=df_5m_ind)
-    results["volume_breakout"] = {
-        "valid": sig_vb.valid,
-        "direction": sig_vb.direction.value if sig_vb.valid else "NEUTRAL",
-        "reason": sig_vb.reason if hasattr(sig_vb, 'reason') and sig_vb.reason else ("SINAL" if sig_vb.valid else "bloqueado"),
-        "strength": sig_vb.strength if sig_vb.valid else 0,
-    }
+    print(f"FUNIL DE DECISOES — ultimas {hours}h")
+    print("=" * 55)
+    print(f"  Total decisoes: {data['total_decisions']}")
+    print(f"  Passaram:       {data['passed']} ({data['pass_rate_pct']:.1f}%)")
+    print()
 
-    # RSI/BB Reversal
-    sig_rsi = rsi_bb_reversal.analyze(symbol, config, df_5m=df_5m_ind, df_15m=df_15m_ind)
-    results["rsi_bb_reversal"] = {
-        "valid": sig_rsi.valid,
-        "direction": sig_rsi.direction.value if sig_rsi.valid else "NEUTRAL",
-        "reason": sig_rsi.reason if hasattr(sig_rsi, 'reason') and sig_rsi.reason else ("SINAL" if sig_rsi.valid else "bloqueado"),
-        "strength": sig_rsi.strength if sig_rsi.valid else 0,
-    }
+    # Blocked by
+    print("  Bloqueado por:")
+    for key, count in sorted(data["funnel"].items(), key=lambda x: -x[1]):
+        pct = count / data["total_decisions"] * 100 if data["total_decisions"] else 0
+        marker = " <--" if key == "none" else ""
+        print(f"    {key:20s} {count:>5}  ({pct:5.1f}%){marker}")
 
-    # EMA Crossover
-    sig_ema = ema_crossover.analyze(symbol, config, df_3m=df_3m_ind, df_15m=df_15m_ind)
-    results["ema_crossover"] = {
-        "valid": sig_ema.valid,
-        "direction": sig_ema.direction.value if sig_ema.valid else "NEUTRAL",
-        "reason": sig_ema.reason if hasattr(sig_ema, 'reason') and sig_ema.reason else ("SINAL" if sig_ema.valid else "bloqueado"),
-        "strength": sig_ema.strength if sig_ema.valid else 0,
-    }
+    # By regime
+    if data["by_regime"]:
+        print()
+        print("  Por regime:")
+        for regime, count in data["by_regime"].items():
+            print(f"    {regime:20s} {count:>5}")
 
-    # Confluence
-    all_signals = [sig_vb, sig_rsi, sig_ema]
-    valid_signals = [s for s in all_signals if s.valid]
-    long_count = sum(1 for s in valid_signals if s.direction == Direction.LONG)
-    short_count = sum(1 for s in valid_signals if s.direction == Direction.SHORT)
+    # By session
+    if data["by_session"]:
+        print()
+        print("  Por sessao:")
+        for session, count in data["by_session"].items():
+            print(f"    {session:20s} {count:>5}")
 
-    if long_count > 0 and short_count > 0:
-        confluence = "CONFLITO (sinais opostos)"
-        score = 0
-    elif long_count >= 2:
-        confluence = f"{long_count}/3 LONG"
-        score = long_count
-    elif short_count >= 2:
-        confluence = f"{short_count}/3 SHORT"
-        score = short_count
-    elif long_count == 1 or short_count == 1:
-        d = "LONG" if long_count else "SHORT"
-        confluence = f"1/3 {d} (insuficiente)"
-        score = 1
-    else:
-        confluence = "0/3 (nenhum sinal)"
-        score = 0
+    # Top reasons
+    if data["top_block_reasons"]:
+        print()
+        print("  Top motivos de bloqueio:")
+        for item in data["top_block_reasons"][:5]:
+            reason = item["reason"][:60]
+            print(f"    {item['count']:>4}x  {reason}")
 
-    results["confluence"] = confluence
-    results["score"] = score
-
-    # Extra context: current price, RSI, ATR
-    last_5m = df_5m_ind.iloc[-1]
-    results["context"] = {
-        "price": round(float(last_5m["close"]), 4),
-        "rsi": round(float(last_5m.get("rsi", 0)), 1) if "rsi" in last_5m else "N/A",
-    }
-
-    return results
+    print(f"\n{'=' * 55}")
 
 
 def main():
-    config = ScalpingConfig()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    import argparse
+    parser = argparse.ArgumentParser(description="Diagnostico do funil de scalping")
+    parser.add_argument("--hours", type=int, default=24, help="Janela em horas")
+    parser.add_argument("--json", action="store_true", help="Output JSON")
+    args = parser.parse_args()
 
-    print(f"DIAGNOSTICO DO FUNIL — {now}")
-    print("=" * 60)
-
-    engine_blocks = {"volume_breakout": 0, "rsi_bb_reversal": 0, "ema_crossover": 0}
-    engine_signals = {"volume_breakout": 0, "rsi_bb_reversal": 0, "ema_crossover": 0}
-    block_reasons = {}
-
-    for symbol in SYMBOLS:
-        print(f"\n{symbol}:")
-        result = diagnose_symbol(symbol, config)
-
-        if "error" in result:
-            print(f"  ERRO: {result['error']}")
-            continue
-
-        ctx = result.get("context", {})
-        print(f"  Preco: ${ctx.get('price', '?')} | RSI: {ctx.get('rsi', '?')}")
-
-        for eng_key in ["volume_breakout", "rsi_bb_reversal", "ema_crossover"]:
-            eng = result[eng_key]
-            label = ENGINE_NAMES[eng_key]
-            if eng["valid"]:
-                print(f"  {label:20s}: SINAL {eng['direction']} (forca={eng['strength']})")
-                engine_signals[eng_key] += 1
-            else:
-                reason = eng.get("reason", "desconhecido")
-                print(f"  {label:20s}: BLOQUEADO — {reason}")
-                engine_blocks[eng_key] += 1
-                block_reasons.setdefault(eng_key, {})
-                block_reasons[eng_key][reason] = block_reasons[eng_key].get(reason, 0) + 1
-
-        print(f"  Confluencia: {result['confluence']}")
-
-    # Summary
-    total = len(SYMBOLS)
-    print(f"\n{'=' * 60}")
-    print(f"RESUMO:")
-    print(f"{'=' * 60}")
-    print(f"  Simbolos analisados: {total}")
-
-    print(f"\n  Motor                   Sinais  Bloqueados  Taxa Bloq")
-    print(f"  {'-'*55}")
-    most_blocked = None
-    most_blocked_pct = 0
-    for eng_key in ["volume_breakout", "rsi_bb_reversal", "ema_crossover"]:
-        s = engine_signals[eng_key]
-        b = engine_blocks[eng_key]
-        pct = (b / total * 100) if total > 0 else 0
-        print(f"  {ENGINE_NAMES[eng_key]:22s}  {s:>5}   {b:>9}   {pct:>5.0f}%")
-        if pct > most_blocked_pct:
-            most_blocked_pct = pct
-            most_blocked = eng_key
-
-    if most_blocked:
-        print(f"\n  Principal gargalo: {ENGINE_NAMES[most_blocked]} ({most_blocked_pct:.0f}% bloqueado)")
-        reasons = block_reasons.get(most_blocked, {})
-        if reasons:
-            print(f"  Motivos mais frequentes:")
-            for reason, count in sorted(reasons.items(), key=lambda x: -x[1])[:3]:
-                print(f"    - {reason} ({count}x)")
-
-    print(f"\n{'=' * 60}")
+    if args.json:
+        print(get_funnel_json(args.hours))
+    else:
+        print_funnel(args.hours)
 
 
 if __name__ == "__main__":

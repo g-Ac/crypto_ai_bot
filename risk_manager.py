@@ -13,13 +13,14 @@ import json
 import os
 import tempfile
 import logging
+import threading
 from datetime import datetime
 from typing import Optional, Tuple
 
 import pandas as pd
 import requests
 
-from config import SCALPING_INITIAL_CAPITAL
+from config import SCALPING_INITIAL_CAPITAL, BINANCE_FUTURES_BALANCE_URL
 from signal_types import (
     Direction, ConfluenceResult, RiskDecision, ScalpingConfig,
 )
@@ -29,36 +30,42 @@ from runtime_config import SCALPING_STATE_FILE
 
 logger = logging.getLogger("scalping.risk")
 
+# Lock global para proteger leitura/escrita concorrente do state file
+# (ciclo principal e Telegram listener rodam no mesmo processo)
+_state_lock = threading.Lock()
+
 
 # ============================================================
 #  STATE MANAGEMENT
 # ============================================================
 
 def load_scalping_state() -> dict:
-    """Carrega o estado do scalping trader do disco."""
-    if not os.path.exists(SCALPING_STATE_FILE):
-        return {
-            "capital": float(SCALPING_INITIAL_CAPITAL),
-            "positions": {},
-            "cooldowns": {},       # symbol -> {"last_close_time": iso, "candles_remaining": int}
-            "total_trades": 0,
-            "wins": 0,
-            "losses": 0,
-            "total_pnl_usd": 0.0,
-            "history": [],
-        }
-    with open(SCALPING_STATE_FILE, "r") as f:
-        return json.load(f)
+    """Carrega o estado do scalping trader do disco (thread-safe)."""
+    with _state_lock:
+        if not os.path.exists(SCALPING_STATE_FILE):
+            return {
+                "capital": float(SCALPING_INITIAL_CAPITAL),
+                "positions": {},
+                "cooldowns": {},       # symbol -> {"last_close_time": iso, "candles_remaining": int}
+                "total_trades": 0,
+                "wins": 0,
+                "losses": 0,
+                "total_pnl_usd": 0.0,
+                "history": [],
+            }
+        with open(SCALPING_STATE_FILE, "r") as f:
+            return json.load(f)
 
 
 def save_scalping_state(state: dict) -> None:
-    """Salva o estado do scalping trader no disco de forma atomica."""
-    data = json.dumps(state, indent=2, default=str)
-    dir_name = os.path.dirname(os.path.abspath(SCALPING_STATE_FILE))
-    with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, suffix=".tmp") as f:
-        f.write(data)
-        tmp_path = f.name
-    os.replace(tmp_path, SCALPING_STATE_FILE)
+    """Salva o estado do scalping trader no disco de forma atomica (thread-safe)."""
+    with _state_lock:
+        data = json.dumps(state, indent=2, default=str)
+        dir_name = os.path.dirname(os.path.abspath(SCALPING_STATE_FILE))
+        with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, suffix=".tmp") as f:
+            f.write(data)
+            tmp_path = f.name
+        os.replace(tmp_path, SCALPING_STATE_FILE)
 
 
 # ============================================================
@@ -105,7 +112,7 @@ def check_atr_elevated(df_15m: pd.DataFrame, threshold_pct: float = 50.0) -> boo
 
     Retorna True se ATR subiu > threshold_pct% vs media.
     """
-    if df_15m is None or "atr14" not in df_15m.columns or len(df_15m) < 21:
+    if df_15m is None or "atr14" not in df_15m.columns or len(df_15m) < 22:
         return False
 
     current_atr = df_15m["atr14"].iloc[-2]  # ultimo candle fechado
@@ -252,7 +259,6 @@ def calculate_position_size(
 #  CAPITAL VERIFICATION
 # ============================================================
 
-BINANCE_FUTURES_BALANCE_URL = "https://fapi.binance.com/fapi/v2/balance"
 
 
 def fetch_exchange_balance(api_key: str, api_secret: str) -> Optional[float]:

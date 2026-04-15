@@ -18,6 +18,7 @@ from config import (
     PUMP_DUMP_RETRACE_PCT, PUMP_CAPITAL, PUMP_MAX_POSITIONS,
     PUMP_DUMP_SPEED_PCT, PUMP_DUMP_SPEED_CANDLES,
     ROUND_TRIP_FEE_PCT,
+    BINANCE_SPOT_TICKER_URL, BINANCE_SPOT_KLINES_URL,
 )
 from runtime_config import PUMP_STATE_FILE
 
@@ -53,7 +54,7 @@ def log_trade(trade):
 def get_current_price(symbol):
     try:
         resp = requests.get(
-            f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
+            f"{BINANCE_SPOT_TICKER_URL}?symbol={symbol}",
             timeout=5,
         )
         if resp.status_code == 200:
@@ -67,7 +68,7 @@ def get_rsi(symbol, period=6):
     """RSI curto para detectar exaustao rapida."""
     try:
         resp = requests.get(
-            f"https://api.binance.com/api/v3/klines"
+            f"{BINANCE_SPOT_KLINES_URL}"
             f"?symbol={symbol}&interval=5m&limit=30",
             timeout=10,
         )
@@ -85,7 +86,7 @@ def get_recent_closes(symbol, num_candles=5):
     """Retorna lista de precos de fechamento dos ultimos N candles de 5m."""
     try:
         resp = requests.get(
-            f"https://api.binance.com/api/v3/klines"
+            f"{BINANCE_SPOT_KLINES_URL}"
             f"?symbol={symbol}&interval=5m&limit={num_candles}",
             timeout=10,
         )

@@ -123,8 +123,9 @@ class TestTwoMotorRegime:
     @patch("confluence._liquidation_engine")
     @patch("confluence._funding_engine")
     @patch("confluence._basis_engine")
-    def test_two_motors_only_one_valid(self, mock_basis, mock_funding, mock_liq, config):
-        mock_funding.analyze.return_value = _make_signal(Direction.SHORT, valid=True, score=60, source="funding")
+    def test_two_motors_only_one_valid_weak(self, mock_basis, mock_funding, mock_liq, config):
+        """1/2 with weak score (< 55) should be blocked."""
+        mock_funding.analyze.return_value = _make_signal(Direction.SHORT, valid=True, score=40, source="funding")
         mock_basis.analyze.return_value = _make_signal(Direction.NEUTRAL, valid=False, score=0, source="basis")
         result = analyze(
             symbol="BTCUSDT",
@@ -195,8 +196,9 @@ class TestThreeMotorRegime:
     @patch("confluence._liquidation_engine")
     @patch("confluence._funding_engine")
     @patch("confluence._basis_engine")
-    def test_three_motors_only_one_valid(self, mock_basis, mock_funding, mock_liq, config):
-        mock_funding.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=70, source="funding")
+    def test_three_motors_only_one_valid_weak(self, mock_basis, mock_funding, mock_liq, config):
+        """1/3 with weak score (< 55) should be blocked."""
+        mock_funding.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=40, source="funding")
         mock_liq.analyze.return_value = _make_signal(Direction.NEUTRAL, valid=False, score=0, source="liquidation")
         mock_basis.analyze.return_value = _make_signal(Direction.NEUTRAL, valid=False, score=0, source="basis")
         result = analyze(
@@ -224,6 +226,49 @@ class TestChoppyRegime:
         assert result.direction == Direction.NEUTRAL
         assert result.meets_threshold is False
         assert "nenhum motor" in result.reason.lower()
+
+
+# ── Solo override (1 strong motor in multi-motor regime) ────────────────
+
+class TestSoloOverride:
+    """Strong single motor (score >= 55) in multi-motor regime should pass as SOLO_OVERRIDE."""
+
+    @patch("confluence._liquidation_engine")
+    @patch("confluence._funding_engine")
+    @patch("confluence._basis_engine")
+    def test_solo_override_high_score_passes(self, mock_basis, mock_funding, mock_liq, config):
+        """1/3 with score 60 -> should pass as SOLO_OVERRIDE."""
+        mock_funding.analyze.return_value = _make_signal(Direction.NEUTRAL, valid=False, score=0, source="funding")
+        mock_liq.analyze.return_value = _make_signal(Direction.NEUTRAL, valid=False, score=0, source="liquidation")
+        mock_basis.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=60, source="basis")
+        result = analyze(
+            symbol="BTCUSDT",
+            config=config,
+            market_data={"some": "data"},
+            regime="TRENDING",
+        )
+        assert result.meets_threshold is True
+        assert result.direction == Direction.LONG
+        assert result.position_size_pct == 30.0
+        assert result.leverage == 2
+        assert "SOLO_OVERRIDE" in result.reason
+
+    @patch("confluence._liquidation_engine")
+    @patch("confluence._funding_engine")
+    @patch("confluence._basis_engine")
+    def test_solo_override_low_score_blocked(self, mock_basis, mock_funding, mock_liq, config):
+        """1/3 with score 40 -> still blocked (< 55 threshold)."""
+        mock_funding.analyze.return_value = _make_signal(Direction.NEUTRAL, valid=False, score=0, source="funding")
+        mock_liq.analyze.return_value = _make_signal(Direction.NEUTRAL, valid=False, score=0, source="liquidation")
+        mock_basis.analyze.return_value = _make_signal(Direction.LONG, valid=True, score=40, source="basis")
+        result = analyze(
+            symbol="BTCUSDT",
+            config=config,
+            market_data={"some": "data"},
+            regime="TRENDING",
+        )
+        assert result.meets_threshold is False
+        assert "insuficiente" in result.reason
 
 
 # ── No market data ──────────────────────────────────────────────────────

@@ -1282,6 +1282,8 @@
       {% if scorer_url %}
       <a class="chip-link" href="{{ scorer_url }}">Scorer</a>
       {% endif %}
+      <a class="chip-link" href="/scalping/funnel">Funil</a>
+      <a class="chip-link" href="/equity">Equity</a>
       {% for link in runtime_links %}
       <a class="chip-link {% if link.is_current %}is-current{% endif %}" href="{{ link.url }}">
         {{ link.label }} <strong>:{{ link.dashboard_port or "?" }}</strong>

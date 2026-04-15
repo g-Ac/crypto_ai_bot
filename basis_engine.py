@@ -24,7 +24,7 @@ Score 0-100 com 4 componentes:
 
 Filtros:
   - Basis entre -0.02% e 0.03% -> zona neutra, sem sinal
-  - Dead zone (21:00-00:00 UTC) -> so operar com score > 80
+  - Dead zone (21:00-00:00 UTC) -> so operar com score >= 60
   - Volatilidade muito baixa (ATR 1h < 0.1%) -> basis distorcido
 """
 import logging
@@ -64,7 +64,7 @@ _ACTIVE_SESSIONS = {
 _DEFAULT_ACTIVE_SESSIONS = ("us", "europe")
 
 # Dead zone score gate
-_DEAD_ZONE_MIN_SCORE = 80
+_DEAD_ZONE_MIN_SCORE = 60
 
 
 class BasisEngine:

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block head %}
+<style>
+.pos-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.pos-row:hover { background: rgba(255,255,255,.02); }
+.pos-left { display: flex; align-items: center; gap: var(--sp-2); min-width: 140px; }
+.pos-symbol { font-weight: 600; font-size: .85rem; }
+.pos-prices { display: flex; gap: var(--sp-3); min-width: 120px; }
+.pos-pnl { min-width: 70px; text-align: right; font-size: .85rem; }
+.pos-bar { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+
+.sys-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-card);
+}
+
+.equity-wrap { height: 260px; position: relative; }
+
+@media (max-width: 768px) {
+  .pos-row { flex-wrap: wrap; gap: var(--sp-2); }
+  .pos-prices { min-width: auto; }
+  .equity-wrap { height: 200px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- KPI Strip (8 metrics) -->
+<section class="kpi-strip mb-3">
+  <div class="kpi-item">
+    <span class="kpi-label">Portfolio</span>
+    <div class="kpi-row"><span class="kpi-value" id="kpi-portfolio">---</span><canvas class="kpi-spark" id="spark-portfolio" width="40" height="14"></canvas></div>
+    <span class="kpi-delta mono" id="kpi-portfolio-delta">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Today PnL</span>
+    <div class="kpi-row"><span class="kpi-value" id="kpi-today">---</span><canvas class="kpi-spark" id="spark-today" width="40" height="14"></canvas></div>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Week PnL</span>
+    <span class="kpi-value" id="kpi-week">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Win Rate 30d</span>
+    <span class="kpi-value" id="kpi-winrate">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Profit Factor</span>
+    <span class="kpi-value" id="kpi-sharpe">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Max DD</span>
+    <span class="kpi-value" id="kpi-maxdd">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Open Pos</span>
+    <span class="kpi-value" id="kpi-openpos">0</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Exposure</span>
+    <span class="kpi-value" id="kpi-exposure">0%</span>
+  </div>
+</section>
+
+<!-- Equity curve (Lightweight Charts) -->
+<section class="panel mb-3">
+  <div class="panel-header">
+    <h3>Equity Curve (30d)</h3>
+    <div class="flex items-center gap-2">
+      <span class="freshness-chip" id="fc-equity"></span>
+      <a href="/equity" class="text-xs text-2">Fullscreen &rarr;</a>
+    </div>
+  </div>
+  <div class="panel-body flush">
+    <div class="equity-wrap" id="equity-mini"></div>
+  </div>
+</section>
+
+<!-- Positions + Systems -->
+<section class="grid-2-1 mb-3">
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Open Positions</h3>
+      <span class="freshness-chip" id="fc-positions"></span>
+      <span class="badge" id="positions-count">0</span>
+    </div>
+    <div class="panel-body flush" id="positions-list">
+      <div class="skeleton skeleton-chart" style="height:60px;margin:var(--sp-3)"></div>
+    </div>
+  </div>
+
+  <div class="flex flex-col gap-3" id="system-cards">
+    <div class="sys-card skeleton skeleton-chart" style="height:100px"></div>
+    <div class="sys-card skeleton skeleton-chart" style="height:100px"></div>
+  </div>
+</section>
+
+<!-- Recent Trades -->
+<section class="panel">
+  <div class="panel-header">
+    <h3>Recent Trades</h3>
+    <span class="freshness-chip" id="fc-trades"></span>
+    <span class="text-3 text-xxs">Last 3 days</span>
+  </div>
+  <div class="panel-body flush">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th><th>Symbol</th><th>Side</th>
+            <th style="text-align:right">PnL%</th>
+            <th style="text-align:right">PnL$</th>
+            <th>System</th><th>Exit</th>
+          </tr>
+        </thead>
+        <tbody id="trades-tbody">
+          <tr><td colspan="7"><div class="skeleton skeleton-text"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Dashboard{% endblock %} — Crypto AI Bot</title>
+  <link rel="icon" type="image/png" id="dynamic-favicon" href="data:,">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="page-wrapper">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="topbar-brand">
+          <span class="status-dot" id="bot-status-dot"></span>
+          CryptoBot
+        </div>
+        <nav>
+          <ul class="nav-links">
+            <li><a href="/" {% if active_page == 'dashboard' %}class="active"{% endif %}>Dashboard</a></li>
+            <li><a href="/analytics" {% if active_page == 'analytics' %}class="active"{% endif %}>Analytics</a></li>
+            <li><a href="/equity" {% if active_page == 'equity' %}class="active"{% endif %}>Equity</a></li>
+            <li><a href="/system" {% if active_page == 'system' %}class="active"{% endif %}>System</a></li>
+          </ul>
+        </nav>
+      </div>
+      <div class="topbar-right">
+        <button class="btn" id="theme-toggle" title="Toggle ultra-dark">OLED</button>
+        <button class="btn" id="cmd-trigger" title="Cmd+K">&#8984;K</button>
+        <button class="hamburger" id="hamburger-btn" aria-label="Menu">&#9776;</button>
+        <button class="btn" id="pause-btn">
+          <span class="status-dot" id="pause-dot"></span>
+          <span id="pause-label">---</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Idle badge (shown when no trades in 24h) -->
+    <div class="idle-badge" id="idle-badge" style="display:none">
+      <span class="status-dot degraded"></span>
+      <span id="idle-text">Backend idle</span>
+    </div>
+
+    <!-- Ticker tape -->
+    <div class="ticker-tape" id="ticker-tape">
+      <div class="ticker-item"><span class="ticker-label">BTC</span> <span class="ticker-value" id="tk-btc">---</span></div>
+      <div class="ticker-item"><span class="ticker-label">ETH</span> <span class="ticker-value" id="tk-eth">---</span></div>
+      <div class="ticker-item"><span class="ticker-label">Funding</span> <span class="ticker-value" id="tk-funding">---</span></div>
+      <div class="ticker-item"><span class="ticker-label">Last cycle</span> <span class="ticker-value" id="tk-cycle">---</span></div>
+      <div class="ticker-item"><span class="ticker-label">Decisions/h</span> <span class="ticker-value" id="tk-decisions">---</span></div>
+      <div class="ticker-item"><span class="ticker-label">Uptime</span> <span class="ticker-value" id="tk-uptime">---</span></div>
+      <div class="ticker-item"><span class="ticker-label">Last trade</span> <span class="ticker-value" id="tk-lasttrade">---</span></div>
+    </div>
+
+    <!-- Mobile nav -->
+    <nav class="mobile-nav" id="mobile-nav">
+      <a href="/" {% if active_page == 'dashboard' %}class="active"{% endif %}>Dashboard</a>
+      <a href="/analytics" {% if active_page == 'analytics' %}class="active"{% endif %}>Analytics</a>
+      <a href="/equity" {% if active_page == 'equity' %}class="active"{% endif %}>Equity</a>
+      <a href="/system" {% if active_page == 'system' %}class="active"{% endif %}>System</a>
+    </nav>
+
+    <!-- Content -->
+    <main class="page-content">
+      {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span id="footer-version">Crypto AI Bot</span> &middot; <span id="footer-refresh">---</span>
+    </footer>
+  </div>
+
+  <!-- Command palette -->
+  <div class="cmd-backdrop" id="cmd-backdrop">
+    <div class="cmd-palette">
+      <input class="cmd-input" id="cmd-input" placeholder="Type a command..." autocomplete="off" spellcheck="false">
+      <div class="cmd-list" id="cmd-list"></div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+  /* ── Globals ──────────────────────────────────────────── */
+  const $ = (s, c=document) => c.querySelector(s);
+  const $$ = (s, c=document) => [...c.querySelectorAll(s)];
+  let _lastStatus = null;
+  let _prevStatus = null;
+
+  function fmtPnl(v, pre='') { if (v==null) return '---'; const n=+v; return pre+(n>=0?'+':'')+n.toFixed(2); }
+
+  /* ── HTML escape (XSS prevention) ──────────────────────── */
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* ── Freshness helpers ──────────────────────────────────── */
+  function timeAgo(ts) {
+    if (!ts) return null;
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return null;
+    const s = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (s < 0)    return 'just now';   // clock skew / future date guard
+    if (s < 60)   return s + 's';
+    if (s < 3600)  return Math.floor(s / 60) + 'm';
+    if (s < 86400) return Math.floor(s / 3600) + 'h';
+    return Math.floor(s / 86400) + 'd';
+  }
+
+  function parseBackendTs(ts) {
+    if (!ts) return null;
+    // DD/MM/YYYY HH:MM:SS → ISO
+    const brMatch = ts.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}:\d{2}:\d{2})$/);
+    if (brMatch) return brMatch[3] + '-' + brMatch[2] + '-' + brMatch[1] + 'T' + brMatch[4];
+    // Already ISO-like: YYYY-MM-DD[T ]HH:MM:SS
+    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(ts)) return ts;
+    return null;  // unrecognized format
+  }
+
+  function freshnessLevel(ts) {
+    if (!ts) return 'stale';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return 'stale';
+    const s = (Date.now() - d.getTime()) / 1000;
+    if (s < 0)    return 'fresh';     // clock skew guard
+    if (s < 120)  return 'fresh';     // <2min green
+    if (s < 900)  return 'warm';      // 2-15min yellow
+    return 'stale';                    // >15min red
+  }
+
+  function setFreshness(chipId, ts) {
+    const el = document.getElementById(chipId);
+    if (!el) return;
+    const ago = timeAgo(ts);
+    if (!ago) { el.textContent = ''; el.className = 'freshness-chip'; return; }
+    el.textContent = ago;
+    el.className = 'freshness-chip ' + freshnessLevel(ts);
+  }
+  function fmtUsd(v) { if (v==null) return '---'; return '$'+parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function fmtPct(v) { if (v==null) return '---'; const n=+v; return (n>=0?'+':'')+n.toFixed(2)+'%'; }
+  function fmtK(v) { if (v==null) return '---'; return '$'+(v/1000).toFixed(0)+'K'; }
+  function pnlClass(v) { const n=+v; return n>0?'positive':n<0?'negative':'neutral'; }
+
+  /* ── Theme toggle ────────────────────────────────────── */
+  const themeBtn = $('#theme-toggle');
+  if (themeBtn) {
+    const saved = localStorage.getItem('theme');
+    if (saved) document.documentElement.dataset.theme = saved;
+    themeBtn.addEventListener('click', () => {
+      const cur = document.documentElement.dataset.theme;
+      const next = cur === 'oled' ? 'dark' : 'oled';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('theme', next);
+      themeBtn.classList.toggle('active', next === 'oled');
+    });
+    themeBtn.classList.toggle('active', document.documentElement.dataset.theme === 'oled');
+  }
+
+  /* ── Hamburger ───────────────────────────────────────── */
+  const hamburger = $('#hamburger-btn');
+  const mobileNav = $('#mobile-nav');
+  if (hamburger) {
+    hamburger.addEventListener('click', () => mobileNav.classList.toggle('open'));
+    document.addEventListener('click', e => {
+      if (!hamburger.contains(e.target) && !mobileNav.contains(e.target)) mobileNav.classList.remove('open');
+    });
+  }
+
+  /* ── Status fetch ────────────────────────────────────── */
+  async function fetchStatus() {
+    try {
+      const r = await fetch('/api/status');
+      if (!r.ok) return null;
+      _prevStatus = _lastStatus;
+      _lastStatus = await r.json();
+      _updateTopbar(_lastStatus);
+      _updateTicker(_lastStatus);
+      _updateFavicon(_lastStatus);
+      return _lastStatus;
+    } catch { return null; }
+  }
+
+  function _updateTopbar(d) {
+    const dot = $('#bot-status-dot');
+    dot.className = 'status-dot ' + (d.bot_status?.overall || 'offline');
+
+    const pauseBtn = $('#pause-btn');
+    const pauseDot = $('#pause-dot');
+    const pauseLabel = $('#pause-label');
+    pauseDot.className = d.paused ? 'status-dot degraded' : 'status-dot healthy';
+    pauseLabel.textContent = d.paused ? 'Paused' : 'Running';
+
+    const ver = $('#footer-version');
+    if (d.instance?.version) ver.textContent = 'v' + d.instance.version + ' · ' + (d.instance.bot_id || '');
+    $('#footer-refresh').textContent = d.last_update || '';
+  }
+
+  function _updateTicker(d) {
+    // Prices from positions or chart
+    const pos = d.positions || [];
+    const btc = pos.find(p => p.symbol === 'BTCUSDT');
+    const eth = pos.find(p => p.symbol === 'ETHUSDT');
+    if (btc?.current_price) $('#tk-btc').textContent = '$' + btc.current_price.toLocaleString('en-US', {maximumFractionDigits: 0});
+    if (eth?.current_price) $('#tk-eth').textContent = '$' + eth.current_price.toLocaleString('en-US', {maximumFractionDigits: 0});
+
+    // Health
+    if (d.bot_status?.last_cycle_ago) $('#tk-cycle').textContent = d.bot_status.last_cycle_ago;
+    if (d.health?.uptime) $('#tk-uptime').textContent = d.health.uptime;
+
+    // Funnel pass rate
+    const funnel = d.scalping_funnel;
+    if (funnel?.total) {
+      const opened = funnel.breakdown?.opened || 0;
+      $('#tk-decisions').textContent = funnel.total + ' (' + (opened / funnel.total * 100).toFixed(0) + '% pass)';
+    }
+
+    // Last trade + idle badge
+    const lastTs = d.summary?.last_trade_ts;
+    const tkLast = $('#tk-lasttrade');
+    if (tkLast) {
+      const ago = timeAgo(lastTs);
+      tkLast.textContent = ago ? ago + ' ago' : 'none';
+      tkLast.className = 'ticker-value ' + (freshnessLevel(lastTs) === 'stale' ? 'negative' : '');
+    }
+    const idleBadge = $('#idle-badge');
+    if (idleBadge) {
+      const todayTrades = Object.values(d.stats_today || {}).reduce((s, v) => s + (v.count || 0), 0);
+      const openPositions = (d.positions || []).length;
+      if (todayTrades === 0 && openPositions === 0) {
+        const ago = timeAgo(lastTs);
+        $('#idle-text').textContent = 'Idle — last trade ' + (ago ? ago + ' ago' : 'unknown');
+        idleBadge.style.display = '';
+      } else {
+        idleBadge.style.display = 'none';
+      }
+    }
+  }
+
+  /* ── Dynamic favicon ─────────────────────────────────── */
+  function _updateFavicon(d) {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 32; c.height = 32;
+      const ctx = c.getContext('2d');
+      const status = d.bot_status?.overall || 'offline';
+      const colors = { healthy: '#00D395', degraded: '#FFB84D', offline: '#FF3B6B' };
+      ctx.beginPath();
+      ctx.arc(16, 16, 12, 0, Math.PI * 2);
+      ctx.fillStyle = colors[status] || '#666';
+      ctx.fill();
+      const link = $('#dynamic-favicon');
+      if (link) link.href = c.toDataURL();
+    } catch {}
+  }
+
+  /* ── Pause/Resume ────────────────────────────────────── */
+  const pauseBtn = $('#pause-btn');
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', async () => {
+      const paused = _lastStatus?.paused;
+      if (!confirm(paused ? 'Retomar o bot?' : 'Pausar o bot?')) return;
+      try { await fetch('/' + (paused ? 'resume' : 'pause'), { method: 'POST' }); setTimeout(fetchStatus, 500); } catch {}
+    });
+  }
+
+  /* ── Command Palette ─────────────────────────────────── */
+  const cmdBackdrop = $('#cmd-backdrop');
+  const cmdInput = $('#cmd-input');
+  const cmdList = $('#cmd-list');
+
+  const CMD_ITEMS = [
+    { label: 'Go to Dashboard', action: () => location.href = '/', keys: 'g d' },
+    { label: 'Go to Analytics', action: () => location.href = '/analytics', keys: 'g a' },
+    { label: 'Go to Equity', action: () => location.href = '/equity', keys: 'g e' },
+    { label: 'Go to System', action: () => location.href = '/system', keys: 'g s' },
+    { label: 'Go to Legacy Dashboard', action: () => location.href = '/legacy', keys: 'g l' },
+    { label: 'Pause/Resume Bot', action: () => pauseBtn?.click(), keys: 'p' },
+    { label: 'Toggle OLED Mode', action: () => themeBtn?.click(), keys: 't' },
+    { label: 'Refresh Data', action: () => { fetchStatus(); showToast('Data refreshed', 'info'); }, keys: 'r' },
+  ];
+
+  function openCmdPalette() {
+    cmdBackdrop.classList.add('open');
+    cmdInput.value = '';
+    renderCmdList('');
+    setTimeout(() => cmdInput.focus(), 50);
+  }
+
+  function closeCmdPalette() { cmdBackdrop.classList.remove('open'); }
+
+  function renderCmdList(query) {
+    const q = query.toLowerCase();
+    const filtered = CMD_ITEMS.filter(item => item.label.toLowerCase().includes(q));
+    cmdList.innerHTML = filtered.map((item, i) =>
+      `<div class="cmd-item${i===0?' focused':''}" data-idx="${i}">
+        ${item.label}
+        <span class="cmd-shortcut">${item.keys}</span>
+      </div>`
+    ).join('');
+
+    cmdList.querySelectorAll('.cmd-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = +el.dataset.idx;
+        filtered[idx]?.action();
+        closeCmdPalette();
+      });
+    });
+  }
+
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openCmdPalette(); }
+    if (e.key === 'Escape') closeCmdPalette();
+  });
+  if (cmdInput) cmdInput.addEventListener('input', e => renderCmdList(e.target.value));
+  if (cmdBackdrop) cmdBackdrop.addEventListener('click', e => { if (e.target === cmdBackdrop) closeCmdPalette(); });
+  if ($('#cmd-trigger')) $('#cmd-trigger').addEventListener('click', openCmdPalette);
+
+  /* ── Toast system ────────────────────────────────────── */
+  function showToast(msg, type='info', duration=5000) {
+    const container = $('#toast-container');
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.innerHTML = `<span class="status-dot ${type==='success'?'healthy':type==='danger'?'offline':'degraded'}"></span> ${msg}`;
+    container.appendChild(el);
+    setTimeout(() => {
+      el.classList.add('toast-out');
+      setTimeout(() => el.remove(), 300);
+    }, duration);
+  }
+
+  /* ── Sparkline drawer ────────────────────────────────── */
+  function drawSparkline(canvas, data, color) {
+    if (!canvas || !data?.length) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+
+    ctx.beginPath();
+    ctx.strokeStyle = color || '#5EC8FF';
+    ctx.lineWidth = 1.5;
+    data.forEach((v, i) => {
+      const x = (i / (data.length - 1)) * w;
+      const y = h - ((v - min) / range) * h;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  /* ── Freshness auto-refresh (re-evaluate chip colors every 30s) ── */
+  let _freshnessTimestamps = {};
+  const _origSetFreshness = setFreshness;
+  setFreshness = function(chipId, ts) {
+    if (ts) _freshnessTimestamps[chipId] = ts;
+    _origSetFreshness(chipId, ts);
+  };
+  setInterval(() => {
+    Object.entries(_freshnessTimestamps).forEach(([id, ts]) => _origSetFreshness(id, ts));
+  }, 30000);
+
+  /* ── Boot ────────────────────────────────────────────── */
+  fetchStatus();
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

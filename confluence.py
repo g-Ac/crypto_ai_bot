@@ -65,6 +65,7 @@ def _analyze_v2_1b(
     market_data: Dict,
     regime: str,
     candles_5m: Optional[pd.DataFrame] = None,
+    prev_basis_pct: Optional[float] = None,
 ) -> ConfluenceResult:
     """Fluxo V2.1b: OI primary -> FundingFilter veto -> BasisConfidenceAdjuster."""
     no_trade = ConfluenceResult(
@@ -200,7 +201,7 @@ def analyze(
     """
     # ── V2.1b: via feature flag global OU via parametro explicito ──
     if (cfg.V2_1B_ENABLED or force_v2_1b) and market_data is not None:
-        return _analyze_v2_1b(symbol, config, market_data, regime, candles_5m)
+        return _analyze_v2_1b(symbol, config, market_data, regime, candles_5m, prev_basis_pct)
 
     no_trade = ConfluenceResult(
         direction=Direction.NEUTRAL,
@@ -315,16 +316,29 @@ def analyze(
     else:
         min_confirmations = 1
 
+    classification = None  # set by override or sizing block below
+
     if score < min_confirmations:
-        no_trade.signals = signals
-        no_trade.score = score
-        no_trade.liq_signal_subtype = liq_subtype
-        no_trade.reason = (
-            f"Confluencia {score}/{n_motors} - insuficiente "
-            f"(minimo {min_confirmations})"
-        )
-        logger.info("CONFLUENCE %s: %s", symbol, no_trade.reason)
-        return no_trade
+        # Strong solo override: 1 motor com score alto em regime multi-motor
+        # permite trade com sizing conservador (SOLO) em vez de bloquear
+        if score == 1 and n_motors >= 2 and continuous_score >= 55:
+            position_size_pct = 30.0
+            leverage = 2
+            classification = "SOLO_OVERRIDE"
+            logger.info(
+                "CONFLUENCE %s: solo override — 1/%d com score %d >= 55",
+                symbol, n_motors, continuous_score,
+            )
+        else:
+            no_trade.signals = signals
+            no_trade.score = score
+            no_trade.liq_signal_subtype = liq_subtype
+            no_trade.reason = (
+                f"Confluencia {score}/{n_motors} - insuficiente "
+                f"(minimo {min_confirmations})"
+            )
+            logger.info("CONFLUENCE %s: %s", symbol, no_trade.reason)
+            return no_trade
 
     # Single-motor regime (e.g. VOLATILE): exigir score alto
     if n_motors == 1 and continuous_score < 60:
@@ -337,19 +351,21 @@ def analyze(
         logger.info("CONFLUENCE %s: %s", symbol, no_trade.reason)
         return no_trade
 
-    if score >= 3:
-        position_size_pct = 100.0
-        leverage = 5
-        classification = "ALTO"
-    elif score >= 2:
-        position_size_pct = 50.0
-        leverage = 3
-        classification = "MEDIO"
-    else:
-        # Single motor with high score -> conservative sizing
-        position_size_pct = 30.0
-        leverage = 2
-        classification = "SOLO"
+    # Sizing — solo override ja definiu sizing acima, pular
+    if classification != "SOLO_OVERRIDE":
+        if score >= 3:
+            position_size_pct = 100.0
+            leverage = 5
+            classification = "ALTO"
+        elif score >= 2:
+            position_size_pct = 50.0
+            leverage = 3
+            classification = "MEDIO"
+        else:
+            # Single motor with high score -> conservative sizing
+            position_size_pct = 30.0
+            leverage = 2
+            classification = "SOLO"
 
     # Se chegou aqui, o trade passou pelo gate adaptativo (multi-motor
     # exige >= 2, single-motor exige >= 1 + continuous_score >= 60).

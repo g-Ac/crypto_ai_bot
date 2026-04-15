@@ -10,6 +10,7 @@ from config import (
     PAPER_MAX_POSITIONS, PAPER_REWARD_RATIO, COOLDOWN_MINUTES,
     ATR_SL_MULTIPLIER, ATR_TP_MULTIPLIER, ATR_SL_FLOOR_PCT,
     ROUND_TRIP_FEE_PCT,
+    BINANCE_SPOT_KLINES_URL,
 )
 import database as db
 from runtime_config import PAPER_STATE_FILE
@@ -45,7 +46,7 @@ def get_atr_1h(symbol, period=14):
     """Calcula ATR no timeframe 1h para SL/TP dinamico."""
     import time as _time
     url = (
-        f"https://api.binance.com/api/v3/klines"
+        f"{BINANCE_SPOT_KLINES_URL}"
         f"?symbol={symbol}&interval=1h&limit={period + 5}"
     )
     for attempt in range(3):

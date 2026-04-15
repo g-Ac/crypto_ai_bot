@@ -30,6 +30,7 @@ from config import (
     PUMP_CAPITAL,
     PUMP_POSITION_SIZE_PCT,
     ROUND_TRIP_FEE_PCT,
+    BINANCE_FUTURES_KLINES_URL,
 )
 
 # ── Config do backtest ──────────────────────────────────────────
@@ -43,8 +44,8 @@ EXTRA_SYMBOLS = ["AVAXUSDT", "ADAUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT"]
 # Mescla sem duplicatas
 BACKTEST_SYMBOLS = list(dict.fromkeys(SYMBOLS + EXTRA_SYMBOLS))
 
-# Binance Futures klines endpoint
-FUTURES_KLINES_URL = "https://fapi.binance.com/fapi/v1/klines"
+# Binance Futures klines endpoint (importado de config.py)
+FUTURES_KLINES_URL = BINANCE_FUTURES_KLINES_URL
 
 
 # ── Coleta de dados ─────────────────────────────────────────────

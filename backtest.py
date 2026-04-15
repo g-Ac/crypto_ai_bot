@@ -10,6 +10,7 @@ from config import (
     BACKTEST_DAYS, ATR_SL_MULTIPLIER, ATR_SL_FLOOR_PCT,
     ATR_TP_MULTIPLIER, PAPER_REWARD_RATIO,
     ROUND_TRIP_FEE_PCT,
+    BINANCE_SPOT_KLINES_URL,
 )
 from indicators import add_indicators
 from strategy import _score_row
@@ -24,7 +25,7 @@ def fetch_historical(symbol, interval, days):
 
     while cursor < end_ms:
         url = (
-            f"https://api.binance.com/api/v3/klines"
+            f"{BINANCE_SPOT_KLINES_URL}"
             f"?symbol={symbol}&interval={interval}&startTime={cursor}&limit=1000"
         )
         try:

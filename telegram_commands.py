@@ -59,26 +59,14 @@ def _set_paused(value: bool):
 # ── COMMAND HANDLERS ──────────────────────────────────────────────────────────
 
 def _cmd_status():
-    from paper_trader import get_status as paper_status
-    from trade_agents import get_agent_status
-    from pump_trader import get_status as pump_status
-    from scalping_trader import get_scalping_status
+    from momentum.paper_executor import get_momentum_status
 
     paused_tag = "\U0001f7e1 <b>PAUSADO</b>\n\n" if is_paused() else ""
     lines = [
         f"{paused_tag}\U0001f916 <b>Status do Bot</b>",
         "",
-        "\U0001f4c4 <b>Paper Trading</b>",
-        f"<code>{paper_status()}</code>",
-        "",
-        "\U0001f916 <b>Multi-Agent</b>",
-        f"<code>{get_agent_status()}</code>",
-        "",
-        "\U0001f680 <b>Pump Scanner</b>",
-        f"<code>{pump_status()}</code>",
-        "",
-        "\u26a1 <b>Scalping</b>",
-        f"<code>{get_scalping_status()}</code>",
+        "\U0001f4c8 <b>Momentum Pullback</b>",
+        f"<code>{get_momentum_status()}</code>",
     ]
     return "\n".join(lines)
 
@@ -96,17 +84,11 @@ def _cmd_posicoes():
 
 def _cmd_capital():
     from daily_report import get_capital_status
-    from config import (
-        PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL,
-        PUMP_INITIAL_CAPITAL, SCALPING_INITIAL_CAPITAL,
-    )
+    from config import MOMENTUM_INITIAL_CAPITAL
 
     capitals = get_capital_status()
     initials = {
-        "Paper": PAPER_INITIAL_CAPITAL,
-        "Agent": AGENT_INITIAL_CAPITAL,
-        "Pump": PUMP_INITIAL_CAPITAL,
-        "Scalping": SCALPING_INITIAL_CAPITAL,
+        "Momentum": MOMENTUM_INITIAL_CAPITAL,
     }
 
     lines = ["\U0001f4b0 <b>Capital por Sistema</b>\n"]
@@ -137,10 +119,7 @@ def _cmd_performance():
     lines = ["\U0001f4ca <b>Performance do Dia</b>\n"]
 
     systems = {
-        "Paper": "paper_trades",
-        "Agent": "agent_trades",
-        "Pump": "pump_trades",
-        "Scalping": "scalping_trades",
+        "Momentum": "momentum_trades",
     }
 
     total_trades = 0

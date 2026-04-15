@@ -494,6 +494,60 @@ class TestDataUnavailable(unittest.TestCase):
         self.assertEqual(signal.metadata["score_liquidation"], 0)
 
 
+class TestCascadeWithoutOI(unittest.TestCase):
+    """Cascata com liquidacoes fortes (>200K) deve funcionar sem OI alinhado."""
+
+    def setUp(self):
+        self.engine = LiquidationEngine()
+
+    def test_short_cascade_without_oi_rising(self):
+        """Cascata SHORT >200K gera LONG mesmo com OI caindo (sem confirmacao OI)."""
+        md = _base_market_data(
+            liquidation_vol_short=300_000,  # > 200K threshold
+            liquidation_vol_long=50_000,
+            oi_change_1h_pct=-0.5,          # OI caindo (normalmente bloquearia)
+            oi_change_4h_pct=-1.0,
+        )
+        candles = _make_candles_5m(n=24, trend_pct=0.5)
+
+        signal = self.engine.analyze("BTCUSDT", md, "TRENDING", candles)
+
+        self.assertEqual(signal.direction, Direction.LONG)
+        self.assertEqual(signal.metadata["signal_subtype"], "cascade")
+
+    def test_long_cascade_without_oi_falling(self):
+        """Cascata LONG >200K gera SHORT mesmo com OI subindo (sem confirmacao OI)."""
+        md = _base_market_data(
+            liquidation_vol_long=400_000,   # > 200K threshold
+            liquidation_vol_short=50_000,
+            oi_change_1h_pct=1.5,           # OI subindo (normalmente bloquearia)
+            oi_change_4h_pct=2.0,
+        )
+        candles = _make_candles_5m(n=24, trend_pct=-0.5)
+
+        signal = self.engine.analyze("BTCUSDT", md, "TRENDING", candles)
+
+        self.assertEqual(signal.direction, Direction.SHORT)
+        self.assertEqual(signal.metadata["signal_subtype"], "cascade")
+
+    def test_small_cascade_still_needs_oi(self):
+        """Cascata <200K sem OI alinhado nao gera sinal (comportamento original)."""
+        md = _base_market_data(
+            liquidation_vol_short=100_000,  # > MIN_USD mas < 200K
+            liquidation_vol_long=20_000,
+            oi_change_1h_pct=-0.5,          # OI nao alinhado
+            oi_change_4h_pct=-1.0,
+        )
+        candles = _make_candles_5m(n=24, trend_pct=0.5)
+
+        signal = self.engine.analyze("BTCUSDT", md, "TRENDING", candles)
+
+        # Sem OI alinhado e liq < 200K, cascata nao dispara
+        # Pode gerar sinal por outro cenario (divergencia) ou ser neutro
+        if signal.metadata.get("signal_subtype") == "cascade":
+            self.fail("Cascata < 200K nao deveria disparar sem OI alinhado")
+
+
 class TestSignalSubtype(unittest.TestCase):
     """signal_subtype deve ser preenchido corretamente em cada cenario."""
 

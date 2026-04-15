@@ -41,10 +41,16 @@ _opensquad/
 skills/
 squads/
 
+# === BINARIOS E DADOS GRANDES ===
+llama.cpp/
+research/
+data/
+
 # === EDITOR / FERRAMENTAS ===
 .vscode/
 .agent/
 .claude/
+.superpowers/
 
 # === OS ===
 .DS_Store

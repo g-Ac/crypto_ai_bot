@@ -1,0 +1,184 @@
+{% set data = funnel or {} %}
+{% set instance = data.instance or {} %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crypto AI Bot | Funil Scalping</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: rgba(11, 24, 42, 0.94);
+      --soft: rgba(15, 29, 47, 0.84);
+      --border: rgba(130, 168, 214, 0.2);
+      --text: #edf5ff;
+      --muted: #a6bdd8;
+      --good: #35d08f;
+      --bad: #ff6b7f;
+      --warn: #ffca6a;
+      --cyan: #69f0ff;
+      --shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--text);
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(95, 183, 255, 0.18), transparent 30%),
+        radial-gradient(circle at top right, rgba(53, 208, 143, 0.12), transparent 25%),
+        linear-gradient(180deg, #07111f 0%, #040b14 100%);
+    }
+    .topbar, .panel, .stat {
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .topbar {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; justify-content: space-between; gap: 1rem;
+      padding: 1rem 1.4rem;
+      background: rgba(4, 10, 18, 0.88);
+      backdrop-filter: blur(18px);
+    }
+    h1, h2, h3, p { margin: 0; }
+    .kicker { color: var(--cyan); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.18em; font-weight: 600; }
+    h1 { margin-top: 0.25rem; font-size: clamp(1.5rem, 2vw, 2rem); }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.55rem 0.85rem; border-radius: 999px;
+      background: var(--soft); color: var(--muted); text-decoration: none; font-size: 0.82rem;
+    }
+    .chip strong { color: var(--text); }
+    .shell { width: min(1400px, calc(100% - 2rem)); margin: 1.4rem auto 2rem; display: grid; gap: 1rem; }
+    .panel {
+      background: linear-gradient(180deg, rgba(12, 24, 42, 0.96), rgba(8, 17, 31, 0.94));
+      border-radius: 1rem; padding: 1.2rem;
+    }
+    .panel h2 { font-size: 1.1rem; margin-bottom: 0.8rem; }
+    .stats { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 1rem; }
+    .stat {
+      background: var(--soft); border-radius: 0.7rem; padding: 0.8rem 1rem; min-width: 140px;
+    }
+    .stat .label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; }
+    .stat .value { font-size: 1.4rem; font-weight: 700; font-family: "IBM Plex Mono", monospace; margin-top: 0.2rem; }
+    .stat .good { color: var(--good); }
+    .stat .bad { color: var(--bad); }
+    .stat .warn { color: var(--warn); }
+    table { width: 100%; border-collapse: collapse; font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; }
+    th { text-align: left; color: var(--muted); font-weight: 500; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border); }
+    td { padding: 0.5rem 0.7rem; border-bottom: 1px solid rgba(130, 168, 214, 0.08); }
+    .bar { height: 6px; border-radius: 3px; background: var(--cyan); display: inline-block; vertical-align: middle; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <div class="kicker">{{ instance.get('label', 'Crypto Bot') }}</div>
+      <h1>Funil de Decisoes</h1>
+    </div>
+    <nav class="nav-links">
+      <a class="chip" href="/">Dashboard</a>
+      <a class="chip" href="/scalping/audit">Audit</a>
+      <a class="chip" href="/scalping/outcomes">Outcomes</a>
+      <a class="chip" href="/scalping/funnel?hours=6">6h</a>
+      <a class="chip" href="/scalping/funnel?hours=24"><strong>24h</strong></a>
+      <a class="chip" href="/scalping/funnel?hours=72">72h</a>
+    </nav>
+  </div>
+
+  <div class="shell">
+    <!-- Stats resumo -->
+    <div class="stats">
+      <div class="stat">
+        <div class="label">Decisoes</div>
+        <div class="value">{{ data.total_decisions }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Passaram</div>
+        <div class="value good">{{ data.passed }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Pass Rate</div>
+        <div class="value {% if data.pass_rate_pct > 5 %}good{% elif data.pass_rate_pct > 0 %}warn{% else %}bad{% endif %}">{{ data.pass_rate_pct }}%</div>
+      </div>
+      <div class="stat">
+        <div class="label">Periodo</div>
+        <div class="value">{{ data.period_hours }}h</div>
+      </div>
+    </div>
+
+    <!-- Funil por blocked_by -->
+    <div class="panel">
+      <h2>Funil — Bloqueado por</h2>
+      <table>
+        <tr><th>Bloqueador</th><th>Count</th><th>%</th><th></th></tr>
+        {% for key, count in data.funnel.items() %}
+        {% set pct = (count / data.total_decisions * 100) if data.total_decisions > 0 else 0 %}
+        <tr>
+          <td>{% if key == 'none' %}<strong style="color:var(--good)">PASSOU</strong>{% else %}{{ key }}{% endif %}</td>
+          <td>{{ count }}</td>
+          <td>{{ "%.1f"|format(pct) }}%</td>
+          <td><span class="bar" style="width: {{ pct * 2 }}px;{% if key == 'none' %} background: var(--good);{% endif %}"></span></td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+
+    <!-- Por Regime -->
+    {% if data.by_regime %}
+    <div class="panel">
+      <h2>Por Regime</h2>
+      <table>
+        <tr><th>Regime</th><th>Decisoes</th><th>%</th></tr>
+        {% for regime, count in data.by_regime.items() %}
+        {% set pct = (count / data.total_decisions * 100) if data.total_decisions > 0 else 0 %}
+        <tr>
+          <td>{{ regime }}</td>
+          <td>{{ count }}</td>
+          <td>{{ "%.1f"|format(pct) }}%</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- Por Sessao -->
+    {% if data.by_session %}
+    <div class="panel">
+      <h2>Por Sessao</h2>
+      <table>
+        <tr><th>Sessao</th><th>Decisoes</th><th>%</th></tr>
+        {% for session, count in data.by_session.items() %}
+        {% set pct = (count / data.total_decisions * 100) if data.total_decisions > 0 else 0 %}
+        <tr>
+          <td>{{ session }}</td>
+          <td>{{ count }}</td>
+          <td>{{ "%.1f"|format(pct) }}%</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- Top motivos de bloqueio -->
+    {% if data.top_block_reasons %}
+    <div class="panel">
+      <h2>Top Motivos de Bloqueio</h2>
+      <table>
+        <tr><th>Motivo</th><th>Count</th></tr>
+        {% for item in data.top_block_reasons[:7] %}
+        <tr>
+          <td style="font-size:0.8rem;">{{ item.reason[:80] }}</td>
+          <td>{{ item.count }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>

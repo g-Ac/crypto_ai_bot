@@ -122,7 +122,7 @@ class TestBasisNegativeLong:
 # ── Dead zone (21:00-00:00 UTC) ────────────────────────────────────────
 
 class TestDeadZone:
-    """Dead zone filtra sinais com score < 80."""
+    """Dead zone filtra sinais com score < 60."""
 
     def test_dead_zone_low_score_filtered(self, engine):
         data = _make_market_data(basis_pct=0.06, session="dead")
@@ -131,12 +131,25 @@ class TestDeadZone:
 
         # Basis just above threshold + dead zone session score = 0 -> low total
         assert sig.metadata["score_session"] == 0
-        # Should be filtered because score < 80 in dead zone
+        # Should be filtered because score < 60 in dead zone
         assert sig.valid is False
         assert "Dead zone" in sig.metadata["filter_reason"]
 
+    def test_dead_zone_moderate_score_passes(self, engine):
+        """Moderate basis in dead zone passes with score >= 60."""
+        data = _make_market_data(basis_pct=0.15, session="dead")
+        # 15:50 UTC -> 10min to 16:00 funding
+        now = datetime(2026, 4, 8, 15, 50, tzinfo=timezone.utc)
+        sig = engine.analyze(
+            "BTCUSDT", data, regime="TRENDING", now_utc=now, prev_basis_pct=0.10,
+        )
+
+        # mag~28 + velocity=25 + session=0 + funding=20 = ~73 >= 60
+        assert sig.metadata["score_total"] >= 60
+        assert sig.valid is True
+
     def test_dead_zone_high_score_passes(self, engine):
-        """Extreme basis in dead zone can still pass if score >= 80."""
+        """Extreme basis in dead zone passes with score >= 60."""
         data = _make_market_data(basis_pct=0.20, session="dead")
         # 23:50 UTC -> 10min to midnight funding
         now = datetime(2026, 4, 8, 23, 50, tzinfo=timezone.utc)
@@ -144,12 +157,9 @@ class TestDeadZone:
             "BTCUSDT", data, regime="TRENDING", now_utc=now, prev_basis_pct=0.15,
         )
 
-        total = sig.metadata["score_total"]
-        # mag=35 + velocity=25 + session=0 + funding=20 = 80
-        if total >= 80:
-            assert sig.valid is True
-        else:
-            assert sig.valid is False
+        # mag=35 + velocity=25 + session=0 + funding=20 = 80 >= 60
+        assert sig.metadata["score_total"] >= 60
+        assert sig.valid is True
 
     def test_session_classification(self, engine):
         dead = datetime(2026, 4, 8, 22, 30, tzinfo=timezone.utc)

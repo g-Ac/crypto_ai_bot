@@ -143,18 +143,20 @@ class LiquidationEngine:
 
         # Cenario 1: Cascata de liquidacoes SHORT -> LONG
         # Shorts sendo liquidados = preco subindo forcado, momentum long
+        # OI > 0 = dinheiro novo entrando, OU liq muito forte confirma cascata
         if liq_vol_short > LIQUIDATION_MIN_USD and liq_vol_short > liq_vol_long * 1.5:
-            if oi_change_1h > 0:  # OI aumentando = dinheiro novo entrando
+            if oi_change_1h > 0 or liq_vol_short > 200_000:
                 direction = Direction.LONG
                 signal_subtype = "cascade"
                 signal_reasons.append(
-                    f"Cascata SHORT: ${liq_vol_short:.0f} liquidados, OI +{oi_change_1h:.2f}%"
+                    f"Cascata SHORT: ${liq_vol_short:.0f} liquidados, OI {oi_change_1h:+.2f}%"
                 )
 
         # Cenario 2: Cascata de liquidacoes LONG -> SHORT
         # Longs sendo liquidados = preco caindo forcado, momentum short
+        # OI <= 0 = posicoes fechando, OU liq muito forte confirma cascata
         if liq_vol_long > LIQUIDATION_MIN_USD and liq_vol_long > liq_vol_short * 1.5:
-            if oi_change_1h <= 0:  # OI diminuindo ou estavel
+            if oi_change_1h <= 0 or liq_vol_long > 200_000:
                 direction = Direction.SHORT
                 signal_subtype = "cascade"
                 signal_reasons.append(

@@ -16,14 +16,14 @@ from pathlib import Path
 
 # Lazy imports to avoid side effects on import
 from runtime_config import AGENT_STATE_FILE
-from config import ROUND_TRIP_FEE_PCT
+from config import ROUND_TRIP_FEE_PCT, BINANCE_SPOT_TICKER_URL
 import database as db
 
 
 def get_current_prices(symbols: list[str]) -> dict[str, float]:
     """Fetch current prices from Binance."""
     try:
-        resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=5)
+        resp = requests.get(BINANCE_SPOT_TICKER_URL, timeout=5)
         resp.raise_for_status()
         all_prices = {item["symbol"]: float(item["price"]) for item in resp.json()}
         return {s: all_prices[s] for s in symbols if s in all_prices}

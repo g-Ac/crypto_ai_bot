@@ -660,8 +660,12 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
         state["total_pnl_usd"] = state.get("total_pnl_usd", 0.0) + pnl_usd
         state["total_trades"] += 1
 
-        # Classificar win/loss pelo P&L real (incluindo fees)
-        if pnl_pct > 0:
+        # Classificar win/loss pelo P&L TOTAL do trade (TP1 parcial + fechamento)
+        tp1_pnl_usd = 0.0
+        if tp1_hit:
+            tp1_pnl_usd = pos.get("tp1_pnl_pct", 0.0) * (pos["position_size_usd"] * 0.5 / 100)
+        total_trade_pnl_usd = pnl_usd + tp1_pnl_usd
+        if total_trade_pnl_usd > 0:
             state["wins"] += 1
         else:
             state["losses"] += 1
@@ -671,11 +675,15 @@ def _check_open_positions(state: dict, symbol: str, df_1m: Optional[pd.DataFrame
             update_cooldown_on_close(state, symbol, CONFIG)
 
         # Historico
+        total_trade_pnl_pct = pnl_pct
+        if tp1_hit:
+            total_trade_pnl_pct = (tp1_pnl_usd + pnl_usd) / pos["position_size_usd"] * 100
         state.setdefault("history", []).append({
             "symbol": symbol,
             "direction": direction,
-            "pnl_pct": round(pnl_pct, 2),
+            "pnl_pct": round(total_trade_pnl_pct, 2),
             "exit_reason": hit,
+            "tp1_hit": tp1_hit,
             "timestamp": datetime.now().isoformat(),
         })
         state["history"] = state["history"][-20:]
@@ -932,12 +940,20 @@ def _open_position(
     return msg
 
 
-def _get_prev_basis(symbol: str) -> Optional[float]:
-    """Busca basis_spread_pct do ciclo ANTERIOR (penultimo registro).
+# Cache em memoria do basis anterior por symbol — garante que velocity
+# score no M3 funcione desde o 2o ciclo, sem depender de query ao DB.
+_prev_basis_cache: dict[str, float] = {}
 
-    O registro mais recente (OFFSET 0) e do ciclo atual, ja inserido em
-    main.py antes de process_scalping rodar.  Precisamos do OFFSET 1.
+
+def _get_prev_basis(symbol: str) -> Optional[float]:
+    """Busca basis_spread_pct do ciclo ANTERIOR.
+
+    Tenta primeiro o cache em memoria (preenchido ciclo a ciclo),
+    depois fallback para query ao DB (penultimo registro).
     """
+    cached = _prev_basis_cache.get(symbol)
+    if cached is not None:
+        return cached
     try:
         conn = db._get_conn()
         try:
@@ -1135,6 +1151,11 @@ def process_scalping(symbols: list, open_new: bool = True, results: Optional[lis
                 candles_5m=df_5m,
                 prev_basis_pct=prev_basis,
             )
+
+            # Gravar basis atual no cache para o proximo ciclo
+            if micro and micro.get("basis_spread_pct") is not None:
+                _prev_basis_cache[symbol] = micro["basis_spread_pct"]
+
             force_entry_applied = False
             opportunity_detected = any(item.valid for item in (confluence.signals or []))
 

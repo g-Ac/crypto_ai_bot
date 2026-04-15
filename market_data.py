@@ -233,10 +233,12 @@ def _get_proxy_liquidations(symbol: str, limit: int = 100) -> Dict:
         count += 1
 
         is_maker_buyer = trade.get("m", False)
+        # m=True → maker was buyer → taker SOLD → pressao de venda (short)
+        # m=False → maker was seller → taker BOUGHT → pressao de compra (long)
         if is_maker_buyer:
-            vol_long += notional
-        else:
             vol_short += notional
+        else:
+            vol_long += notional
 
     result = {
         "liquidation_vol_long": round(vol_long, 2),

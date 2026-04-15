@@ -42,7 +42,7 @@ from database import (
 )
 from telegram_commands import is_paused, _set_paused
 from daily_report import calc_daily_stats, get_capital_status
-from config import PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL, SCALPING_INITIAL_CAPITAL, DASHBOARD_USER, DASHBOARD_PASS
+from config import PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL, SCALPING_INITIAL_CAPITAL, DASHBOARD_USER, DASHBOARD_PASS, BINANCE_SPOT_TICKER_URL
 from scalping_research import build_scalping_scorer_report, export_outcomes_dataset
 from signal_types import ScalpingConfig
 from runtime_config import (
@@ -61,7 +61,11 @@ from runtime_config import (
 )
 
 APP_ROOT = str(APP_DIR)
-app = Flask(__name__, template_folder=os.path.join(APP_ROOT, "templates"))
+app = Flask(__name__, template_folder=os.path.join(APP_ROOT, "templates"),
+            static_folder=os.path.join(APP_ROOT, "static"))
+# Flask cacheia templates em memoria quando debug=False. Sem auto-reload,
+# editar templates exige restart do servico — bug silencioso dificil de cacar.
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 # ── HTTP Basic Auth para rotas POST (controle) ──────────────────────────────
 # Protege endpoints que mudam estado (pause/resume).
@@ -122,16 +126,32 @@ def _safe_int(value, default=0):
         return default
 
 
+_json_cache = {}
+_json_cache_ts = 0
+
+
 def _read_json(path, default=None):
+    global _json_cache_ts
     if default is None:
         default = {}
-    if not os.path.isfile(path):
-        return default
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
+    # Per-request cache: invalidate after 2s to avoid stale reads across requests
+    now = time.monotonic()
+    if now - _json_cache_ts > 2:
+        _json_cache.clear()
+        _json_cache_ts = now
+    str_path = str(path)
+    if str_path in _json_cache:
+        return _json_cache[str_path]
+    if not os.path.isfile(str_path):
+        result = default
+    else:
+        try:
+            with open(str_path, "r", encoding="utf-8") as f:
+                result = json.load(f)
+        except Exception:
+            result = default
+    _json_cache[str_path] = result
+    return result
 
 
 def _build_system_leaderboard(capital: dict, stats_today: dict, metrics_per_system: dict) -> list[dict]:
@@ -331,6 +351,12 @@ def _build_runtime_links(host_value=None, scheme="http"):
 
 def _build_comparison_payload(left=None, right=None, days=1):
     instances = _discover_runtime_instances()
+    # Sanitize: only allow alphanumeric, dash, underscore, dot (no path traversal)
+    _SLUG_RE = re.compile(r'^[a-zA-Z0-9._-]+$')
+    if left and not _SLUG_RE.match(left):
+        return {"ok": False, "error": f"Invalid instance ID: {left}", "instances": [], "query": {}}
+    if right and not _SLUG_RE.match(right):
+        return {"ok": False, "error": f"Invalid instance ID: {right}", "instances": [], "query": {}}
     left, right = _default_compare_pair(instances, left=left, right=right)
     days = max(1, min(_safe_int(days, 1), 30))
     known_ids = {item["bot_id"] for item in instances}
@@ -594,6 +620,18 @@ def _normalize_scalping_trade(trade):
 
 
 def _get_scalping_history(days=None, limit=100):
+    # Primary source: database (authoritative, all trades)
+    from database import get_scalping_trades
+    db_days = days if (days is not None and days > 0) else 30
+    db_rows = get_scalping_trades(days=db_days, limit=limit or 500)
+
+    if db_rows:
+        if days == 0:
+            today_str = date.today().isoformat()
+            db_rows = [r for r in db_rows if (r.get("timestamp") or "")[:10] == today_str]
+        return db_rows
+
+    # Fallback: state.json history (legacy, limited to 20 entries)
     scalping_state = _read_json(SCALPING_STATE_FILE, {})
     history = scalping_state.get("history", [])
     if not history:
@@ -653,6 +691,8 @@ def _compute_trade_metrics(trades):
 
     max_drawdown_pct = 0
     if capitals:
+        # Trades arrive newest-first; drawdown needs chronological (oldest-first)
+        capitals = list(reversed(capitals))
         peak = capitals[0]
         for capital in capitals:
             if capital > peak:
@@ -714,7 +754,7 @@ def _get_market_prices(symbols_needed):
         }
 
     try:
-        resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=2)
+        resp = requests.get(BINANCE_SPOT_TICKER_URL, timeout=2)
         if resp.status_code == 200:
             prices = {
                 item["symbol"]: _safe_float(item["price"])
@@ -922,8 +962,10 @@ def _get_recent_logs(source="main", lines=30):
         log_file = os.path.join(logs_dir, "scalping.log")
     elif source == "pump":
         log_file = os.path.join(logs_dir, f"pump_scanner_{today}.log")
-    else:
+    elif re.match(r'^[a-zA-Z0-9_-]+$', source):
         log_file = os.path.join(logs_dir, f"{source}.log")
+    else:
+        return []
 
     if not os.path.isfile(log_file):
         return []
@@ -961,6 +1003,7 @@ def _get_live_positions():
                 "entry_price": _safe_float(pos.get("entry_price")),
                 "sl_price":    pos.get("sl_price"),
                 "tp_price":    pos.get("tp_price"),
+                "position_size_usd": _safe_float(pos.get("position_size_usd") or pos.get("allocation")),
             }
             if system == "Agent" and "analyst_confidence" in pos:
                 entry["analyst_confidence"] = pos["analyst_confidence"]
@@ -1333,13 +1376,54 @@ def _build_status(include_logs=True, include_trades=True):
     total_curve_peak = max((point["pnl"] for point in total_chart), default=0)
     best_system_key = max(capital.keys(), key=lambda key: capital[key]["ret"])
 
+    # Week PnL: soma P&L dos ultimos 7 dias (hoje + 6 anteriores)
+    seven_days_ago = (date.today() - timedelta(days=6)).isoformat()
+    week_pnl_usd = 0.0
+    for sys_chart in [paper_chart, agent_chart, pump_chart, scalping_chart]:
+        if not sys_chart:
+            continue
+        before = [p for p in sys_chart if p["day"] < seven_days_ago]
+        base = before[-1]["pnl"] if before else 0
+        week_pnl_usd += sys_chart[-1]["pnl"] - base
+
+    # Exposure: soma de position_size_usd / portfolio_value
+    total_notional = sum(_safe_float(p.get("position_size_usd")) for p in positions)
+    exposure_pct = round(total_notional / portfolio_value * 100, 2) if portfolio_value else 0
+
+    # Last trade timestamp (mais recente entre todos os sistemas)
+    # Normaliza formatos mistos (isoformat "T" vs strftime espaco) antes de comparar
+    def _norm_ts(ts):
+        """Normaliza timestamp para formato comparavel YYYY-MM-DD HH:MM:SS."""
+        if not ts:
+            return ""
+        return ts.replace("T", " ").split(".")[0]
+
+    last_trade_ts = None
+    _best_norm = ""
+    all_recent = paper_today + agent_today + pump_today + scalping_today
+    for t in all_recent:
+        ts = t.get("timestamp") or ""
+        ts_norm = _norm_ts(ts)
+        if ts_norm and ts_norm > _best_norm:
+            _best_norm = ts_norm
+            last_trade_ts = ts_norm
+    if not last_trade_ts and scalping_trades_30d:
+        for t in scalping_trades_30d:
+            ts = _norm_ts(t.get("timestamp", ""))
+            if ts and ts > (_best_norm or ""):
+                last_trade_ts = ts
+                _best_norm = ts
+
     summary = {
         "portfolio_value": round(portfolio_value, 2),
         "portfolio_ret": _ret(portfolio_value, total_initial_capital),
         "today_pnl_usd": round(sum(_safe_float(item.get("pnl_usd")) for item in stats_today.values()), 2),
+        "week_pnl_usd": round(week_pnl_usd, 2),
         "curve_current": round(total_curve_current, 2),
         "curve_peak": round(total_curve_peak, 2),
         "curve_drawdown": round(total_curve_peak - total_curve_current, 2),
+        "exposure_pct": exposure_pct,
+        "last_trade_ts": last_trade_ts,
         "best_system": {
             "key": best_system_key,
             "ret": capital[best_system_key]["ret"],
@@ -1398,6 +1482,23 @@ def _build_status(include_logs=True, include_trades=True):
 
 @app.route("/")
 def index():
+    """Dashboard V2 — novo frontend."""
+    return render_template("dashboard.html", active_page="dashboard")
+
+
+@app.route("/analytics")
+def analytics_page():
+    return render_template("analytics.html", active_page="analytics")
+
+
+@app.route("/system")
+def system_page():
+    return render_template("system.html", active_page="system")
+
+
+@app.route("/legacy")
+def legacy_index():
+    """Dashboard V1 — mantido para fallback."""
     status = _build_status(include_logs=True, include_trades=True)
     runtime_links = _build_runtime_links(request.host, request.scheme)
     default_left, default_right = _default_compare_pair(runtime_links)
@@ -1574,7 +1675,14 @@ def api_trades():
 
     if system == "scalping":
         from database import get_scalping_trades
-        trades = get_scalping_trades(days=days, limit=150)
+        trades = get_scalping_trades(days=days, limit=200)
+        # Filtros opcionais para scalping
+        regime = request.args.get("regime", "").upper()
+        session = request.args.get("session", "").lower()
+        if regime:
+            trades = [t for t in trades if (t.get("market_regime") or "").upper() == regime]
+        if session:
+            trades = [t for t in trades if (t.get("session_bucket") or "").lower() == session]
     else:
         table = table_map.get(system)
         if not table:
@@ -1582,6 +1690,45 @@ def api_trades():
         trades = get_trades_range(table, days=days)
 
     return jsonify({"trades": trades})
+
+
+@app.route("/api/processes")
+def api_processes():
+    """Lista processos do bot com PID, RAM, status via psutil."""
+    try:
+        import psutil
+    except ImportError:
+        return jsonify({"processes": [], "error": "psutil not installed"})
+
+    TARGETS = {
+        "supervisor.py": "Supervisor",
+        "main.py": "Main Bot",
+        "pump_scanner.py": "Pump Scanner",
+        "dashboard_server.py": "Dashboard",
+    }
+    result = []
+    for proc in psutil.process_iter(["pid", "name", "cmdline", "memory_info", "status", "create_time"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            cmd_str = " ".join(cmdline)
+            for script, label in TARGETS.items():
+                if script in cmd_str:
+                    mem = proc.info.get("memory_info")
+                    ram_mb = round(mem.rss / 1024 / 1024, 1) if mem else 0
+                    uptime_s = time.time() - (proc.info.get("create_time") or time.time())
+                    result.append({
+                        "name": label,
+                        "script": script,
+                        "pid": proc.info["pid"],
+                        "ram_mb": ram_mb,
+                        "status": proc.info.get("status", "unknown"),
+                        "uptime_s": round(uptime_s),
+                    })
+                    break
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    result.sort(key=lambda x: x["script"])
+    return jsonify({"processes": result})
 
 
 @app.route("/api/logs")
@@ -1712,6 +1859,302 @@ def api_signal_subtypes():
         "daily": daily,
         "recent_signals": recent_signals,
     })
+
+
+# ── EQUITY CURVE ──────────────────────────────────────────────────────────────
+
+@app.route("/api/equity")
+def api_equity():
+    """Equity curve data por sistema (PnL cumulativo diario)."""
+    days = max(1, min(_safe_int(request.args.get("days", "30"), 30), 90))
+
+    def _cumulative(raw):
+        result = []
+        acc = 0.0
+        for row in raw:
+            acc += _safe_float(row.get("daily_pnl", 0))
+            result.append({"day": row["day"], "pnl": round(acc, 2)})
+        return result
+
+    pump_chart = _cumulative(db.get_cumulative_pnl("pump_trades", days))
+
+    # Scalping: get_cumulative_pnl nao funciona para scalping_trades (tabela
+    # nao esta na whitelist de _validate_table), entao query direto
+    from database import _get_conn
+    conn = _get_conn()
+    try:
+        scalping_raw = [dict(r) for r in conn.execute(
+            "SELECT date(timestamp) as day, SUM(pnl_usd) as daily_pnl "
+            "FROM scalping_trades WHERE timestamp >= date('now', ?) "
+            "AND exit_reason != 'open' "
+            "GROUP BY day ORDER BY day",
+            (f"-{days} days",),
+        ).fetchall()]
+    finally:
+        conn.close()
+    scalping_chart = _cumulative(scalping_raw)
+
+    return jsonify({
+        "days": days,
+        "pump": pump_chart,
+        "scalping": scalping_chart,
+    })
+
+
+@app.route("/equity")
+def equity_page():
+    return render_template("equity.html", active_page="equity")
+
+
+# ── FUNNEL ────────────────────────────────────────────────────────────────────
+
+@app.route("/api/funnel")
+def api_funnel():
+    hours = max(1, min(_safe_int(request.args.get("hours", "24"), 24), 168))
+    from diagnose_funnel import get_funnel_data
+    return jsonify(get_funnel_data(hours))
+
+
+@app.route("/scalping/funnel")
+def scalping_funnel_page():
+    hours = max(1, min(_safe_int(request.args.get("hours", "24"), 24), 168))
+    from diagnose_funnel import get_funnel_data
+    data = get_funnel_data(hours)
+    data["runtime_links"] = _build_runtime_links(request.host, request.scheme)
+    data["instance"] = runtime_metadata()
+    return render_template("scalping_funnel.html", funnel=data)
+
+
+# ── PIP-BOY SSE ──────────────────────────────────────────────────────────────
+
+@app.route("/stream/logs")
+def stream_logs():
+    """SSE: real-time log stream. Each line sent as 'log' event."""
+    source = request.args.get("source", "main")
+    ALLOWED = {"main", "scalping", "pump", "supervisor", "dashboard"}
+    if source not in ALLOWED:
+        source = "main"
+
+    log_path = _resolve_log_path(source)
+
+    def generate():
+        try:
+            with open(log_path, "r", errors="replace") as f:
+                f.seek(0, 2)
+                while True:
+                    line = f.readline()
+                    if line:
+                        clean = line.rstrip()
+                        if clean:
+                            yield f"event: log\ndata: {clean}\n\n"
+                    else:
+                        time.sleep(0.5)
+        except FileNotFoundError:
+            yield f"event: log\ndata: > LOG FILE NOT FOUND: {source}\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _resolve_log_path(source: str) -> str:
+    """Resolve log source name to file path."""
+    log_map = {
+        "main": "main_bot.log",
+        "scalping": "main_bot.log",
+        "pump": "pump_scanner.log",
+        "supervisor": "supervisor.log",
+        "dashboard": "dashboard.log",
+    }
+    filename = log_map.get(source, "main_bot.log")
+    return os.path.join(str(LOG_DIR), filename)
+
+
+# ── PIP-BOY PAGES ────────────────────────────────────────────────────────────
+
+@app.route("/pip/")
+@app.route("/pip/status")
+def pip_status():
+    return render_template("pipboy/status.html", active_tab="status")
+
+
+@app.route("/pip/trades")
+def pip_trades():
+    return render_template("pipboy/trades.html", active_tab="trades")
+
+
+@app.route("/pip/analysis")
+def pip_analysis():
+    return render_template("pipboy/analysis.html", active_tab="analysis")
+
+
+@app.route("/pip/logs")
+def pip_logs():
+    return render_template("pipboy/logs.html", active_tab="logs")
+
+
+@app.route("/pip/system")
+def pip_system():
+    return render_template("pipboy/system.html", active_tab="system")
+
+
+# ── PIP-BOY PARTIALS ─────────────────────────────────────────────────────────
+
+@app.route("/pip/partial/ticker")
+def pip_partial_ticker():
+    status = _build_status(include_logs=False, include_trades=False)
+    return render_template("pipboy/partials/ticker.html", s=status)
+
+
+@app.route("/pip/partial/kpis")
+def pip_partial_kpis():
+    status = _build_status(include_logs=False, include_trades=False)
+    return render_template("pipboy/partials/kpi_cards.html", s=status)
+
+
+@app.route("/pip/partial/positions")
+def pip_partial_positions():
+    status = _build_status(include_logs=False, include_trades=False)
+    return render_template("pipboy/partials/positions.html",
+                           positions=status["positions"])
+
+
+@app.route("/pip/partial/status_bar")
+def pip_partial_status_bar():
+    status = _build_status(include_logs=False, include_trades=False)
+    return render_template("pipboy/partials/status_bar.html", s=status)
+
+
+@app.route("/pip/partial/equity")
+def pip_partial_equity():
+    from ascii_charts import render_equity_curve
+    system = request.args.get("system", "total")
+    days = _safe_int(request.args.get("days", "30"), 30)
+    status = _build_status(include_logs=False, include_trades=False)
+    chart_data = status["chart"].get(system, status["chart"].get("total", []))
+    if days and chart_data:
+        chart_data = chart_data[-days:]
+    ascii_chart = render_equity_curve(chart_data, width=min(50, len(chart_data) or 1))
+    return render_template("pipboy/partials/equity_chart.html",
+                           chart=ascii_chart, system=system, days=days)
+
+
+@app.route("/pip/partial/trades")
+def pip_partial_trades():
+    system = request.args.get("system", "scalping")
+    days = _safe_int(request.args.get("days", "7"), 7)
+    page = _safe_int(request.args.get("page", "1"), 1)
+    per_page = 15
+
+    if system == "scalping":
+        from database import get_scalping_trades
+        all_trades = get_scalping_trades(days=days, limit=500)
+    else:
+        table_map = {"paper": "paper_trades", "agent": "agent_trades", "pump": "pump_trades"}
+        table = table_map.get(system, "pump_trades")
+        all_trades = get_trades_range(table, days=days)
+
+    total = len(all_trades)
+    start = (page - 1) * per_page
+    trades = all_trades[start:start + per_page]
+    total_pages = (total + per_page - 1) // per_page
+
+    return render_template("pipboy/partials/trade_log.html",
+                           trades=trades, system=system, days=days,
+                           page=page, total_pages=total_pages)
+
+
+@app.route("/pip/partial/daily_pnl")
+def pip_partial_daily_pnl():
+    from ascii_charts import render_daily_pnl
+    days = _safe_int(request.args.get("days", "14"), 14)
+    status = _build_status(include_logs=False, include_trades=False)
+    total_chart = status["chart"].get("total", [])
+    daily = []
+    for i, point in enumerate(total_chart):
+        prev_pnl = total_chart[i - 1]["pnl"] if i > 0 else 0
+        daily.append({"day": point["day"], "pnl": point["pnl"] - prev_pnl})
+    daily = daily[-days:]
+    ascii_chart = render_daily_pnl(daily, width=days)
+    return render_template("pipboy/partials/daily_pnl.html",
+                           chart=ascii_chart, days=days)
+
+
+@app.route("/pip/partial/funnel")
+def pip_partial_funnel():
+    hours = _safe_int(request.args.get("hours", "24"), 24)
+    days = max(1, hours // 24) if hours >= 24 else 1
+    funnel = get_scalping_funnel_stats(days=days)
+    return render_template("pipboy/partials/funnel.html",
+                           funnel=funnel, hours=hours)
+
+
+@app.route("/pip/partial/gauges")
+def pip_partial_gauges():
+    from database import get_scalping_trades
+    trades = get_scalping_trades(days=30, limit=500)
+
+    by_regime = {}
+    for t in trades:
+        regime = t.get("market_regime", "UNKNOWN") or "UNKNOWN"
+        if regime not in by_regime:
+            by_regime[regime] = {"wins": 0, "losses": 0, "total": 0, "pnl": 0.0}
+        by_regime[regime]["total"] += 1
+        pnl = float(t.get("pnl_pct", 0) or 0)
+        by_regime[regime]["pnl"] += pnl
+        if pnl > 0:
+            by_regime[regime]["wins"] += 1
+        else:
+            by_regime[regime]["losses"] += 1
+
+    by_session = {}
+    for t in trades:
+        session = t.get("session_bucket", "unknown") or "unknown"
+        if session not in by_session:
+            by_session[session] = {"wins": 0, "losses": 0, "total": 0, "pnl": 0.0}
+        by_session[session]["total"] += 1
+        pnl = float(t.get("pnl_pct", 0) or 0)
+        by_session[session]["pnl"] += pnl
+        if pnl > 0:
+            by_session[session]["wins"] += 1
+        else:
+            by_session[session]["losses"] += 1
+
+    return render_template("pipboy/partials/gauges.html",
+                           by_regime=by_regime, by_session=by_session)
+
+
+@app.route("/pip/partial/scorer")
+def pip_partial_scorer():
+    days = _safe_int(request.args.get("days", "30"), 30)
+    payload = _build_scalping_scorer_payload(days=str(days), limit="5000")
+    return render_template("pipboy/partials/scorer.html", scorer=payload)
+
+
+@app.route("/pip/partial/errors")
+def pip_partial_errors():
+    logs = _get_recent_logs(source="main", lines=200)
+    errors = [l for l in logs if "ERROR" in l.upper() or "ERR" in l.upper()]
+    warnings = [l for l in logs if "WARNING" in l.upper() or "WARN" in l.upper()]
+    return render_template("pipboy/partials/error_summary.html",
+                           errors=errors[-20:], warnings=warnings[-20:],
+                           error_count=len(errors), warning_count=len(warnings))
+
+
+@app.route("/pip/partial/health")
+def pip_partial_health():
+    health = _get_system_health()
+    return render_template("pipboy/partials/health_meters.html", health=health)
+
+
+@app.route("/pip/partial/processes")
+def pip_partial_processes():
+    resp = api_processes()
+    data = resp.get_json()
+    return render_template("pipboy/partials/processes.html",
+                           processes=data.get("processes", []))
 
 
 # ── MAIN ─────────────────────────────────────────────────────────────────────

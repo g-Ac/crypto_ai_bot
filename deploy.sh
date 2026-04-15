@@ -11,7 +11,7 @@ echo "=== [1/4] Commit e push para o GitHub ==="
 cd "$(dirname "$0")"
 
 # Stage apenas arquivos de codigo e configuracao — nunca estado, banco ou segredos
-git add *.py templates/ deploy.sh .gitignore requirements.txt 2>/dev/null || true
+git add *.py templates/ deploy.sh ci.sh .gitignore .env.example requirements.txt requirements-dev.txt docs/ README.md 2>/dev/null || true
 
 # Safety net: aborta se arquivos sensiveis foram staged acidentalmente
 STAGED_FILES=$(git diff --cached --name-only)

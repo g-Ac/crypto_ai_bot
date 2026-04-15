@@ -332,7 +332,10 @@ def process_momentum_cycle(
     new_candle_symbols: set[str] = set()
     last_candle_ts = state.get("last_candle_ts", {})
 
-    # Phase 1: evaluate signals per symbol
+    # Phase 1: evaluate new 15m candle signals per symbol.
+    # The bot loop runs every 5m, but momentum decisions are candle-close based.
+    # Re-evaluating the same 15m candle would duplicate decision logs and distort
+    # smoke-test evidence, so we only score/log on genuinely new 15m closes.
     for symbol in symbols:
         candles = candle_fn(symbol, "15m", 100)
         if candles is None or len(candles) == 0:
@@ -351,6 +354,8 @@ def process_momentum_cycle(
         if candle_ts != last_candle_ts.get(symbol, ""):
             new_candle_symbols.add(symbol)
             last_candle_ts[symbol] = candle_ts
+        else:
+            continue
 
         regime_data = regime_fn(symbol)
         regime = (

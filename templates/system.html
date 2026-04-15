@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+{% block title %}System{% endblock %}
+
+{% block head %}
+<style>
+.proc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.proc-row:hover { background: rgba(255,255,255,.02); }
+.proc-name { min-width: 130px; font-weight: 600; font-size: .85rem; }
+.proc-pid  { min-width: 60px; }
+.proc-ram  { min-width: 70px; text-align: right; }
+.proc-up   { min-width: 80px; text-align: right; color: var(--text-3); }
+
+.sys-info-row td { padding: var(--sp-2) var(--sp-3); }
+.sys-info-row td:first-child { color: var(--text-3); width: 120px; }
+
+@media (max-width: 768px) {
+  .proc-row { flex-wrap: wrap; gap: var(--sp-1); }
+  .proc-pid, .proc-up { min-width: auto; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- SVG filter for gauge glow -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <filter id="gaugeGlow">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+</svg>
+
+<!-- Health Gauges -->
+<section class="gauge-strip mb-3" style="position:relative">
+  <span class="freshness-chip" id="fc-health" style="position:absolute;top:4px;right:4px"></span>
+  <div class="gauge-card">
+    <div class="gauge-ring">
+      <svg width="80" height="80">
+        <circle class="bg" cx="40" cy="40" r="35"/>
+        <circle class="fill" cx="40" cy="40" r="35" id="cpu-fill"/>
+      </svg>
+      <span class="gauge-pct mono" id="cpu-pct">---</span>
+    </div>
+    <div class="gauge-label">CPU</div>
+    <div class="gauge-detail" id="cpu-detail">---</div>
+  </div>
+
+  <div class="gauge-card">
+    <div class="gauge-ring">
+      <svg width="80" height="80">
+        <circle class="bg" cx="40" cy="40" r="35"/>
+        <circle class="fill" cx="40" cy="40" r="35" id="ram-fill"/>
+      </svg>
+      <span class="gauge-pct mono" id="ram-pct">---</span>
+    </div>
+    <div class="gauge-label">RAM</div>
+    <div class="gauge-detail" id="ram-detail">---</div>
+  </div>
+
+  <div class="gauge-card">
+    <div class="gauge-ring">
+      <svg width="80" height="80">
+        <circle class="bg" cx="40" cy="40" r="35"/>
+        <circle class="fill" cx="40" cy="40" r="35" id="disk-fill"/>
+      </svg>
+      <span class="gauge-pct mono" id="disk-pct">---</span>
+    </div>
+    <div class="gauge-label">Disk</div>
+    <div class="gauge-detail" id="disk-detail">---</div>
+  </div>
+
+  <div class="gauge-card">
+    <div class="gauge-ring">
+      <svg width="80" height="80">
+        <circle class="bg" cx="40" cy="40" r="35"/>
+        <circle class="fill" cx="40" cy="40" r="35" id="temp-fill"/>
+      </svg>
+      <span class="gauge-pct mono" id="temp-pct">---</span>
+    </div>
+    <div class="gauge-label">Temp</div>
+    <div class="gauge-detail" id="temp-detail">---</div>
+  </div>
+</section>
+
+<!-- Processes + Bot Status -->
+<section class="grid-2 mb-3">
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Processes</h3>
+      <span class="badge" id="proc-count">0</span>
+    </div>
+    <div class="panel-body flush" id="proc-list">
+      <div class="skeleton skeleton-chart" style="height:60px;margin:var(--sp-3)"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Bot Status</h3>
+      <span class="status-dot" id="sys-status-dot"></span>
+    </div>
+    <div class="panel-body flush">
+      <table style="width:100%">
+        <tr class="sys-info-row"><td>Status</td><td class="mono" id="sys-overall">---</td></tr>
+        <tr class="sys-info-row"><td>Last cycle</td><td class="mono" id="sys-last-cycle">---</td></tr>
+        <tr class="sys-info-row"><td>Errors today</td><td class="mono" id="sys-errors">---</td></tr>
+        <tr class="sys-info-row"><td>Uptime</td><td class="mono" id="sys-uptime">---</td></tr>
+        <tr class="sys-info-row"><td>Instance</td><td class="mono" id="sys-instance">---</td></tr>
+        <tr class="sys-info-row"><td>Version</td><td class="mono" id="sys-version">---</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- Circuit Breakers (LED cards) -->
+<section class="mb-3">
+  <div class="flex items-center gap-2 mb-2">
+    <h3 style="font-size:.8rem;font-weight:600;color:var(--text-2)">Circuit Breakers</h3>
+  </div>
+  <div class="led-grid" id="cb-grid">
+    <div class="led-card skeleton skeleton-chart" style="height:80px"></div>
+    <div class="led-card skeleton skeleton-chart" style="height:80px"></div>
+  </div>
+</section>
+
+<!-- Log Viewer -->
+<section class="panel">
+  <div class="panel-header">
+    <h3>Logs</h3>
+    <div class="flex items-center gap-2">
+      <div class="btn-group" id="log-source-btns">
+        <button class="btn active" data-source="main">Main</button>
+        <button class="btn" data-source="pump">Pump</button>
+        <button class="btn" data-source="scalping">Scalping</button>
+        <button class="btn" data-source="supervisor">Supervisor</button>
+      </div>
+      <button class="btn" id="log-autoscroll-btn" title="Toggle auto-scroll">&#8595; Auto</button>
+    </div>
+  </div>
+  <div class="panel-body flush" style="padding:0 var(--sp-3) var(--sp-3)">
+    <input class="log-filter" id="log-filter" placeholder="Filter logs (regex)..." type="text">
+    <div class="log-viewer" id="log-viewer">
+      <div class="skeleton skeleton-text"></div>
+      <div class="skeleton skeleton-text" style="width:80%"></div>
+      <div class="skeleton skeleton-text" style="width:60%"></div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const CIRC = 2 * Math.PI * 35; // r=35 from CSS
+  let logSource = 'main';
+  let autoScroll = true;
+  let logFilter = '';
+  let _allLogLines = [];
+
+  /* ── Gauge helper ──────────────────────────────────────── */
+  function setGauge(fillId, pctId, detailId, value, detail, max) {
+    max = max || 100;
+    const pct = Math.min(value / max * 100, 100);
+    const fill = document.getElementById(fillId);
+    const pctEl = document.getElementById(pctId);
+    const detailEl = document.getElementById(detailId);
+
+    if (fill) {
+      const offset = CIRC - (pct / 100 * CIRC);
+      fill.style.strokeDasharray = CIRC;
+      fill.style.strokeDashoffset = offset;
+
+      // Threshold color with glow
+      let color = 'var(--profit)';
+      if (pct >= 85) color = 'var(--loss)';
+      else if (pct >= 60) color = 'var(--warn)';
+      fill.style.stroke = color;
+    }
+    if (pctEl) pctEl.textContent = typeof value === 'number' ? Math.round(pct) + '%' : value;
+    if (detailEl) detailEl.textContent = detail || '';
+  }
+
+  /* ── Processes ─────────────────────────────────────────── */
+  async function loadProcesses() {
+    try {
+      const r = await fetch('/api/processes');
+      const data = await r.json();
+      const procs = data.processes || [];
+      const container = document.getElementById('proc-list');
+      const badge = document.getElementById('proc-count');
+      if (badge) badge.textContent = procs.length;
+
+      if (!procs.length) {
+        container.innerHTML = '<div class="text-3 text-xs" style="padding:var(--sp-3)">No processes detected</div>';
+        return;
+      }
+
+      container.innerHTML = procs.map(p => {
+        const statusCls = p.status === 'running' ? 'positive' : p.status === 'sleeping' ? 'positive' : 'negative';
+        const upStr = _fmtUptime(p.uptime_s);
+        return `<div class="proc-row">
+          <span class="status-dot ${p.status === 'running' || p.status === 'sleeping' ? 'healthy' : 'offline'}"></span>
+          <span class="proc-name">${esc(p.name)}</span>
+          <span class="proc-pid mono text-3 text-xxs">PID ${esc(p.pid)}</span>
+          <span class="proc-ram mono text-xs">${esc(p.ram_mb)} MB</span>
+          <span class="proc-up mono text-xxs">${esc(upStr)}</span>
+        </div>`;
+      }).join('');
+    } catch {}
+  }
+
+  function _fmtUptime(s) {
+    if (!s || s < 0) return '---';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 24) return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+  }
+
+  /* ── Update health from /api/status ────────────────────── */
+  async function updateHealth() {
+    const d = await fetchStatus();
+    if (!d) return;
+
+    const h = d.health || {};
+    const b = d.bot_status || {};
+
+    // Gauges
+    setGauge('cpu-fill', 'cpu-pct', 'cpu-detail',
+      typeof h.cpu_usage_pct === 'number' ? h.cpu_usage_pct : 0,
+      (h.cpu_cores || '?') + ' cores');
+
+    setGauge('ram-fill', 'ram-pct', 'ram-detail',
+      typeof h.ram_usage_pct === 'number' ? h.ram_usage_pct : 0,
+      (h.ram_used_mb || '?') + ' / ' + (h.ram_total_mb || '?') + ' MB');
+
+    setGauge('disk-fill', 'disk-pct', 'disk-detail',
+      typeof h.disk_usage_pct === 'number' ? h.disk_usage_pct : 0,
+      (h.disk_free_gb || '?') + ' GB free');
+
+    const tempC = typeof h.temperature_c === 'number' ? h.temperature_c : 0;
+    setGauge('temp-fill', 'temp-pct', 'temp-detail', tempC, '', 85);
+    const tempPctEl = document.getElementById('temp-pct');
+    if (tempPctEl) tempPctEl.textContent = tempC ? tempC.toFixed(1) + '\u00B0' : '---';
+
+    // Bot status
+    const statusDot = document.getElementById('sys-status-dot');
+    if (statusDot) statusDot.className = 'status-dot ' + (b.overall || 'offline');
+    _set('sys-overall', b.overall || '---');
+    _set('sys-last-cycle', b.last_cycle_ago || '---');
+    _set('sys-errors', b.errors_today != null ? b.errors_today : '---');
+    _set('sys-uptime', h.uptime || '---');
+    _set('sys-instance', d.instance?.bot_id || '---');
+    _set('sys-version', d.instance?.version || '---');
+
+    // Circuit breakers (LED cards)
+    renderCBs(d);
+
+    // Freshness chip for health gauges
+    setFreshness('fc-health', d.last_update ? parseBackendTs(d.last_update) : null);
+  }
+
+  function _set(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  /* ── Circuit Breakers (LED cards) ──────────────────────── */
+  function renderCBs(d) {
+    const grid = document.getElementById('cb-grid');
+    if (!grid || !d.capital) return;
+
+    const systems = [
+      { key: 'pump', label: 'Pump', icon: '&#9650;' },
+      { key: 'scalping', label: 'Scalping', icon: '&#9733;' },
+    ];
+
+    grid.innerHTML = systems.map(sys => {
+      const cap = d.capital[sys.key] || {};
+      const stats = d.stats_today?.[sys.key] || {};
+      const isTrip = !!cap.cb;
+      const cls = isTrip ? 'trip' : 'off';
+      const statusText = isTrip ? 'TRIPPED' : 'OK';
+      const statusColor = isTrip ? 'var(--loss)' : 'var(--profit)';
+      const trades = stats.count || 0;
+
+      return `<div class="led-card ${cls}">
+        <span class="led-name">${sys.label}</span>
+        <span class="led-status" style="color:${statusColor}">${statusText}</span>
+        <span class="led-ts">${trades} trades today</span>
+      </div>`;
+    }).join('');
+  }
+
+  /* ── Log viewer ────────────────────────────────────────── */
+  async function loadLogs() {
+    try {
+      const r = await fetch('/api/logs?source=' + logSource + '&lines=150');
+      const data = await r.json();
+      _allLogLines = data.logs || [];
+      renderLogs();
+    } catch {}
+  }
+
+  function renderLogs() {
+    const viewer = document.getElementById('log-viewer');
+    if (!viewer) return;
+
+    let lines = _allLogLines;
+
+    // Apply regex filter
+    if (logFilter) {
+      try {
+        const re = new RegExp(logFilter, 'i');
+        lines = lines.filter(l => re.test(l));
+      } catch { /* invalid regex, show all */ }
+    }
+
+    viewer.innerHTML = lines.map(line => {
+      let cls = 'log-info';
+      if (/\[ERRO\]|ERROR|Traceback|Exception/i.test(line)) cls = 'log-error';
+      else if (/\[AVISO\]|WARNING|WARN/i.test(line)) cls = 'log-warn';
+      else if (/DEBUG/i.test(line)) cls = 'log-debug';
+
+      const safe = esc(line);
+      const highlighted = safe
+        .replace(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/, '<span class="log-ts">$1</span>')
+        .replace(/(\d+\.\d{2,})/g, '<span style="color:var(--info)">$1</span>');
+      return `<div class="log-line ${cls}">${highlighted}</div>`;
+    }).join('');
+
+    if (autoScroll) viewer.scrollTop = viewer.scrollHeight;
+  }
+
+  // Source buttons
+  document.querySelectorAll('#log-source-btns .btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#log-source-btns .btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      logSource = btn.dataset.source;
+      loadLogs();
+    });
+  });
+
+  // Auto-scroll toggle
+  const asBtn = document.getElementById('log-autoscroll-btn');
+  if (asBtn) {
+    asBtn.addEventListener('click', () => {
+      autoScroll = !autoScroll;
+      asBtn.classList.toggle('active', autoScroll);
+    });
+  }
+
+  // Filter input
+  const filterInput = document.getElementById('log-filter');
+  if (filterInput) {
+    filterInput.addEventListener('input', e => {
+      logFilter = e.target.value;
+      renderLogs();
+    });
+  }
+
+  /* ── Boot + intervals ──────────────────────────────────── */
+  updateHealth();
+  loadProcesses();
+  loadLogs();
+  setInterval(updateHealth, 30000);
+  setInterval(loadProcesses, 30000);
+  setInterval(loadLogs, 10000);
+})();
+</script>
+{% endblock %}

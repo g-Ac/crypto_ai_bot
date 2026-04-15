@@ -1,5 +1,5 @@
 """
-Supervisor - gerencia main.py e pump_scanner.py.
+Supervisor - gerencia main.py e dashboard_server.py.
 Reinicia automaticamente se um dos bots crashar.
 Grava logs em arquivo. Notifica via Telegram.
 """
@@ -18,7 +18,6 @@ sys.path.insert(0, BOT_DIR)
 
 BOTS = [
     {"name": "main_bot",    "script": "main.py"},
-    {"name": "pump_scanner","script": "pump_scanner.py"},
     {"name": "dashboard",   "script": "dashboard_server.py"},
 ]
 
@@ -74,13 +73,17 @@ def run_bot(bot):
     log_file.write(f"{'='*50}\n\n")
     log_file.flush()
 
-    process = subprocess.Popen(
-        [PYTHON_EXECUTABLE, "-u", script],
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
-        cwd=BOT_DIR,
-        env=os.environ.copy(),
-    )
+    try:
+        process = subprocess.Popen(
+            [PYTHON_EXECUTABLE, "-u", script],
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            cwd=BOT_DIR,
+            env=os.environ.copy(),
+        )
+    except Exception:
+        log_file.close()
+        raise
     return process, log_file
 
 
@@ -169,6 +172,7 @@ def main():
                             log_files[name].close()
                         except Exception:
                             pass
+                        del log_files[name]
                     restart_counts[name] += 1
 
                     if restart_counts[name] > MAX_RESTARTS:

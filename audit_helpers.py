@@ -20,9 +20,12 @@ def get_git_sha() -> str:
     if _GIT_SHA is not None:
         return _GIT_SHA
     try:
+        from pathlib import Path
+        _app_dir = str(Path(__file__).resolve().parent)
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True, timeout=5,
+            cwd=_app_dir,
         )
         _GIT_SHA = result.stdout.strip() or "unknown"
     except Exception:

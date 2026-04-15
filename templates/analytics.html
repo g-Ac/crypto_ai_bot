@@ -1,0 +1,648 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+
+{% block head %}
+<style>
+/* ── Funnel bars ────────────────────────────────────────── */
+.funnel-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.funnel-label {
+  width: 90px;
+  font-size: .75rem;
+  color: var(--text-3);
+  text-align: right;
+  flex-shrink: 0;
+}
+.funnel-bar {
+  flex: 1;
+  height: 20px;
+  background: var(--bg-2);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.funnel-fill {
+  height: 100%;
+  border-radius: var(--r-sm);
+  transition: width .5s ease;
+}
+.funnel-count {
+  width: 80px;
+  font-size: .75rem;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Donut ──────────────────────────────────────────────── */
+.donut-section { display: flex; align-items: center; gap: var(--sp-4); }
+.donut-legend { flex: 1; }
+.donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px 0;
+  font-size: .75rem;
+}
+.donut-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.donut-legend-count { margin-left: auto; font-weight: 500; }
+
+/* ── Heatmap cells ──────────────────────────────────────── */
+td.heatmap-pos { background: var(--profit-bg); color: var(--profit); }
+td.heatmap-neg { background: var(--loss-bg); color: var(--loss); }
+td.heatmap-neutral { }
+
+/* ── Micro watchlist ────────────────────────────────────── */
+.micro-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.micro-row:hover { background: rgba(255,255,255,.02); }
+.micro-sym { min-width: 50px; font-weight: 600; font-size: .85rem; }
+.micro-vals { display: flex; gap: var(--sp-3); flex: 1; }
+.micro-val { min-width: 70px; text-align: right; font-size: .8rem; }
+.micro-signal { min-width: 60px; text-align: right; }
+
+/* ── Verdict/Rec badges ─────────────────────────────────── */
+.verdict-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: .65rem;
+  font-weight: 600;
+}
+.verdict-badge.winner  { background: var(--profit-bg); color: var(--profit); }
+.verdict-badge.loser   { background: var(--loss-bg);   color: var(--loss); }
+.verdict-badge.neutral { background: var(--bg-2);      color: var(--text-3); }
+
+.rec-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: .65rem;
+  font-weight: 600;
+}
+.rec-badge.promising { background: var(--profit-bg); color: var(--profit); }
+.rec-badge.watch     { background: var(--warn-bg);   color: var(--warn); }
+.rec-badge.avoid     { background: var(--loss-bg);   color: var(--loss); }
+
+@media (max-width: 768px) {
+  .funnel-label { width: 65px; font-size: .65rem; }
+  .funnel-count { width: 55px; font-size: .65rem; }
+  .donut-section { flex-direction: column; }
+  .micro-vals { flex-wrap: wrap; gap: var(--sp-2); }
+  .micro-val { min-width: 55px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- KPI tiles header -->
+<section class="kpi-strip mb-3">
+  <div class="kpi-item">
+    <span class="kpi-label">Decisions</span>
+    <span class="kpi-value" id="kpi-decisions">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Pass Rate</span>
+    <span class="kpi-value" id="kpi-passrate">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Top Blocker</span>
+    <span class="kpi-value" id="kpi-blocker">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Trades</span>
+    <span class="kpi-value" id="kpi-trades">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Win Rate</span>
+    <span class="kpi-value" id="kpi-wr">---</span>
+  </div>
+  <div class="kpi-item">
+    <span class="kpi-label">Period</span>
+    <div class="btn-group" id="period-btns" style="margin-top:2px">
+      <button class="btn" data-hours="6">6h</button>
+      <button class="btn active" data-hours="24">24h</button>
+      <button class="btn" data-hours="72">3d</button>
+      <button class="btn" data-hours="168">7d</button>
+    </div>
+  </div>
+</section>
+
+<!-- Row 1: Funnel + Donut -->
+<section class="grid-2 mb-3">
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Decision Funnel</h3>
+      <span class="freshness-chip" id="fc-funnel"></span>
+      <span class="text-3 text-xxs" id="funnel-total">---</span>
+    </div>
+    <div class="panel-body" id="funnel-bars">
+      <div class="skeleton skeleton-chart" style="height:80px"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Blocked By</h3>
+    </div>
+    <div class="panel-body">
+      <div class="donut-section">
+        <div class="donut-wrap">
+          <canvas id="donut-blocked" width="140" height="140"></canvas>
+          <div class="donut-center">
+            <span class="donut-value mono" id="donut-total">0</span>
+            <span class="donut-label">blocked</span>
+          </div>
+        </div>
+        <div class="donut-legend" id="donut-legend"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Row 2: Regime + Session -->
+<section class="grid-2 mb-3">
+  <div class="panel">
+    <div class="panel-header"><h3>By Regime</h3></div>
+    <div class="panel-body flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Regime</th><th style="text-align:right">Trades</th><th style="text-align:right">WR</th><th style="text-align:right">PnL</th></tr></thead>
+          <tbody id="regime-tbody">
+            <tr><td colspan="4"><div class="skeleton skeleton-text"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header"><h3>By Session</h3></div>
+    <div class="panel-body flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Session</th><th style="text-align:right">Trades</th><th style="text-align:right">WR</th><th style="text-align:right">PnL</th></tr></thead>
+          <tbody id="session-tbody">
+            <tr><td colspan="4"><div class="skeleton skeleton-text"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Row 3: Microstructure (watchlist style) -->
+<section class="panel mb-3">
+  <div class="panel-header">
+    <h3>Microstructure</h3>
+    <span class="freshness-chip" id="fc-micro"></span>
+    <span class="text-3 text-xxs" id="micro-ts">---</span>
+  </div>
+  <div class="panel-body flush" id="micro-list">
+    <div class="skeleton skeleton-chart" style="height:60px;margin:var(--sp-3)"></div>
+  </div>
+</section>
+
+<!-- Row 4: Tabs — Outcomes / Scorer / Audit -->
+<section class="panel">
+  <div class="tabs">
+    <button class="tab active" data-tab="outcomes">Outcomes</button>
+    <button class="tab" data-tab="scorer">Scorer</button>
+    <button class="tab" data-tab="audit">Audit Trail</button>
+  </div>
+  <div class="tab-content active" id="tab-outcomes">
+    <div class="panel-body flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Symbol</th><th>Dir</th><th>Verdict</th><th>Scenario</th><th style="text-align:right">5m</th><th style="text-align:right">15m</th><th style="text-align:right">30m</th></tr></thead>
+          <tbody id="outcomes-tbody">
+            <tr><td colspan="8"><div class="skeleton skeleton-text"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="tab-content" id="tab-scorer">
+    <div class="panel-body flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setup</th><th style="text-align:right">Trades</th><th style="text-align:right">WR</th><th style="text-align:right">Avg PnL</th><th style="text-align:right">Edge</th><th>Rec</th></tr></thead>
+          <tbody id="scorer-tbody">
+            <tr><td colspan="6"><div class="skeleton skeleton-text"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="tab-content" id="tab-audit">
+    <div class="panel-body flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Symbol</th><th>Outcome</th><th>Reason</th><th style="text-align:right">PnL</th><th>Flags</th></tr></thead>
+          <tbody id="audit-tbody">
+            <tr><td colspan="6"><div class="skeleton skeleton-text"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+(function() {
+  let currentHours = 24;
+  let _donutChart = null;
+
+  const DONUT_COLORS = {
+    confluence: '#5EC8FF',
+    risk:       '#FFB84D',
+    cooldown:   '#8b5cf6',
+    error:      '#FF3B6B',
+    ai_gate:    '#06b6d4',
+    regime:     '#ff6b9d',
+    other:      '#666',
+  };
+
+  /* ── Tabs ──────────────────────────────────────────────── */
+  document.querySelectorAll('.tabs .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      const target = document.getElementById('tab-' + tab.dataset.tab);
+      if (target) target.classList.add('active');
+    });
+  });
+
+  /* ── Period buttons ────────────────────────────────────── */
+  document.querySelectorAll('#period-btns .btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#period-btns .btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentHours = parseInt(btn.dataset.hours);
+      loadAll();
+    });
+  });
+
+  /* ── Load all data ─────────────────────────────────────── */
+  function loadAll() {
+    loadFunnel();
+    loadMicro();
+    loadOutcomes();
+    loadScorer();
+    loadAudit();
+  }
+
+  /* ── Funnel ────────────────────────────────────────────── */
+  async function loadFunnel() {
+    try {
+      const data = await fetch('/api/funnel?hours=' + currentHours).then(r => r.json());
+      renderFunnel(data);
+    } catch {}
+  }
+
+  function renderFunnel(data) {
+    const total = data.total_decisions || 0;
+    const passed = data.funnel?.none || 0;
+    const passRate = total ? (passed / total * 100).toFixed(1) : '0';
+
+    // KPI tiles
+    _kpi('kpi-decisions', total);
+    _kpi('kpi-passrate', passRate + '%');
+
+    const funnel = data.funnel || {};
+    const blocked = Object.entries(funnel).filter(([k]) => k !== 'none');
+    blocked.sort((a, b) => b[1] - a[1]);
+    _kpi('kpi-blocker', blocked.length ? blocked[0][0] : '---');
+
+    // Count trades from regime data
+    const regimes = data.by_regime || {};
+    let totalTrades = 0, totalWins = 0;
+    Object.values(regimes).forEach(r => { totalTrades += (r.trades || 0); totalWins += (r.wins || 0); });
+    _kpi('kpi-trades', totalTrades);
+    _kpi('kpi-wr', totalTrades ? (totalWins / totalTrades * 100).toFixed(0) + '%' : '---');
+
+    // Funnel freshness (data is cumulative — always "now")
+    setFreshness('fc-funnel', new Date().toISOString());
+
+    // Funnel total
+    const ftEl = document.getElementById('funnel-total');
+    if (ftEl) ftEl.textContent = total + ' decisions · ' + passed + ' passed (' + passRate + '%)';
+
+    // Funnel bars
+    const bars = document.getElementById('funnel-bars');
+    const stages = [
+      { label: 'Total', count: total, color: 'var(--info)' },
+      { label: 'Post-filter', count: total - (funnel.confluence || 0), color: 'var(--warn)' },
+      { label: 'Passed', count: passed, color: 'var(--profit)' },
+    ];
+    bars.innerHTML = stages.map(s => {
+      const pct = total ? (s.count / total * 100) : 0;
+      return `<div class="funnel-bar-wrap">
+        <span class="funnel-label">${s.label}</span>
+        <div class="funnel-bar"><div class="funnel-fill" style="width:${pct}%;background:${s.color}"></div></div>
+        <span class="funnel-count mono">${s.count} <span class="text-3">(${pct.toFixed(0)}%)</span></span>
+      </div>`;
+    }).join('');
+
+    // Donut chart
+    renderDonut(blocked, total);
+
+    // Regime table
+    renderRegime(regimes);
+
+    // Session table
+    renderSession(data.by_session || {});
+  }
+
+  function _kpi(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  /* ── Donut ─────────────────────────────────────────────── */
+  function renderDonut(blocked, total) {
+    const canvas = document.getElementById('donut-blocked');
+    if (!canvas) return;
+
+    const totalBlocked = blocked.reduce((s, [, c]) => s + c, 0);
+    const dtEl = document.getElementById('donut-total');
+    if (dtEl) dtEl.textContent = totalBlocked;
+
+    const labels = blocked.map(([k]) => k);
+    const values = blocked.map(([, v]) => v);
+    const colors = labels.map(l => DONUT_COLORS[l] || DONUT_COLORS.other);
+
+    if (_donutChart) {
+      _donutChart.data.labels = labels;
+      _donutChart.data.datasets[0].data = values;
+      _donutChart.data.datasets[0].backgroundColor = colors;
+      _donutChart.update();
+    } else if (typeof Chart !== 'undefined') {
+      _donutChart = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{ data: values, backgroundColor: colors, borderWidth: 0, hoverOffset: 4 }],
+        },
+        options: {
+          cutout: '70%',
+          responsive: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: true } },
+        },
+      });
+    }
+
+    // Legend
+    const legend = document.getElementById('donut-legend');
+    if (legend) {
+      legend.innerHTML = blocked.map(([reason, count]) => {
+        const color = DONUT_COLORS[reason] || DONUT_COLORS.other;
+        const pct = total ? (count / total * 100).toFixed(1) : '0';
+        return `<div class="donut-legend-item">
+          <span class="donut-legend-dot" style="background:${color}"></span>
+          <span>${reason}</span>
+          <span class="donut-legend-count mono">${count} <span class="text-3">(${pct}%)</span></span>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  /* ── Regime table ──────────────────────────────────────── */
+  function renderRegime(regimes) {
+    const tbody = document.getElementById('regime-tbody');
+    if (!tbody) return;
+    const entries = Object.entries(regimes);
+    if (!entries.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-3 text-xs">No data</td></tr>';
+      return;
+    }
+    tbody.innerHTML = entries.map(([regime, r]) => {
+      const wrNum = r.trades ? (r.wins / r.trades * 100) : 0;
+      const wr = r.trades ? wrNum.toFixed(0) : '---';
+      const pnlCls = _heatCls(r.pnl);
+      return `<tr>
+        <td>${esc(regime)}</td>
+        <td class="num">${r.trades || 0}</td>
+        <td class="num">${_wrBar(wrNum, wr)}</td>
+        <td class="num ${pnlCls}">${fmtPct(r.pnl)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  /* ── Session table ─────────────────────────────────────── */
+  function renderSession(sessions) {
+    const tbody = document.getElementById('session-tbody');
+    if (!tbody) return;
+    const entries = Object.entries(sessions);
+    if (!entries.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-3 text-xs">No data</td></tr>';
+      return;
+    }
+    tbody.innerHTML = entries.map(([session, s]) => {
+      const wrNum = s.trades ? (s.wins / s.trades * 100) : 0;
+      const wr = s.trades ? wrNum.toFixed(0) : '---';
+      const pnlCls = _heatCls(s.pnl);
+      return `<tr>
+        <td>${esc(session)}</td>
+        <td class="num">${s.trades || 0}</td>
+        <td class="num">${_wrBar(wrNum, wr)}</td>
+        <td class="num ${pnlCls}">${fmtPct(s.pnl)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function _heatCls(v) {
+    if (v == null) return '';
+    return +v > 0 ? 'heatmap-pos' : (+v < 0 ? 'heatmap-neg' : 'heatmap-neutral');
+  }
+
+  function _wrBar(pct, label) {
+    const color = pct >= 60 ? 'var(--profit-dim)' : (pct >= 40 ? 'var(--warn-dim)' : 'var(--loss-dim)');
+    return `<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+      <span>${label}%</span>
+      <div style="width:40px;height:4px;background:var(--bg-3);border-radius:2px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:2px"></div>
+      </div>
+    </div>`;
+  }
+
+  /* ── Microstructure (watchlist) ────────────────────────── */
+  async function loadMicro() {
+    try {
+      const data = await fetch('/api/microstructure/latest').then(r => r.json());
+      renderMicro(data);
+    } catch {}
+  }
+
+  function renderMicro(data) {
+    const container = document.getElementById('micro-list');
+    if (!container) return;
+    const symbols = Object.keys(data).sort();
+
+    if (!symbols.length) {
+      container.innerHTML = '<div class="text-3 text-xs" style="padding:var(--sp-3)">No data</div>';
+      return;
+    }
+
+    container.innerHTML = symbols.map(sym => {
+      const m = data[sym]?.microstructure || {};
+      const d = data[sym]?.last_decision || {};
+
+      const funding = m.funding_rate;
+      const basis = m.basis_pct;
+      const oiChg = m.oi_change_pct;
+      const liqLong = m.liquidation_vol_long;
+      const liqShort = m.liquidation_vol_short;
+
+      const fCls = funding > 0 ? 'negative' : (funding < 0 ? 'positive' : '');
+      const bCls = basis > 0.05 ? 'negative' : (basis < -0.05 ? 'positive' : '');
+
+      return `<div class="micro-row">
+        <span class="micro-sym">${esc(sym.replace('USDT', ''))}</span>
+        <div class="micro-vals">
+          <span class="micro-val mono ${fCls}" title="Funding">${funding != null ? (funding * 100).toFixed(4) + '%' : '---'}</span>
+          <span class="micro-val mono ${bCls}" title="Basis">${basis != null ? fmtPct(basis) : '---'}</span>
+          <span class="micro-val mono" title="OI Change">${oiChg != null ? fmtPct(oiChg) : '---'}</span>
+          <span class="micro-val mono text-3" title="Liq L/S">${_fmtK(liqLong)}/${_fmtK(liqShort)}</span>
+        </div>
+        <span class="micro-signal"><span class="badge">${esc(d.signal_subtype || '---')}</span></span>
+      </div>`;
+    }).join('');
+
+    const ts = document.getElementById('micro-ts');
+    const now = new Date();
+    if (ts) ts.textContent = now.toLocaleTimeString();
+    setFreshness('fc-micro', now.toISOString());
+  }
+
+  function _fmtK(v) {
+    if (v == null) return '---';
+    return '$' + (v / 1000).toFixed(0) + 'K';
+  }
+
+  /* ── Outcomes ──────────────────────────────────────────── */
+  async function loadOutcomes() {
+    try {
+      const days = Math.max(1, Math.ceil(currentHours / 24));
+      const data = await fetch('/api/scalping/outcomes?days=' + days + '&limit=30').then(r => r.json());
+      renderOutcomes(data.rows || data.outcomes || []);
+    } catch {}
+  }
+
+  function renderOutcomes(rows) {
+    const tbody = document.getElementById('outcomes-tbody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-3 text-xs">No data</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.slice(0, 30).map(r => {
+      const v = (r.verdict || '').toLowerCase();
+      const vCls = v.includes('winner') ? 'winner' : (v.includes('loser') ? 'loser' : 'neutral');
+      const h = r.details?.horizons || {};
+      const pnl5  = h['5']?.close_return_pct;
+      const pnl15 = h['15']?.close_return_pct;
+      const pnl30 = h['30']?.close_return_pct;
+      return `<tr>
+        <td class="mono text-3 text-xxs">${esc((r.audit_timestamp || '').slice(5, 16))}</td>
+        <td>${esc((r.symbol || '---').replace('USDT', ''))}</td>
+        <td>${esc(r.direction || '---')}</td>
+        <td><span class="verdict-badge ${vCls}">${esc(r.verdict || '---')}</span></td>
+        <td class="text-xxs">${esc(r.scenario_type || '---')}</td>
+        <td class="num pnl ${pnlClass(pnl5)}">${pnl5 != null ? fmtPct(pnl5) : '---'}</td>
+        <td class="num pnl ${pnlClass(pnl15)}">${pnl15 != null ? fmtPct(pnl15) : '---'}</td>
+        <td class="num pnl ${pnlClass(pnl30)}">${pnl30 != null ? fmtPct(pnl30) : '---'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  /* ── Scorer ────────────────────────────────────────────── */
+  async function loadScorer() {
+    try {
+      const data = await fetch('/api/scalping/scorer?days=30&limit=5000').then(r => r.json());
+      renderScorer(data.report?.groups || []);
+    } catch {}
+  }
+
+  function renderScorer(groups) {
+    const tbody = document.getElementById('scorer-tbody');
+    if (!tbody) return;
+    if (!groups.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-3 text-xs">No data</td></tr>';
+      return;
+    }
+    tbody.innerHTML = groups.slice(0, 20).map(g => {
+      const rec = (g.recommendation || '').toLowerCase();
+      const rCls = rec.includes('promis') ? 'promising' : (rec.includes('avoid') ? 'avoid' : 'watch');
+      const avgPnl = g.avg_close_return_60m_pct;
+      return `<tr>
+        <td class="text-xxs">${esc(g.setup_key || '---')}</td>
+        <td class="num">${g.total || 0}</td>
+        <td class="num">${g.win_rate != null ? g.win_rate.toFixed(1) + '%' : '---'}</td>
+        <td class="num pnl ${pnlClass(avgPnl)}">${avgPnl != null ? fmtPct(avgPnl) : '---'}</td>
+        <td class="num">${g.edge_score != null ? g.edge_score.toFixed(1) : '---'}</td>
+        <td><span class="rec-badge ${rCls}">${esc(g.recommendation || '---')}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  /* ── Audit ─────────────────────────────────────────────── */
+  async function loadAudit() {
+    try {
+      const days = Math.max(1, Math.ceil(currentHours / 24));
+      const data = await fetch('/api/scalping/audit?days=' + days + '&limit=30').then(r => r.json());
+      renderAudit(data.rows || data.audit || []);
+    } catch {}
+  }
+
+  function renderAudit(rows) {
+    const tbody = document.getElementById('audit-tbody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-3 text-xs">No data</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.slice(0, 30).map(r => {
+      const outcome = r.outcome || '---';
+      const isPass = outcome === 'opened' || outcome.startsWith('closed_');
+      const oCls = isPass ? 'positive' : 'text-3';
+      const reason = (r.reason || '').length > 40 ? r.reason.slice(0, 37) + '...' : (r.reason || '---');
+      const pnl = r.pnl_usd;
+      const flags = [
+        r.force_entry_applied ? 'F' : '',
+        r.ai_used ? 'AI' : '',
+        r.opportunity_detected ? 'O' : '',
+      ].filter(Boolean).join(' ') || '---';
+      return `<tr>
+        <td class="mono text-3 text-xxs">${esc((r.timestamp || '').slice(5, 16))}</td>
+        <td>${esc((r.symbol || '---').replace('USDT', ''))}</td>
+        <td class="${oCls} text-xxs">${esc(outcome)}</td>
+        <td class="text-3 text-xxs" title="${esc(r.reason || '')}">${esc(reason)}</td>
+        <td class="num ${pnlClass(pnl)}">${pnl != null ? fmtPnl(pnl, '$') : '---'}</td>
+        <td class="text-xxs mono text-3">${esc(flags)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  /* ── Boot ──────────────────────────────────────────────── */
+  loadAll();
+  setInterval(loadMicro, 60000);
+})();
+</script>
+{% endblock %}

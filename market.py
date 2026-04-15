@@ -2,6 +2,8 @@ import requests
 import pandas as pd
 import time
 
+from config import BINANCE_SPOT_KLINES_URL
+
 
 def _backoff_delay(attempt, response=None):
     """Calculate retry delay: respect Retry-After header or use exponential backoff."""
@@ -17,7 +19,7 @@ def _backoff_delay(attempt, response=None):
 
 
 def get_candles(symbol: str, interval: str, limit: int) -> pd.DataFrame:
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    url = f"{BINANCE_SPOT_KLINES_URL}?symbol={symbol}&interval={interval}&limit={limit}"
 
     for attempt in range(3):
         try:

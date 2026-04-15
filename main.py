@@ -4,7 +4,7 @@ import threading
 from datetime import datetime
 import database as db
 import config as cfg
-from config import SYMBOLS, SCALPING_SYMBOLS, INTERVAL, LIMIT, ALERT_PRIORITY_MIN
+from config import SYMBOLS, INTERVAL, LIMIT
 from telegram_commands import start_command_listener, is_paused
 from market import get_candles
 from indicators import add_indicators
@@ -13,20 +13,12 @@ from htf import get_htf_trend
 from logger import save_log
 from exporter import export_analysis
 from opportunity_exporter import export_relevant_opportunities
-from telegram_notifier import send_telegram_message, send_opportunity_alert
-from alert_control import should_send_alert
-from context_agent import interpret_signal
-from paper_trader import process_signals, get_status
-from trade_agents import orchestrate, get_agent_status
+from telegram_notifier import send_telegram_message
 from htf import get_htf_regime
 from market_data import collect_microstructure
 from daily_report import check_daily_report, enforce_circuit_breaker
-from scalping_logger import setup_scalping_logging
-from scalping_outcomes import label_scalping_outcomes
-from scalping_trader import process_scalping, get_scalping_status, process_scalping_v2_1b, get_v2_1b_status
 from momentum.paper_executor import process_momentum_cycle, get_momentum_status
 from runtime_config import BOT_ID, ENABLE_TELEGRAM_COMMANDS, runtime_metadata
-from liquidation_feed import init_feed as init_liquidation_feed
 
 # ── Disk space check ────────────────────────────────────────────────────────
 DISK_MIN_FREE_MB = 500
@@ -197,23 +189,6 @@ def run_bot():
             f"Confiança: {top_opportunity['confidence_score']}/100 | "
             f"Motivo: {top_opportunity['reason']}"
         )
-
-        if (
-            top_opportunity["opportunity_type"] == "sinal"
-            or top_opportunity["priority_score"] >= ALERT_PRIORITY_MIN
-        ):
-            if should_send_alert(top_opportunity):
-                interpretation = interpret_signal(top_opportunity)
-
-                send_opportunity_alert(
-                    symbol=top_opportunity["symbol"],
-                    decision=top_opportunity["decision"],
-                    opportunity_type=top_opportunity["opportunity_type"],
-                    dominant_side=top_opportunity["dominant_side"],
-                    confidence=top_opportunity["confidence_score"],
-                    priority=top_opportunity["priority_score"],
-                    interpretation=interpretation or top_opportunity["reason"],
-                )
     else:
         print("Nenhuma oportunidade relevante neste ciclo.")
 
@@ -222,94 +197,6 @@ def run_bot():
     # impeca o gerenciamento de posicoes nos demais.  Se o check de
     # circuit breaker falhar, assumimos suspended=True (fallback seguro:
     # gerencia posicoes abertas, nao abre novas).
-
-    # Paper Trading
-    if cfg.PAPER_TRADER_ENABLED:
-        print("\n========================================")
-        print("PAPER TRADING\n")
-
-        try:
-            try:
-                paper_suspended = enforce_circuit_breaker("paper") or is_paused()
-            except Exception as e:
-                print(f"  [ERRO] Falha ao verificar circuit breaker paper: {e}")
-                paper_suspended = True  # fallback seguro: so gerencia posicoes
-            if paper_suspended:
-                print("  Circuit breaker ativo ou bot pausado - novos trades suspensos, gerenciando posicoes")
-            paper_msgs = process_signals(results, open_new=not paper_suspended)
-            for msg in paper_msgs:
-                print(f"  {msg}")
-                send_telegram_message(f"\U0001f4c4 <b>[PAPER]</b> {msg}")
-            print(f"\n  {get_status()}")
-        except Exception as e:
-            print(f"  [ERRO] Falha no paper trading (posicoes podem estar sem gerenciamento): {e}")
-    else:
-        print("\n========================================")
-        print("PAPER TRADING: DESABILITADO (PAPER_TRADER_ENABLED=false)\n")
-
-    # Multi-Agent Trading
-    if cfg.AGENT_TRADER_ENABLED:
-        print("\n========================================")
-        print("MULTI-AGENT TRADING\n")
-
-        try:
-            try:
-                agent_suspended = enforce_circuit_breaker("agent") or is_paused()
-            except Exception as e:
-                print(f"  [ERRO] Falha ao verificar circuit breaker agent: {e}")
-                agent_suspended = True  # fallback seguro: so gerencia posicoes
-            if agent_suspended:
-                print("  Circuit breaker ativo ou bot pausado - novos trades suspensos, gerenciando posicoes")
-            agent_msgs = orchestrate(results, open_new=not agent_suspended)
-            for msg in agent_msgs:
-                print(f"  {msg}")
-                send_telegram_message(f"\U0001f916 <b>[AGENT]</b> {msg}")
-            print(f"\n  {get_agent_status()}")
-        except Exception as e:
-            print(f"  [ERRO] Falha no agent trading (posicoes podem estar sem gerenciamento): {e}")
-    else:
-        print("\n========================================")
-        print("MULTI-AGENT TRADING: DESABILITADO (AGENT_TRADER_ENABLED=false)\n")
-
-    # Scalping Strategy
-    print("\n========================================")
-    print("SCALPING STRATEGY\n")
-
-    try:
-        try:
-            scalping_suspended = enforce_circuit_breaker("scalping") or is_paused()
-        except Exception as e:
-            print(f"  [ERRO] Falha ao verificar circuit breaker scalping: {e}")
-            scalping_suspended = True  # fallback seguro: so gerencia posicoes
-        if scalping_suspended:
-            print("  Circuit breaker ativo ou bot pausado - novos trades suspensos, gerenciando posicoes")
-        scalping_msgs = process_scalping(SCALPING_SYMBOLS, open_new=not scalping_suspended, results=results)
-        for msg in scalping_msgs:
-            print(f"  {msg}")
-            send_telegram_message(f"\u26a1 <b>[SCALPING]</b> {msg}")
-        print(f"\n  {get_scalping_status()}")
-    except Exception as e:
-        print(f"  [ERRO] Falha no scalping (posicoes podem estar sem gerenciamento): {e}")
-
-    # Scalping V2.1b (side-by-side paper test)
-    if cfg.V2_1B_PAPER_ENABLED:
-        print("\n========================================")
-        print("SCALPING V2.1b (PAPER SIDE-BY-SIDE)\n")
-
-        try:
-            try:
-                v2_1b_suspended = enforce_circuit_breaker("scalping_v2_1b") or is_paused()
-            except Exception:
-                v2_1b_suspended = True
-            if v2_1b_suspended:
-                print("  V2.1b circuit breaker ativo - gerenciando posicoes")
-            v2_1b_msgs = process_scalping_v2_1b(SCALPING_SYMBOLS, open_new=not v2_1b_suspended, results=results)
-            for msg in v2_1b_msgs:
-                print(f"  {msg}")
-                send_telegram_message(f"\U0001f9ea <b>[V2.1b]</b> {msg}")
-            print(f"\n  {get_v2_1b_status()}")
-        except Exception as e:
-            print(f"  [ERRO] Falha no V2.1b paper: {e}")
 
     # Momentum Pullback Strategy
     if cfg.MOMENTUM_TRADER_ENABLED:
@@ -338,20 +225,6 @@ def run_bot():
         print("\n========================================")
         print("MOMENTUM PULLBACK: DESABILITADO (MOMENTUM_TRADER_ENABLED=false)\n")
 
-    # Forward outcome labeling for scalping audit dataset
-    print("\n========================================")
-    print("SCALPING OUTCOME LABELER\n")
-    try:
-        label_stats = label_scalping_outcomes(batch_size=40, days=7)
-        print(
-            "  Labels processados: {processed} | atualizados: {updated} | pulados: {skipped} | erros: {errors}".format(
-                **label_stats
-            )
-        )
-    except Exception:
-        import traceback
-        print(f"  [ERRO] Falha no outcome labeling:\n{traceback.format_exc()}")
-
     # Daily Report (envia 1x por dia apos meia-noite)
     try:
         check_daily_report()
@@ -372,12 +245,9 @@ _cycle_lock = threading.Lock()
 
 if __name__ == "__main__":
     db.init_db()
-    setup_scalping_logging()
-    init_liquidation_feed(SCALPING_SYMBOLS)
     print(f"[BOOT] Instancia: {BOT_ID}")
     print(f"[BOOT] Runtime: {runtime_metadata()['runtime_dir']}")
-    print(f"[BOOT] Liquidation feed: {SCALPING_SYMBOLS}")
-    print(f"[BOOT] Scalping symbols: {SCALPING_SYMBOLS} | Analysis symbols: {SYMBOLS}")
+    print(f"[BOOT] Analysis symbols: {SYMBOLS}")
     if ENABLE_TELEGRAM_COMMANDS:
         start_command_listener()
     else:

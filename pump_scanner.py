@@ -13,6 +13,7 @@ from datetime import datetime
 from config import (
     PUMP_VOLUME_MULTIPLIER, PUMP_PRICE_CHANGE_MIN,
     PUMP_SCAN_INTERVAL, PUMP_TOP_COINS,
+    BINANCE_SPOT_TICKER_24HR_URL, BINANCE_SPOT_KLINES_URL,
 )
 from telegram_notifier import send_telegram_message, send_pump_alert
 from pump_trader import open_position, check_positions, get_status
@@ -21,7 +22,7 @@ from telegram_commands import is_paused
 from runtime_config import PUMP_COOLDOWN_FILE
 
 ALERT_COOLDOWN_FILE = PUMP_COOLDOWN_FILE
-COOLDOWN_MINUTES = 30
+COOLDOWN_MINUTES = 15  # reduzido pra acelerar coleta de dados
 
 
 def load_cooldown():
@@ -60,7 +61,7 @@ def get_top_symbols():
     for attempt in range(3):
         try:
             resp = requests.get(
-                "https://api.binance.com/api/v3/ticker/24hr", timeout=10
+                BINANCE_SPOT_TICKER_24HR_URL, timeout=10
             )
             if resp.status_code == 429:
                 retry_after = int(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
@@ -96,7 +97,7 @@ def analyze_symbol(symbol):
     """Check if a symbol has abnormal volume and price movement."""
     try:
         url = (
-            f"https://api.binance.com/api/v3/klines"
+            f"{BINANCE_SPOT_KLINES_URL}"
             f"?symbol={symbol}&interval=5m&limit=25"
         )
         resp = requests.get(url, timeout=10)
