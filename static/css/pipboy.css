@@ -1,0 +1,300 @@
+/* pipboy.css — Pip-Boy Design System for crypto_ai_bot */
+
+/* ── Variables ── */
+:root {
+  --pip-green:        #00ff41;
+  --pip-green-bright: #00ff41;
+  --pip-green-mid:    #00ff4188;
+  --pip-green-dim:    #00ff4155;
+  --pip-green-faint:  #00ff4133;
+  --pip-green-ghost:  #00ff4111;
+  --pip-red:          #ff4141;
+  --pip-red-dim:      #ff414188;
+  --pip-bg:           #0a0a0a;
+  --pip-bg-card:      #0a0a0a;
+  --pip-bg-hover:     #00ff4108;
+  --pip-font:         'Courier New', 'Lucida Console', monospace;
+}
+
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+.pip-body {
+  background: var(--pip-bg);
+  color: var(--pip-green);
+  font-family: var(--pip-font);
+  font-size: 12px;
+  line-height: 1.5;
+  min-height: 100vh;
+  position: relative;
+}
+
+/* ── CRT Effects ── */
+.crt-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,255,65,0.03) 2px, rgba(0,255,65,0.03) 4px
+  );
+  pointer-events: none; z-index: 9998;
+}
+
+.crt-vignette {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.5) 100%);
+  pointer-events: none; z-index: 9997;
+}
+
+/* ── Glow ── */
+.glow { text-shadow: 0 0 8px rgba(0,255,65,0.4); }
+.glow-strong { text-shadow: 0 0 12px rgba(0,255,65,0.6), 0 0 4px rgba(0,255,65,0.3); }
+
+/* ── Header ── */
+.pip-header {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--pip-bg);
+  border-bottom: 1px solid var(--pip-green-faint);
+  padding: 8px 16px;
+}
+
+.pip-header-top {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 4px;
+}
+
+.pip-branding {
+  display: flex; align-items: center; gap: 8px;
+}
+
+.pip-title {
+  font-size: 14px; font-weight: bold; letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.pip-status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--pip-green);
+  box-shadow: 0 0 8px var(--pip-green);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Tabs ── */
+.pip-tabs { display: flex; gap: 4px; }
+
+.pip-tab {
+  color: var(--pip-green-dim);
+  text-decoration: none;
+  padding: 4px 12px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+
+.pip-tab:hover {
+  color: var(--pip-green);
+  background: var(--pip-bg-hover);
+  border-color: var(--pip-green-faint);
+}
+
+.pip-tab.active {
+  color: var(--pip-green-bright);
+  border-color: var(--pip-green-faint);
+  background: var(--pip-green-ghost);
+}
+
+/* ── Divider ── */
+.pip-divider {
+  height: 2px; margin: 4px 0;
+  background: linear-gradient(90deg, var(--pip-green-faint), var(--pip-green-dim), var(--pip-green-faint));
+}
+
+/* ── Ticker ── */
+.pip-ticker {
+  font-size: 10px; color: var(--pip-green-dim);
+  letter-spacing: 1px; padding: 4px 0;
+  display: flex; gap: 16px; flex-wrap: wrap;
+}
+
+.pip-ticker .up { color: var(--pip-green); }
+.pip-ticker .down { color: var(--pip-red); }
+
+/* ── Content ── */
+.pip-content { padding: 16px; max-width: 1200px; margin: 0 auto; }
+
+/* ── Cards ── */
+.pip-card {
+  border: 1px solid var(--pip-green-faint);
+  padding: 12px;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.pip-card-title {
+  color: var(--pip-green-mid);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+
+/* ── KPI ── */
+.pip-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.pip-kpi { padding: 12px; border: 1px solid var(--pip-green-faint); }
+.pip-kpi-label { color: var(--pip-green-mid); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
+.pip-kpi-value { font-size: 22px; font-weight: bold; font-variant-numeric: tabular-nums; margin: 4px 0; }
+.pip-kpi-sub { font-size: 10px; color: var(--pip-green-dim); }
+
+/* ── Table ── */
+.pip-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.pip-table th {
+  color: var(--pip-green-mid); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 1px; text-align: left; padding: 6px 8px;
+  border-bottom: 1px solid var(--pip-green-faint);
+}
+.pip-table td { padding: 6px 8px; border-bottom: 1px solid var(--pip-green-ghost); }
+.pip-table tr:hover { background: var(--pip-bg-hover); }
+
+/* ── Badge ── */
+.pip-badge {
+  display: inline-block; padding: 1px 6px;
+  font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  border: 1px solid currentColor;
+}
+.pip-badge.long { color: var(--pip-green); }
+.pip-badge.short { color: var(--pip-red); }
+.pip-badge.on { color: var(--pip-green); }
+.pip-badge.off { color: var(--pip-green-dim); }
+
+/* ── Progress Bar ── */
+.pip-bar {
+  height: 10px; background: var(--pip-green-ghost);
+  position: relative; overflow: hidden;
+}
+.pip-bar-fill {
+  height: 100%; background: var(--pip-green-dim);
+  transition: width 0.3s;
+}
+
+/* ── Meter (segmented) ── */
+.pip-meter {
+  display: flex; gap: 2px; height: 14px;
+}
+.pip-meter-seg {
+  flex: 1; background: var(--pip-green-ghost);
+}
+.pip-meter-seg.filled { background: var(--pip-green-dim); }
+.pip-meter-seg.filled.warn { background: #ffaa00; }
+.pip-meter-seg.filled.crit { background: var(--pip-red); }
+
+/* ── ASCII Chart ── */
+.pip-ascii-chart {
+  font-size: 11px; line-height: 1.3;
+  white-space: pre; overflow-x: auto;
+  color: var(--pip-green);
+  padding: 8px; border: 1px solid var(--pip-green-faint);
+}
+
+/* ── Terminal (Logs) ── */
+.pip-terminal {
+  background: #050505;
+  border: 1px solid var(--pip-green-faint);
+  padding: 8px;
+  height: 60vh;
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.pip-terminal .log-line { white-space: pre-wrap; word-break: break-all; }
+
+/* ── Cursor ── */
+.pip-cursor {
+  display: inline-block; width: 8px; height: 14px;
+  background: var(--pip-green);
+  animation: blink-cursor 1s step-end infinite;
+}
+@keyframes blink-cursor { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+/* ── Status Bar ── */
+.pip-status-bar {
+  font-size: 10px; color: var(--pip-green-dim);
+  border-top: 1px solid var(--pip-green-faint);
+  padding: 8px 0; margin-top: 16px;
+}
+.pip-status-bar.alert { color: var(--pip-red); }
+
+/* ── Gauge SVG ── */
+.pip-gauge { text-align: center; }
+.pip-gauge svg { width: 80px; height: 80px; }
+.pip-gauge-label { font-size: 9px; color: var(--pip-green-mid); text-transform: uppercase; margin-top: 4px; }
+.pip-gauge-value { font-size: 14px; font-weight: bold; }
+.pip-gauge-sub { font-size: 10px; color: var(--pip-green-dim); }
+
+/* ── Filter Bar ── */
+.pip-filters {
+  display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.pip-filter-btn {
+  background: none; border: 1px solid var(--pip-green-faint);
+  color: var(--pip-green-dim); padding: 3px 10px;
+  font-family: var(--pip-font); font-size: 10px;
+  cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+}
+.pip-filter-btn:hover { color: var(--pip-green); border-color: var(--pip-green-dim); }
+.pip-filter-btn.active {
+  color: var(--pip-green-bright); border-color: var(--pip-green-dim);
+  background: var(--pip-green-ghost);
+}
+
+/* ── Grid Layouts ── */
+.pip-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pip-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.pip-grid-3x3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+/* ── Sparkline (mini bar chart) ── */
+.pip-sparkline { display: flex; align-items: flex-end; gap: 1px; height: 20px; }
+.pip-sparkline-bar { width: 4px; background: var(--pip-green-dim); min-height: 1px; }
+
+/* ── Pagination ── */
+.pip-pagination { display: flex; gap: 4px; margin-top: 8px; justify-content: center; }
+.pip-pagination a {
+  color: var(--pip-green-dim); text-decoration: none;
+  padding: 2px 8px; border: 1px solid var(--pip-green-faint);
+  font-size: 10px;
+}
+.pip-pagination a.active { color: var(--pip-green); border-color: var(--pip-green-dim); }
+
+/* ── Positive/Negative Colors ── */
+.pnl-pos { color: var(--pip-green); }
+.pnl-neg { color: var(--pip-red); }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .pip-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .pip-grid-2, .pip-grid-3 { grid-template-columns: 1fr; }
+  .pip-grid-3x3 { grid-template-columns: repeat(2, 1fr); }
+  .pip-tabs { gap: 2px; }
+  .pip-tab { padding: 4px 6px; font-size: 10px; }
+  .pip-ticker { font-size: 9px; gap: 8px; }
+  .pip-kpi-value { font-size: 18px; }
+  .pip-terminal { height: 40vh; }
+}
+
+@media (max-width: 480px) {
+  .pip-header { padding: 6px 8px; }
+  .pip-content { padding: 8px; }
+  .pip-kpi-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pip-tab { padding: 3px 5px; font-size: 9px; letter-spacing: 0; }
+}
