@@ -20,6 +20,7 @@ from typing import Callable, Optional
 from config import BREAKOUT_INITIAL_CAPITAL, BREAKOUT_MAX_POSITIONS
 from engines_5m.breakout import BreakoutEngine5m
 from indicators_5m import add_indicators_5m
+from risk_calculator_1m import calculate_viability
 from signal_types import Signal
 import database as db
 
@@ -102,16 +103,6 @@ def get_breakout_status() -> str:
     return "\n".join(lines)
 
 
-def _calculate_position_size(capital: float, entry: float, sl: float) -> float:
-    """Size position so that a full SL hit loses ~2% of capital."""
-    sl_distance_pct = abs(entry - sl) / entry * 100
-    if sl_distance_pct <= 0:
-        return 0.0
-    risk_amount = capital * 0.02  # 2% risk per trade
-    position_size = risk_amount / (sl_distance_pct / 100)
-    return min(position_size, capital)
-
-
 def _check_position_conflict(symbol: str) -> bool:
     """Check if momentum has an open position on this symbol."""
     try:
@@ -142,9 +133,20 @@ def open_position(state: dict, signal: Signal, cycle_id: str) -> list[str]:
     tp2 = signal.tp2_price
     direction = signal.direction.value
 
-    size = _calculate_position_size(state["capital"], entry, sl)
-    if size <= 0:
+    max_risk = state["capital"] * 0.02
+    viability = calculate_viability(
+        symbol=symbol,
+        entry_price=entry,
+        sl_price=sl,
+        tp_price=tp1,
+        max_risk_per_trade_usd=max_risk,
+        preferred_leverage=1,
+    )
+    if not viability.viable:
+        logger.info("REJECTED %s %s: %s", symbol, direction, viability.reason)
         return msgs
+
+    size = min(viability.notional_usd, state["capital"])
 
     state["positions"][symbol] = {
         "direction": direction,
@@ -368,6 +370,7 @@ def process_breakout_cycle(
         List of Telegram-ready messages.
     """
     if candle_fn is None:
+        # Lazy import to avoid circular: market → indicators → config → ...
         from market import get_candles
         candle_fn = get_candles
 
@@ -407,8 +410,16 @@ def process_breakout_cycle(
             entry_msgs = open_position(state, signal, cycle_id)
             msgs.extend(entry_msgs)
             if not entry_msgs:
-                # Signal was blocked
-                blocked = "max_positions" if len(state["positions"]) >= BREAKOUT_MAX_POSITIONS else "cooldown_or_conflict"
+                if symbol in state["positions"]:
+                    blocked = "already_in_position"
+                elif len(state["positions"]) >= BREAKOUT_MAX_POSITIONS:
+                    blocked = "max_positions"
+                elif symbol in state.get("cooldowns", {}):
+                    blocked = "cooldown"
+                elif _check_position_conflict(symbol):
+                    blocked = "position_conflict"
+                else:
+                    blocked = "risk_calculator"
                 try:
                     _log_decision(signal, cycle_id, blocked_by=blocked)
                 except Exception as e:

@@ -8,6 +8,7 @@ Entry on next candle open. SL at mid-range. TP by range projection.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import List, Optional
 
 import numpy as np
@@ -128,7 +129,6 @@ class BreakoutEngine5m(Engine5m):
             tp_distance_pct = abs(tp1_price - entry_price) / entry_price * 100
             rr_ratio = tp_distance_pct / sl_distance_pct if sl_distance_pct > 0 else 0
 
-            from datetime import datetime, timezone
             if "timestamp" in df_5m.columns:
                 timestamp = str(df_5m["timestamp"].iloc[-1])
             else:

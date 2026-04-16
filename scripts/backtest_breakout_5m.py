@@ -16,6 +16,7 @@ sys.path.insert(0, ".")
 
 from engines_5m.breakout import BreakoutEngine5m
 from indicators_5m import add_indicators_5m
+from risk_calculator_1m import calculate_viability
 
 
 FEE_ROUNDTRIP_PCT = 0.08
@@ -79,18 +80,52 @@ def run_backtest(symbol: str):
     engine = BreakoutEngine5m()
     trades = []
     position = None
+    pending_signal = None
     signals_count = 0
+    rejected_count = 0
 
     for i in range(engine._MIN_CANDLES, len(df_full)):
         visible = df_full.iloc[max(0, i - 120):i + 1].copy()
         visible = add_indicators_5m(visible)
 
         candle = df_full.iloc[i]
+        open_price = float(candle["open"])
         high = float(candle["high"])
         low = float(candle["low"])
         close = float(candle["close"])
 
-        # Manage open position
+        # Phase 1: Execute pending signal at current candle's open
+        if pending_signal is not None and position is None:
+            entry_price = open_price
+            sig = pending_signal
+
+            viability = calculate_viability(
+                symbol=symbol,
+                entry_price=entry_price,
+                sl_price=sig.sl_price,
+                tp_price=sig.tp1_price,
+                max_risk_per_trade_usd=20.0,
+                preferred_leverage=1,
+            )
+
+            if viability.viable:
+                position = {
+                    "direction": sig.direction.value,
+                    "entry_price": entry_price,
+                    "sl_price": sig.sl_price,
+                    "tp1_price": sig.tp1_price,
+                    "tp2_price": sig.tp2_price,
+                    "candles_elapsed": 0,
+                    "mfe_pct": 0.0,
+                    "mae_pct": 0.0,
+                    "tp1_hit": False,
+                }
+            else:
+                rejected_count += 1
+
+            pending_signal = None
+
+        # Phase 2: Manage open position
         if position is not None:
             pos = position
             direction = pos["direction"]
@@ -171,22 +206,12 @@ def run_backtest(symbol: str):
                 })
                 position = None
 
-        # Generate new signal if no position
-        if position is None:
+        # Phase 3: Scan for new signals (executes at NEXT candle's open)
+        if position is None and pending_signal is None:
             signal = engine.analyze(symbol, visible)
             if signal is not None and signal.valid:
                 signals_count += 1
-                position = {
-                    "direction": signal.direction.value,
-                    "entry_price": signal.entry_price,
-                    "sl_price": signal.sl_price,
-                    "tp1_price": signal.tp1_price,
-                    "tp2_price": signal.tp2_price,
-                    "candles_elapsed": 0,
-                    "mfe_pct": 0.0,
-                    "mae_pct": 0.0,
-                    "tp1_hit": False,
-                }
+                pending_signal = signal
 
         # Progress indicator every 2000 candles
         if (i - engine._MIN_CANDLES) % 2000 == 0 and i > engine._MIN_CANDLES:
@@ -195,6 +220,7 @@ def run_backtest(symbol: str):
 
     # Results
     print(f"\n  Signals: {signals_count}")
+    print(f"  Rejected (Risk Calculator): {rejected_count}")
     print(f"  Trades: {len(trades)}")
 
     if not trades:
