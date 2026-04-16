@@ -42,7 +42,7 @@ O bot roda como **servico systemd** (`cryptobot`) gerenciado por `supervisor.py`
 
 | Sistema | Arquivo | Status |
 |---|---|---|
-| **Momentum Pullback** | `momentum/` + `paper_executor.py` | **Foco unico** — v1.1 baseline, params congelados, smoke test pendente |
+| **Momentum Pullback** | `momentum/` + `paper_executor.py` | **Foco unico** — v1.1 baseline, params congelados, ATIVO |
 | Pump Scanner | `pump_scanner.py` + `pump_trader.py` | Aposentado — infra preservada para reuso futuro |
 | Scalping | `scalping_trader.py` + engines | Aposentado — nao integrado no main.py atual |
 | Agent Trader | `trade_agents.py` | Desativado |
@@ -101,7 +101,23 @@ CFER/RAVR foram descontinuadas (mean reversion nao provou edge). Codigo em `defe
 
 ### Momentum Pullback — Paper Trading (v1.1 baseline)
 
-Hipotese: em tendencia confirmada, pullback de 30-70% que respeita EMA slow e depois retoma (close past EMA fast) tende a continuar. v1.1 confirmada como baseline robusta (3/3 testes de robustez PASS). Integrado ao main loop via `paper_executor.py` (process_momentum_cycle). Config em `momentum/config.py` (`MomentumConfig`) e `config.py` (`MOMENTUM_*`). Research pipeline offline em `research_runner.py`, `research_db.py`, `research_report.py`, `robustness_check.py`. Parametros v1.1 congelados — nao alterar. Desligado por padrao. Paper oficial ainda nao comecou — proximo passo e smoke test 24-48h, depois aprovacao explicita do operador.
+Hipotese: em tendencia confirmada, pullback de 30-70% que respeita EMA slow e depois retoma (close past EMA fast) tende a continuar. v1.1 confirmada como baseline robusta (3/3 testes de robustez PASS). Integrado ao main loop via `paper_executor.py` (process_momentum_cycle). Config em `momentum/config.py` (`MomentumConfig`) e `config.py` (`MOMENTUM_*`). Research pipeline offline em `research_runner.py`, `research_db.py`, `research_report.py`, `robustness_check.py`. Parametros v1.1 congelados — nao alterar. **ATIVO** (`MOMENTUM_TRADER_ENABLED=true`).
+
+### Engines 1m e 5m (experimentais)
+
+Sistemas multi-engine de curto prazo (codigo preservado, sem uso ativo no main loop):
+
+| Diretório | Conteúdo |
+|---|---|
+| `engines_1m/` | MomentumBurst 1m (ATR/volume/body), base Engine1m |
+| `engines_5m/` | Breakout 5m engine |
+| `breakout/` | Paper executor para breakout 5m |
+| `config_1m.py` | Config do sistema 1-min |
+| `indicators_1m.py` | EMAs, ATR, BB, RSI, VWAP para 1-min |
+| `indicators_5m.py` | Indicadores 5-min |
+| `market_1m.py` | Fetch de candles 1-min (live + historico) |
+| `risk_calculator_1m.py` | Position sizing fee-aware para 1-min |
+| `backtest_1m.py` | Backtest candle-by-candle 1-min |
 
 ### Camadas intermediarias
 
@@ -128,7 +144,7 @@ Hipotese: em tendencia confirmada, pullback de 30-70% que respeita EMA slow e de
 - **Circuit breaker**: `daily_report.py` — para trading se perda diaria > 5% ou > 20 trades
 - **Proactive alerts**: `proactive_alerts.py` — detecta problemas antes que se agravem (drawdown, inatividade, erros)
 - **Audit framework**: `audit_helpers.py` + `audit_data.py` + `signal_types.py` — 51 campos por trade + 32 por decision
-- **Scripts**: `scripts/research_matrix.py` (grid search parametrico), `scripts/tuning_matrix.py` (tuning), `scripts/verify_and_benchmark.sh`
+- **Scripts**: `scripts/research_matrix.py` (grid search parametrico), `scripts/tuning_matrix.py` (tuning), `scripts/verify_and_benchmark.sh`, `scripts/fase3_*.py` (validacao de engines), `scripts/backtest_breakout_5m.py`
 - **Research data**: `research/` — databases SQLite de resultados de matrix runs (matrix_v1.db, etc.)
 
 ---
@@ -157,7 +173,7 @@ journalctl -u cryptobot --since "1 hour ago" --no-pager  # ultima hora
 
 ### Testes
 ```bash
-python -m pytest tests/ --tb=short -q           # todos (~597 testes)
+python -m pytest tests/ --tb=short -q           # todos (~683 testes)
 python -m pytest tests/test_confluence.py -v      # arquivo especifico
 python -m pytest tests/test_confluence.py::test_x -v  # teste unico
 ```
@@ -168,6 +184,8 @@ python backtest.py              # padrao
 python backtest_scalping.py     # scalping
 python backtest_parametric.py   # sweep parametrico
 python backtest_pump.py         # pump strategy
+python backtest_1m.py           # 1-min candle-by-candle
+python scripts/backtest_breakout_5m.py  # breakout 5m
 ```
 
 ### Banco de dados (queries uteis)
@@ -268,7 +286,7 @@ PAPER_TRADER_ENABLED=false
 AGENT_TRADER_ENABLED=false
 V2_1B_PAPER_ENABLED=false
 SCALPING_EXPERIMENTAL_FORCE_ENTRIES=true/false  # habilita tambem: ignore_risk, disable_ai_gate, disable_cooldown
-MOMENTUM_PAPER_ENABLED=true        # habilita momentum paper trading no main loop
+MOMENTUM_TRADER_ENABLED=true       # habilita momentum paper trading no main loop
 MOMENTUM_SYMBOLS=BTCUSDT,ETHUSDT   # pares do momentum
 DEFENSIVE_INITIAL_CAPITAL=1000     # capital do subsistema defensive (descontinuado)
 DEFENSIVE_SYMBOLS=BTCUSDT,ETHUSDT  # pares do defensive (descontinuado)
