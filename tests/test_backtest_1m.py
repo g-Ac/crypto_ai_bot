@@ -136,6 +136,192 @@ class TestBacktest1mEngine:
             assert trade.entry_price > 0
 
 
+class TestEntryGapHandling:
+    """B1 + B3: Gap-aware entry validation and SL/TP on entry candle."""
+
+    def _build_scenario(self, signal_idx, entry_open, entry_high, entry_low,
+                        entry_close, signal_entry, sl, tp, direction="LONG",
+                        n=50, base=100.0):
+        """Build a minimal backtest scenario with a mock engine.
+
+        Creates n candles at base price, injects specific values on the entry
+        candle (signal_idx + 1), and a mock engine that fires at signal_idx.
+        """
+        from signal_types import Direction, Signal
+        from engines_1m.base import Engine1m
+
+        times = pd.date_range("2026-01-01", periods=n, freq="1min", tz="UTC")
+        df = pd.DataFrame({
+            "time": times,
+            "open": [base] * n,
+            "high": [base + 0.5] * n,
+            "low": [base - 0.5] * n,
+            "close": [base] * n,
+            "volume": [1000.0] * n,
+        })
+
+        # Set entry candle (the candle AFTER the signal)
+        entry_idx = signal_idx + 1
+        df.loc[entry_idx, "open"] = entry_open
+        df.loc[entry_idx, "high"] = entry_high
+        df.loc[entry_idx, "low"] = entry_low
+        df.loc[entry_idx, "close"] = entry_close
+
+        d = Direction.LONG if direction == "LONG" else Direction.SHORT
+        sl_dist = abs(signal_entry - sl) / signal_entry * 100
+        tp_dist = abs(tp - signal_entry) / signal_entry * 100
+
+        sig = Signal(
+            direction=d, strength=0.8, timestamp="2026-01-01",
+            source="test_engine", symbol="SOLUSDT", price=signal_entry,
+            entry_price=signal_entry, sl_price=sl, tp1_price=tp,
+            sl_distance_pct=sl_dist, rr_ratio=tp_dist / sl_dist if sl_dist else 0,
+            valid=True, metadata={},
+        )
+
+        class MockEngine(Engine1m):
+            name = "test_engine"
+            version = "1.0"
+            def analyze(self, symbol, df_1m, **kw):
+                if len(df_1m) - 1 == signal_idx:
+                    return sig
+                return None
+            def required_indicators(self):
+                return []
+
+        return df, MockEngine()
+
+    def test_unfavorable_gap_rejects_trade(self):
+        """B1: Large unfavorable gap makes SL distance exceed max → rejected."""
+        # LONG signal: entry=100, SL=99.5 (0.5%), TP=101.5 (1.5%)
+        # Entry candle gaps down to 97 → SL distance from 97 to 99.5 = 2.58% > 1.0%
+        df, engine = self._build_scenario(
+            signal_idx=29,
+            entry_open=97.0, entry_high=97.5, entry_low=96.5, entry_close=97.0,
+            signal_entry=100.0, sl=99.5, tp=101.5, direction="LONG",
+        )
+        config = Config1m(max_risk_per_trade_usd=2.0, max_sl_distance_pct=1.0)
+        bt = Backtest1m(engines=[engine], config=config)
+        result = bt.run_on_dataframe("SOLUSDT", df)
+
+        assert result.total_trades == 0
+
+    def test_favorable_gap_executes_with_correct_notional(self):
+        """B1: Favorable gap recalculates notional via Risk Calculator."""
+        # LONG signal: entry=100, SL=99.5 (0.5%), TP=102.0 (2.0%)
+        # Entry candle opens at 100.2 (slight gap up)
+        # New SL dist = |100.2-99.5|/100.2 = 0.699%
+        # New notional = 2.0 / 0.00699 = ~286
+        df, engine = self._build_scenario(
+            signal_idx=29,
+            entry_open=100.2, entry_high=100.5, entry_low=100.0,
+            entry_close=100.3,
+            signal_entry=100.0, sl=99.5, tp=102.0, direction="LONG",
+        )
+        # Make sure TP gets hit eventually
+        for i in range(32, 40):
+            df.loc[i, "open"] = 101.5
+            df.loc[i, "high"] = 102.5
+            df.loc[i, "low"] = 101.0
+            df.loc[i, "close"] = 102.0
+
+        config = Config1m(max_risk_per_trade_usd=2.0, min_rr_net=1.0)
+        bt = Backtest1m(engines=[engine], config=config)
+        result = bt.run_on_dataframe("SOLUSDT", df)
+
+        assert result.total_trades == 1
+        trade = result.trades[0]
+        assert trade.entry_price == pytest.approx(100.2)
+        # Notional recalculated: 2.0 / (0.699/100) ≈ 286
+        assert trade.notional_usd == pytest.approx(2.0 / (abs(100.2 - 99.5) / 100.2), rel=0.01)
+        assert trade.fee_usd > 0
+
+    def test_entry_candle_sl_tp_both_hit_uses_gap_direction(self):
+        """B3: Both SL and TP in entry candle range → gap direction decides."""
+        # LONG signal: entry=100, SL=99.3, TP=102.0
+        # Entry candle: open=100.3 (gap UP = favorable), high=103, low=99.0
+        # After gap: sl_dist=1.0%, tp_dist=1.7%, R:R=1.5 → viable
+        # Both SL (99.0 < 99.3) and TP (103 > 102) hit
+        # Gap up → favorable → TP should win
+        df, engine = self._build_scenario(
+            signal_idx=29,
+            entry_open=100.3, entry_high=103.0, entry_low=99.0,
+            entry_close=101.5,
+            signal_entry=100.0, sl=99.3, tp=102.0, direction="LONG",
+        )
+        config = Config1m(max_risk_per_trade_usd=2.0, min_rr_net=1.0)
+        bt = Backtest1m(engines=[engine], config=config)
+        result = bt.run_on_dataframe("SOLUSDT", df)
+
+        assert result.total_trades == 1
+        trade = result.trades[0]
+        assert trade.exit_reason == "TP"
+        assert trade.exit_price == pytest.approx(102.0)
+        assert trade.duration_candles == 0  # Closed on same candle as entry
+
+    def test_entry_candle_sl_tp_both_hit_unfavorable_gap(self):
+        """B3: Both SL and TP hit on entry, unfavorable gap → SL wins."""
+        # LONG signal: entry=100, SL=99.3, TP=102.0
+        # Entry candle: open=99.8 (gap DOWN = unfavorable), high=103, low=99.0
+        # After gap: sl_dist=0.50%, tp_dist=2.20%, R:R≈3.7 → viable
+        # Both SL (99.0 < 99.3) and TP (103 > 102) hit
+        # Gap down → unfavorable → SL should win
+        df, engine = self._build_scenario(
+            signal_idx=29,
+            entry_open=99.8, entry_high=103.0, entry_low=99.0,
+            entry_close=101.0,
+            signal_entry=100.0, sl=99.3, tp=102.0, direction="LONG",
+        )
+        config = Config1m(max_risk_per_trade_usd=2.0, min_rr_net=1.0)
+        bt = Backtest1m(engines=[engine], config=config)
+        result = bt.run_on_dataframe("SOLUSDT", df)
+
+        assert result.total_trades == 1
+        trade = result.trades[0]
+        assert trade.exit_reason == "SL"
+        assert trade.exit_price == pytest.approx(99.3)
+
+
+class TestAmbiguousSlTpResolution:
+    """B4: Non-entry candle with both SL and TP hit."""
+
+    def test_sl_tp_both_hit_uses_open_proximity(self):
+        """B4: When both SL+TP hit, closer to candle open wins."""
+        from backtest_1m import _OpenPosition
+
+        config = Config1m()
+        bt = Backtest1m(engines=[], config=config)
+
+        pos = _OpenPosition(
+            symbol="TEST", direction="LONG", engine="test",
+            entry_price=100.0, sl_price=99.0, tp_price=101.0,
+            entry_time="", entry_candle_idx=0,
+            notional_usd=400.0, leverage=100,
+            fee_roundtrip_pct=0.08,
+        )
+
+        # Candle opens near TP side → TP should win
+        candle_tp_first = pd.Series({
+            "open": 100.8, "high": 101.5, "low": 98.5, "close": 99.5, "time": ""
+        })
+        trade = bt._check_exit(pos, candle_tp_first, 5)
+        assert trade.exit_reason == "TP"
+
+        # Candle opens near SL side → SL should win
+        pos2 = _OpenPosition(
+            symbol="TEST", direction="LONG", engine="test",
+            entry_price=100.0, sl_price=99.0, tp_price=101.0,
+            entry_time="", entry_candle_idx=0,
+            notional_usd=400.0, leverage=100,
+            fee_roundtrip_pct=0.08,
+        )
+        candle_sl_first = pd.Series({
+            "open": 99.2, "high": 101.5, "low": 98.5, "close": 100.5, "time": ""
+        })
+        trade2 = bt._check_exit(pos2, candle_sl_first, 5)
+        assert trade2.exit_reason == "SL"
+
+
 class TestRunBacktest1m:
     """Integration test for the convenience function."""
 

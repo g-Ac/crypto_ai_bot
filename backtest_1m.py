@@ -185,10 +185,20 @@ class Backtest1m:
 
             # 2. Execute pending entry on this candle's open
             if pending_signal is not None and open_position is None:
-                open_position = self._open_position(
+                signal_entry = pending_signal.entry_price
+                open_position = self._try_open_position(
                     pending_signal, candle, i, symbol
                 )
                 pending_signal = None
+
+                # B3: Check SL/TP on entry candle itself
+                if open_position is not None:
+                    trade = self._check_entry_exit(
+                        open_position, candle, i, signal_entry
+                    )
+                    if trade is not None:
+                        closed_trades.append(trade)
+                        open_position = None
 
             # 3. Run engines on data up to candle i (no look-ahead)
             if open_position is None and pending_signal is None:
@@ -231,41 +241,58 @@ class Backtest1m:
             config=self.config,
         )
 
-    def _open_position(
+    def _try_open_position(
         self, signal, candle: pd.Series, idx: int, symbol: str,
-    ) -> _OpenPosition:
-        """Open position at candle's open price."""
-        entry_price = candle["open"]  # Enter on OPEN of next candle
-        viability = signal.metadata.get("viability", {})
+    ) -> Optional[_OpenPosition]:
+        """Try to open position at candle's open price.
 
-        # Use SL/TP from signal (set by engine relative to signal price)
-        sl_price = signal.sl_price
-        tp_price = signal.tp1_price
+        B1: Re-validates via Risk Calculator with actual entry price.
+        Returns None if trade is no longer viable after gap.
+        """
+        entry_price = candle["open"]  # Enter on OPEN of next candle
+
+        # B1: Recalculate viability with actual entry price
+        viability = calculate_viability(
+            symbol=symbol,
+            entry_price=entry_price,
+            sl_price=signal.sl_price,
+            tp_price=signal.tp1_price,
+            max_risk_per_trade_usd=self.config.max_risk_per_trade_usd,
+            min_rr_net=self.config.min_rr_net,
+            max_fee_impact_pct=self.config.max_fee_impact_pct,
+            min_sl_distance_pct=self.config.min_sl_distance_pct,
+            max_sl_distance_pct=self.config.max_sl_distance_pct,
+        )
+        if not viability.viable:
+            return None
 
         return _OpenPosition(
             symbol=symbol,
             direction=signal.direction.value,
             engine=signal.source,
             entry_price=entry_price,
-            sl_price=sl_price,
-            tp_price=tp_price,
+            sl_price=signal.sl_price,
+            tp_price=signal.tp1_price,
             entry_time=str(candle.get("time", "")),
             entry_candle_idx=idx,
-            notional_usd=viability.get("notional", 0),
-            leverage=viability.get("leverage", 125),
+            notional_usd=viability.notional_usd,
+            leverage=viability.leverage,
             fee_roundtrip_pct=self.config.fee_roundtrip_pct,
             metadata=signal.metadata,
         )
 
-    def _check_exit(
+    def _check_entry_exit(
         self, pos: _OpenPosition, candle: pd.Series, idx: int,
+        signal_entry_price: float,
     ) -> Optional[ClosedTrade1m]:
-        """Check if SL or TP hit on this candle using high/low."""
+        """B3: Check if SL or TP hit on the entry candle itself.
+
+        Uses gap direction to determine check order when both are hit:
+        - Favorable gap (entry better than signal) → TP first
+        - Unfavorable gap (entry worse than signal) → SL first
+        """
         high = candle["high"]
         low = candle["low"]
-
-        hit_sl = False
-        hit_tp = False
 
         if pos.direction == "LONG":
             hit_sl = low <= pos.sl_price
@@ -277,8 +304,53 @@ class Backtest1m:
         if not hit_sl and not hit_tp:
             return None
 
-        # SL takes priority (conservative -- assume worst case)
-        if hit_sl:
+        if hit_sl and hit_tp:
+            favorable_gap = (
+                (pos.direction == "LONG" and pos.entry_price > signal_entry_price) or
+                (pos.direction == "SHORT" and pos.entry_price < signal_entry_price)
+            )
+            if favorable_gap:
+                exit_price = pos.tp_price
+                exit_reason = "TP"
+            else:
+                exit_price = pos.sl_price
+                exit_reason = "SL"
+        elif hit_sl:
+            exit_price = pos.sl_price
+            exit_reason = "SL"
+        else:
+            exit_price = pos.tp_price
+            exit_reason = "TP"
+
+        return self._close_position(pos, exit_price, exit_reason, candle, idx)
+
+    def _check_exit(
+        self, pos: _OpenPosition, candle: pd.Series, idx: int,
+    ) -> Optional[ClosedTrade1m]:
+        """Check if SL or TP hit on this candle using high/low."""
+        high = candle["high"]
+        low = candle["low"]
+
+        if pos.direction == "LONG":
+            hit_sl = low <= pos.sl_price
+            hit_tp = high >= pos.tp_price
+        else:
+            hit_sl = high >= pos.sl_price
+            hit_tp = low <= pos.tp_price
+
+        if not hit_sl and not hit_tp:
+            return None
+
+        if hit_sl and hit_tp:
+            # B4: Use proximity to candle open to determine which hit first
+            open_price = candle["open"]
+            if abs(open_price - pos.tp_price) <= abs(open_price - pos.sl_price):
+                exit_price = pos.tp_price
+                exit_reason = "TP"
+            else:
+                exit_price = pos.sl_price
+                exit_reason = "SL"
+        elif hit_sl:
             exit_price = pos.sl_price
             exit_reason = "SL"
         else:
