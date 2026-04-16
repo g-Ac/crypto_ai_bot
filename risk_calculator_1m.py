@@ -7,7 +7,7 @@ All P&L calculations include fees. This is the guardian
 that prevents unviable trades from entering.
 """
 from dataclasses import dataclass
-from config_1m import VALID_LEVERAGES, get_min_notional
+from config_1m import VALID_LEVERAGES, get_max_leverage, get_min_notional
 
 
 @dataclass
@@ -23,6 +23,7 @@ class TradeViability:
     expected_profit_usd: float
     expected_loss_usd: float
     risk_reward_net: float
+    actual_max_loss_usd: float
 
 
 def calculate_viability(
@@ -63,10 +64,17 @@ def calculate_viability(
         position_size_usd=0, leverage=0, notional_usd=0,
         fee_cost_usd=0, fee_impact_pct=0, min_profit_to_breakeven=0,
         expected_profit_usd=0, expected_loss_usd=0, risk_reward_net=0,
+        actual_max_loss_usd=0,
     )
 
     if entry_price <= 0:
         return _not_viable("Entry price invalido")
+    if sl_price <= 0:
+        return _not_viable("SL price invalido")
+    if tp_price <= 0:
+        return _not_viable("TP price invalido")
+    if max_risk_per_trade_usd <= 0:
+        return _not_viable("Max risk per trade deve ser > 0")
 
     sl_distance_pct = abs(entry_price - sl_price) / entry_price * 100
     tp_distance_pct = abs(tp_price - entry_price) / entry_price * 100
@@ -90,14 +98,11 @@ def calculate_viability(
     if notional < min_notional:
         return _not_viable(f"Notional ${notional:.2f} abaixo do minimo ${min_notional} para {symbol}")
 
+    max_lev = get_max_leverage(symbol)
     if preferred_leverage is not None:
-        leverage = preferred_leverage
+        leverage = min(preferred_leverage, max_lev)
     else:
-        leverage = VALID_LEVERAGES[-1]  # 125x
-        for lev in reversed(VALID_LEVERAGES):
-            if notional / lev >= 0.01:
-                leverage = lev
-                break
+        leverage = max_lev
 
     position_size_usd = notional / leverage
     fee_cost_usd = notional * fee_roundtrip_pct / 100
@@ -129,4 +134,5 @@ def calculate_viability(
         expected_profit_usd=expected_profit_usd,
         expected_loss_usd=expected_loss_usd,
         risk_reward_net=risk_reward_net,
+        actual_max_loss_usd=expected_loss_usd,
     )

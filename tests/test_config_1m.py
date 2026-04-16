@@ -45,3 +45,25 @@ def test_engine_flags_default():
     assert c.engine_sr_bounce is False
     assert c.engine_mean_reversion is False
     assert c.engine_liquidity_sweep is False
+
+
+def test_max_leverage_per_symbol():
+    from config_1m import get_max_leverage
+    assert get_max_leverage("BTCUSDT") == 125
+    assert get_max_leverage("ETHUSDT") == 100
+    assert get_max_leverage("SOLUSDT") == 50
+    assert get_max_leverage("UNKNOWNUSDT") == 50  # default
+
+
+def test_fee_roundtrip_auto_sync():
+    """fee_roundtrip_pct is auto-corrected if inconsistent with per-side fees."""
+    from config_1m import Config1m
+    # Taker default: 0.04 * 2 = 0.08
+    c = Config1m()
+    assert c.fee_roundtrip_pct == 0.08
+    # Mismatch: roundtrip says 0.10 but taker is 0.04 -> corrected to 0.08
+    c2 = Config1m(fee_roundtrip_pct=0.10)
+    assert c2.fee_roundtrip_pct == pytest.approx(0.08)
+    # Maker mode: 0.02 * 2 = 0.04
+    c3 = Config1m(use_maker_orders=True)
+    assert c3.fee_roundtrip_pct == pytest.approx(0.04)

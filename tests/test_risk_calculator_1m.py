@@ -146,3 +146,184 @@ class TestEdgeCases:
             max_risk_per_trade_usd=2.0,
         )
         assert isinstance(v, TradeViability)
+
+    def test_negative_entry_price(self):
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=-100.0,
+            sl_price=59850.0, tp_price=60450.0,
+            max_risk_per_trade_usd=2.0,
+        )
+        assert v.viable is False
+        assert "entry" in v.reason.lower()
+
+    def test_zero_entry_price(self):
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=0.0,
+            sl_price=59850.0, tp_price=60450.0,
+            max_risk_per_trade_usd=2.0,
+        )
+        assert v.viable is False
+
+    def test_negative_sl_price(self):
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=60000.0,
+            sl_price=-100.0, tp_price=60450.0,
+            max_risk_per_trade_usd=2.0,
+        )
+        assert v.viable is False
+        assert "sl" in v.reason.lower()
+
+    def test_negative_tp_price(self):
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=60000.0,
+            sl_price=59850.0, tp_price=-100.0,
+            max_risk_per_trade_usd=2.0,
+        )
+        assert v.viable is False
+        assert "tp" in v.reason.lower()
+
+    def test_zero_max_risk(self):
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=60000.0,
+            sl_price=59850.0, tp_price=60450.0,
+            max_risk_per_trade_usd=0.0,
+        )
+        assert v.viable is False
+        assert "risk" in v.reason.lower()
+
+    def test_negative_max_risk(self):
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=60000.0,
+            sl_price=59850.0, tp_price=60450.0,
+            max_risk_per_trade_usd=-5.0,
+        )
+        assert v.viable is False
+
+
+class TestBoundaryConditions:
+    """Exact boundary values for SL distance."""
+
+    def test_sl_at_exact_minimum(self):
+        """SL distance exactly 0.05% should be accepted."""
+        entry = 60000.0
+        sl = entry * (1 - 0.0005)  # exactly 0.05%
+        tp = entry * (1 + 0.0015)  # 0.15% TP for decent R:R
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=entry,
+            sl_price=sl, tp_price=tp,
+            max_risk_per_trade_usd=2.0,
+        )
+        # Should NOT be rejected for "stop muito curto"
+        if not v.viable:
+            assert "curto" not in v.reason.lower()
+
+    def test_sl_at_exact_maximum(self):
+        """SL distance exactly 1.0% should be accepted."""
+        entry = 60000.0
+        sl = entry * (1 - 0.01)  # exactly 1.0%
+        tp = entry * (1 + 0.03)  # 3.0% TP for decent R:R
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=entry,
+            sl_price=sl, tp_price=tp,
+            max_risk_per_trade_usd=2.0,
+        )
+        # Should NOT be rejected for "stop muito largo"
+        if not v.viable:
+            assert "largo" not in v.reason.lower()
+
+    def test_sl_just_above_maximum(self):
+        """SL distance 1.01% should be rejected."""
+        entry = 60000.0
+        sl = entry * (1 - 0.0101)  # 1.01%
+        tp = entry * (1 + 0.03)
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=entry,
+            sl_price=sl, tp_price=tp,
+            max_risk_per_trade_usd=2.0,
+        )
+        assert v.viable is False
+
+
+class TestActualMaxLoss:
+    """Verify actual_max_loss_usd exposes true risk including fees."""
+
+    def test_actual_loss_exceeds_max_risk(self):
+        """actual_max_loss_usd should be > max_risk due to fees."""
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=60000.0,
+            sl_price=59850.0, tp_price=60450.0,
+            max_risk_per_trade_usd=2.0,
+        )
+        assert v.viable is True
+        assert v.actual_max_loss_usd > 2.0  # fees add to loss
+
+    def test_actual_loss_equals_expected_loss(self):
+        """actual_max_loss_usd == expected_loss_usd."""
+        v = calculate_viability(
+            symbol="ETHUSDT", entry_price=3000.0,
+            sl_price=2985.0, tp_price=3045.0,
+            max_risk_per_trade_usd=2.0,
+        )
+        assert v.viable is True
+        assert v.actual_max_loss_usd == v.expected_loss_usd
+
+    def test_fee_overhead_grows_with_tighter_stops(self):
+        """Tighter stops = higher fee overhead on actual loss."""
+        v_wide = calculate_viability(
+            symbol="ETHUSDT", entry_price=3000.0,
+            sl_price=2970.0, tp_price=3090.0,  # 1.0% SL
+            max_risk_per_trade_usd=2.0,
+        )
+        v_tight = calculate_viability(
+            symbol="SOLUSDT", entry_price=150.0,
+            sl_price=149.925, tp_price=150.225,  # 0.05% SL
+            max_risk_per_trade_usd=2.0,
+        )
+        if v_wide.viable and v_tight.viable:
+            overhead_wide = v_wide.actual_max_loss_usd / 2.0
+            overhead_tight = v_tight.actual_max_loss_usd / 2.0
+            assert overhead_tight > overhead_wide
+
+
+class TestLeverageCapping:
+    """Verify leverage is capped per symbol."""
+
+    def test_sol_capped_at_50x(self):
+        """SOLUSDT max leverage is 50x, not 125x."""
+        v = calculate_viability(
+            symbol="SOLUSDT", entry_price=150.0,
+            sl_price=149.25, tp_price=152.25,
+            max_risk_per_trade_usd=2.0,
+        )
+        assert v.viable is True
+        assert v.leverage <= 50
+
+    def test_btc_can_use_125x(self):
+        """BTCUSDT max leverage is 125x."""
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=60000.0,
+            sl_price=59850.0, tp_price=60450.0,
+            max_risk_per_trade_usd=2.0,
+        )
+        assert v.viable is True
+        assert v.leverage == 125
+
+    def test_preferred_leverage_capped_by_symbol_max(self):
+        """preferred_leverage=125 on SOL should be capped to 50."""
+        v = calculate_viability(
+            symbol="SOLUSDT", entry_price=150.0,
+            sl_price=149.25, tp_price=152.25,
+            max_risk_per_trade_usd=2.0,
+            preferred_leverage=125,
+        )
+        assert v.leverage == 50
+
+    def test_preferred_leverage_below_max_is_used(self):
+        """preferred_leverage=20 on BTC (max 125) should use 20."""
+        v = calculate_viability(
+            symbol="BTCUSDT", entry_price=60000.0,
+            sl_price=59850.0, tp_price=60450.0,
+            max_risk_per_trade_usd=2.0,
+            preferred_leverage=20,
+        )
+        assert v.leverage == 20

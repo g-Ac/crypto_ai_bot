@@ -12,8 +12,21 @@ BINANCE_MIN_NOTIONAL = {
 }
 _DEFAULT_MIN_NOTIONAL = 5
 
+BINANCE_MAX_LEVERAGE = {
+    "BTCUSDT": 125,
+    "ETHUSDT": 100,
+    "SOLUSDT": 50,
+    "BNBUSDT": 50,
+    "XRPUSDT": 50,
+    "DOGEUSDT": 50,
+}
+_DEFAULT_MAX_LEVERAGE = 50
+
 def get_min_notional(symbol: str) -> float:
     return BINANCE_MIN_NOTIONAL.get(symbol, _DEFAULT_MIN_NOTIONAL)
+
+def get_max_leverage(symbol: str) -> int:
+    return BINANCE_MAX_LEVERAGE.get(symbol, _DEFAULT_MAX_LEVERAGE)
 
 VALID_LEVERAGES = [1, 2, 3, 5, 10, 20, 25, 50, 75, 100, 125]
 
@@ -30,6 +43,11 @@ class Config1m:
     maker_fee_pct: float = 0.02
     taker_fee_pct: float = 0.04
     fee_roundtrip_pct: float = 0.08
+
+    def __post_init__(self):
+        expected = (self.maker_fee_pct if self.use_maker_orders else self.taker_fee_pct) * 2
+        if abs(self.fee_roundtrip_pct - expected) > 1e-9:
+            self.fee_roundtrip_pct = expected
 
     # Position Management
     max_positions: int = 3
