@@ -162,9 +162,9 @@ class Backtest1m:
         Returns:
             BacktestResult with all closed trades and metrics
         """
-        # Normalize timestamp column
-        if "timestamp" in df.columns and "time" not in df.columns:
-            df = df.rename(columns={"timestamp": "time"})
+        # Normalize time column to "timestamp"
+        if "time" in df.columns and "timestamp" not in df.columns:
+            df = df.rename(columns={"time": "timestamp"})
 
         # Add indicators to full dataframe
         df_full = add_indicators_1m(df.copy())
@@ -266,6 +266,14 @@ class Backtest1m:
         if not viability.viable:
             return None
 
+        # Update metadata with recalculated viability (actual entry price)
+        signal.metadata["viability"] = {
+            "notional": viability.notional_usd,
+            "leverage": viability.leverage,
+            "fee_cost": viability.fee_cost_usd,
+            "rr_net": viability.risk_reward_net,
+        }
+
         return _OpenPosition(
             symbol=symbol,
             direction=signal.direction.value,
@@ -273,7 +281,7 @@ class Backtest1m:
             entry_price=entry_price,
             sl_price=signal.sl_price,
             tp_price=signal.tp1_price,
-            entry_time=str(candle.get("time", "")),
+            entry_time=str(candle.get("timestamp", "")),
             entry_candle_idx=idx,
             notional_usd=viability.notional_usd,
             leverage=viability.leverage,
@@ -287,9 +295,9 @@ class Backtest1m:
     ) -> Optional[ClosedTrade1m]:
         """B3: Check if SL or TP hit on the entry candle itself.
 
-        Uses gap direction to determine check order when both are hit:
-        - Favorable gap (entry better than signal) → TP first
-        - Unfavorable gap (entry worse than signal) → SL first
+        Uses gap direction to determine proximity when both are hit:
+        - Gap toward TP side (LONG: entry > signal, SHORT: entry < signal) → TP first
+        - Gap toward SL side → SL first
         """
         high = candle["high"]
         low = candle["low"]
@@ -305,11 +313,11 @@ class Backtest1m:
             return None
 
         if hit_sl and hit_tp:
-            favorable_gap = (
+            gap_toward_tp = (
                 (pos.direction == "LONG" and pos.entry_price > signal_entry_price) or
                 (pos.direction == "SHORT" and pos.entry_price < signal_entry_price)
             )
-            if favorable_gap:
+            if gap_toward_tp:
                 exit_price = pos.tp_price
                 exit_reason = "TP"
             else:
@@ -398,7 +406,7 @@ class Backtest1m:
             sl_price=pos.sl_price,
             tp_price=pos.tp_price,
             entry_time=pos.entry_time,
-            exit_time=str(candle.get("time", "")),
+            exit_time=str(candle.get("timestamp", "")),
             exit_reason=exit_reason,
             pnl_pct=pnl_pct_net,
             pnl_usd=pnl_usd,

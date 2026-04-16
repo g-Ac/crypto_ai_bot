@@ -2,6 +2,7 @@
 
 All engines MUST inherit from Engine1m and implement analyze().
 """
+from abc import ABC, abstractmethod
 from typing import List, Optional
 
 import pandas as pd
@@ -9,12 +10,27 @@ import pandas as pd
 from signal_types import Signal
 
 
-class Engine1m:
-    """Interface for pluggable 1-minute engines."""
+class Engine1m(ABC):
+    """Interface for pluggable 1-minute engines.
+
+    Subclasses MUST:
+      - Set `name` to a unique string (not "base")
+      - Set `version` to a semver string
+      - Implement `analyze()` and `required_indicators()`
+    """
 
     name: str = "base"
     version: str = "0.0.0"
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if cls.name == "base":
+            raise TypeError(
+                f"{cls.__name__} must define a 'name' class attribute "
+                f"different from 'base'"
+            )
+
+    @abstractmethod
     def analyze(
         self,
         symbol: str,
@@ -42,8 +58,9 @@ class Engine1m:
         Returns:
             Signal if valid setup found, None otherwise
         """
-        raise NotImplementedError
+        ...
 
+    @abstractmethod
     def required_indicators(self) -> List[str]:
         """List of indicator columns this engine needs in df_1m."""
-        raise NotImplementedError
+        ...

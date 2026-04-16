@@ -152,7 +152,7 @@ class TestEntryGapHandling:
 
         times = pd.date_range("2026-01-01", periods=n, freq="1min", tz="UTC")
         df = pd.DataFrame({
-            "time": times,
+            "timestamp": times,
             "open": [base] * n,
             "high": [base + 0.5] * n,
             "low": [base - 0.5] * n,
@@ -281,6 +281,45 @@ class TestEntryGapHandling:
         assert trade.exit_reason == "SL"
         assert trade.exit_price == pytest.approx(99.3)
 
+    def test_short_unfavorable_gap_rejects_trade(self):
+        """B1 SHORT: Large unfavorable gap makes SL distance exceed max → rejected."""
+        # SHORT signal: entry=100, SL=100.5, TP=98.5
+        # Entry candle gaps up to 103 → SL distance from 103 to 100.5 = 2.43% > 1.0%
+        df, engine = self._build_scenario(
+            signal_idx=29,
+            entry_open=103.0, entry_high=103.5, entry_low=102.5, entry_close=103.0,
+            signal_entry=100.0, sl=100.5, tp=98.5, direction="SHORT",
+        )
+        config = Config1m(max_risk_per_trade_usd=2.0, max_sl_distance_pct=1.0)
+        bt = Backtest1m(engines=[engine], config=config)
+        result = bt.run_on_dataframe("SOLUSDT", df)
+
+        assert result.total_trades == 0
+
+    def test_short_entry_candle_sl_tp_both_hit_gap_toward_tp(self):
+        """B3 SHORT: Gap down (toward TP) → TP wins when both hit."""
+        # SHORT signal: entry=100, SL=100.7, TP=98.0
+        # Entry candle: open=99.8 (gap DOWN = toward TP for SHORT)
+        # sl_dist = |99.8-100.7|/99.8 = 0.90%, tp_dist = |98.0-99.8|/99.8 = 1.80%
+        # R:R ≈ 1.8 → viable
+        # Both SL (103 > 100.7) and TP (97 < 98.0) hit
+        # Gap toward TP → TP should win
+        df, engine = self._build_scenario(
+            signal_idx=29,
+            entry_open=99.8, entry_high=103.0, entry_low=97.0,
+            entry_close=98.5,
+            signal_entry=100.0, sl=100.7, tp=98.0, direction="SHORT",
+        )
+        config = Config1m(max_risk_per_trade_usd=2.0, min_rr_net=1.0)
+        bt = Backtest1m(engines=[engine], config=config)
+        result = bt.run_on_dataframe("SOLUSDT", df)
+
+        assert result.total_trades == 1
+        trade = result.trades[0]
+        assert trade.exit_reason == "TP"
+        assert trade.exit_price == pytest.approx(98.0)
+        assert trade.duration_candles == 0
+
 
 class TestAmbiguousSlTpResolution:
     """B4: Non-entry candle with both SL and TP hit."""
@@ -302,7 +341,7 @@ class TestAmbiguousSlTpResolution:
 
         # Candle opens near TP side → TP should win
         candle_tp_first = pd.Series({
-            "open": 100.8, "high": 101.5, "low": 98.5, "close": 99.5, "time": ""
+            "open": 100.8, "high": 101.5, "low": 98.5, "close": 99.5, "timestamp": ""
         })
         trade = bt._check_exit(pos, candle_tp_first, 5)
         assert trade.exit_reason == "TP"
@@ -316,7 +355,7 @@ class TestAmbiguousSlTpResolution:
             fee_roundtrip_pct=0.08,
         )
         candle_sl_first = pd.Series({
-            "open": 99.2, "high": 101.5, "low": 98.5, "close": 100.5, "time": ""
+            "open": 99.2, "high": 101.5, "low": 98.5, "close": 100.5, "timestamp": ""
         })
         trade2 = bt._check_exit(pos2, candle_sl_first, 5)
         assert trade2.exit_reason == "SL"

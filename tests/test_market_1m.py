@@ -1,6 +1,7 @@
 """Tests for 1-minute market data fetching."""
 import pandas as pd
 import pytest
+import requests
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
@@ -47,8 +48,8 @@ class TestFetchLive:
 
     @patch("market_1m.requests.get")
     def test_api_failure_raises(self, mock_get):
-        mock_get.side_effect = Exception("Network error")
-        with pytest.raises(Exception):
+        mock_get.side_effect = requests.exceptions.ConnectionError("Network error")
+        with pytest.raises(requests.exceptions.ConnectionError):
             fetch_1m_candles_live("BTCUSDT", limit=5)
 
 

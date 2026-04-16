@@ -113,7 +113,7 @@ class MomentumBurst1m(Engine1m):
             min(body_ratio, 0.3)
         ))
 
-        timestamp = str(last.get("time", datetime.now(timezone.utc).isoformat()))
+        timestamp = str(last.get("timestamp", datetime.now(timezone.utc).isoformat()))
 
         return Signal(
             direction=direction,

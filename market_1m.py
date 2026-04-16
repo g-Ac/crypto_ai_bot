@@ -19,10 +19,12 @@ def fetch_1m_candles_live(symbol: str, limit: int = 200) -> pd.DataFrame:
         limit: number of candles (max 1500)
 
     Returns:
-        DataFrame with columns: time, open, high, low, close, volume
+        DataFrame with columns: timestamp, open, high, low, close, volume
     """
     url = BINANCE_FUTURES_KLINES_URL
     params = {"symbol": symbol, "interval": "1m", "limit": limit}
+    last_status = None
+    last_body = ""
 
     for attempt in range(3):
         try:
@@ -30,21 +32,26 @@ def fetch_1m_candles_live(symbol: str, limit: int = 200) -> pd.DataFrame:
             if response.status_code == 200:
                 data = response.json()
                 df = pd.DataFrame(data, columns=[
-                    "time", "open", "high", "low", "close", "volume",
+                    "timestamp", "open", "high", "low", "close", "volume",
                     "close_time", "qav", "trades", "tbbav", "tbqav", "ignore",
                 ])
                 for col in ["open", "high", "low", "close", "volume"]:
                     df[col] = df[col].astype(float)
-                df["time"] = pd.to_datetime(df["time"], unit="ms")
-                return df[["time", "open", "high", "low", "close", "volume"]].copy()
+                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+                return df[["timestamp", "open", "high", "low", "close", "volume"]].copy()
+            last_status = response.status_code
+            last_body = response.text[:500]
             delay = min(2 ** (attempt + 1), 30)
             time.sleep(delay)
-        except Exception:
+        except (requests.exceptions.RequestException, ValueError, KeyError):
             if attempt == 2:
                 raise
             time.sleep(min(2 ** attempt, 10))
 
-    raise Exception(f"Falha ao buscar 1m candles para {symbol} apos 3 tentativas")
+    raise Exception(
+        f"Falha ao buscar 1m candles para {symbol} apos 3 tentativas "
+        f"(HTTP {last_status}: {last_body})"
+    )
 
 
 def fetch_1m_historical(

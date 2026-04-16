@@ -20,7 +20,32 @@ def _make_candles(n: int = 100, base: float = 100.0, seed: int = 42) -> pd.DataF
     volumes = np.random.uniform(100, 500, n)
     times = pd.date_range("2026-01-01", periods=n, freq="1min", tz="UTC")
     return pd.DataFrame({
-        "time": times, "open": opens, "high": highs,
+        "timestamp": times, "open": opens, "high": highs,
+        "low": lows, "close": closes, "volume": volumes,
+    })
+
+
+def _make_trending_candles_for_burst(direction: str = "LONG", seed: int = 42) -> pd.DataFrame:
+    """Generate data with gentle trend suitable for burst detection.
+
+    Uses flat-then-trend structure to keep RSI moderate (30-70 range)
+    while maintaining EMA alignment for the desired direction.
+    """
+    np.random.seed(seed)
+    n = 150
+    flat = np.full(100, 100.0) + np.random.randn(100) * 0.3
+    if direction == "LONG":
+        trend = np.linspace(100, 102, 50) + np.random.randn(50) * 0.3
+    else:
+        trend = np.linspace(100, 98, 50) + np.random.randn(50) * 0.3
+    closes = np.concatenate([flat, trend])
+    highs = closes + 0.3
+    lows = closes - 0.3
+    opens = closes - 0.05 if direction == "LONG" else closes + 0.05
+    volumes = np.random.uniform(100, 500, n)
+    times = pd.date_range("2026-01-01", periods=n, freq="1min", tz="UTC")
+    return pd.DataFrame({
+        "timestamp": times, "open": opens, "high": highs,
         "low": lows, "close": closes, "volume": volumes,
     })
 
@@ -52,13 +77,13 @@ def _make_burst_candle(df: pd.DataFrame, direction: str = "LONG") -> pd.DataFram
         h = last_close + burst_range * 0.1
 
     burst = pd.DataFrame({
-        "time": [df["time"].iloc[-1] + pd.Timedelta(minutes=1)],
+        "timestamp": [df["timestamp"].iloc[-1] + pd.Timedelta(minutes=1)],
         "open": [o], "high": [h], "low": [l], "close": [c],
         "volume": [avg_vol * 3.5],  # well above 2.5x threshold
     })
 
     # Replace last row with burst
-    result = pd.concat([df[["time", "open", "high", "low", "close", "volume"]].iloc[:-1], burst], ignore_index=True)
+    result = pd.concat([df[["timestamp", "open", "high", "low", "close", "volume"]].iloc[:-1], burst], ignore_index=True)
     return result
 
 
@@ -74,36 +99,36 @@ class TestMomentumBurstDetection:
     def test_detects_long_burst(self):
         """Strong bullish candle with volume triggers LONG signal."""
         engine = MomentumBurst1m()
-        # Create trending-up data so EMA8 > EMA21
-        np.random.seed(42)
-        n = 100
-        trend = np.linspace(100, 110, n)  # uptrend
-        noise = np.random.randn(n) * 0.2
-        closes = trend + noise
-        highs = closes + 0.3
-        lows = closes - 0.3
-        opens = closes - 0.1
-        volumes = np.random.uniform(100, 500, n)
-        times = pd.date_range("2026-01-01", periods=n, freq="1min", tz="UTC")
-
-        df = pd.DataFrame({
-            "time": times, "open": opens, "high": highs,
-            "low": lows, "close": closes, "volume": volumes,
-        })
-
+        df = _make_trending_candles_for_burst("LONG")
         df = _make_burst_candle(df, direction="LONG")
         df = add_indicators_1m(df)
         signal = engine.analyze("BTCUSDT", df)
 
-        if signal is not None:
-            assert signal.direction == Direction.LONG
-            assert signal.valid is True
-            assert signal.source == "momentum_burst_1m"
-            assert signal.sl_price < signal.entry_price
-            assert signal.tp1_price > signal.entry_price
-            assert 0 < signal.strength <= 1.0
-            assert "atr_multiple" in signal.metadata
-            assert "volume_multiple" in signal.metadata
+        assert signal is not None, "Expected LONG burst to be detected"
+        assert signal.direction == Direction.LONG
+        assert signal.valid is True
+        assert signal.source == "momentum_burst_1m"
+        assert signal.sl_price < signal.entry_price
+        assert signal.tp1_price > signal.entry_price
+        assert 0 < signal.strength <= 1.0
+        assert "atr_multiple" in signal.metadata
+        assert "volume_multiple" in signal.metadata
+
+    def test_detects_short_burst(self):
+        """Strong bearish candle with volume triggers SHORT signal."""
+        engine = MomentumBurst1m()
+        df = _make_trending_candles_for_burst("SHORT")
+        df = _make_burst_candle(df, direction="SHORT")
+        df = add_indicators_1m(df)
+        signal = engine.analyze("BTCUSDT", df)
+
+        assert signal is not None, "Expected SHORT burst to be detected"
+        assert signal.direction == Direction.SHORT
+        assert signal.valid is True
+        assert signal.source == "momentum_burst_1m"
+        assert signal.sl_price > signal.entry_price
+        assert signal.tp1_price < signal.entry_price
+        assert 0 < signal.strength <= 1.0
 
     def test_no_signal_when_rsi_extreme(self):
         """RSI outside 30-70 range should block signal."""
@@ -138,28 +163,14 @@ class TestSignalPrices:
     def test_sl_uses_atr(self):
         """SL should be based on candle low minus ATR fraction."""
         engine = MomentumBurst1m()
-        # Create a scenario that triggers a signal
-        np.random.seed(42)
-        n = 100
-        trend = np.linspace(100, 115, n)
-        closes = trend + np.random.randn(n) * 0.1
-        highs = closes + 0.4
-        lows = closes - 0.2
-        opens = closes - 0.05
-        volumes = np.random.uniform(100, 500, n)
-        times = pd.date_range("2026-01-01", periods=n, freq="1min", tz="UTC")
-
-        df = pd.DataFrame({
-            "time": times, "open": opens, "high": highs,
-            "low": lows, "close": closes, "volume": volumes,
-        })
+        df = _make_trending_candles_for_burst("LONG")
         df = _make_burst_candle(df, "LONG")
         df = add_indicators_1m(df)
         signal = engine.analyze("BTCUSDT", df)
 
-        if signal is not None:
-            last = df.iloc[-1]
-            # SL should be below the candle low
-            assert signal.sl_price < last["low"]
-            # TP should be above entry
-            assert signal.tp1_price > signal.entry_price
+        assert signal is not None, "Expected LONG burst for SL/ATR test"
+        last = df.iloc[-1]
+        # SL should be below the candle low
+        assert signal.sl_price < last["low"]
+        # TP should be above entry
+        assert signal.tp1_price > signal.entry_price
