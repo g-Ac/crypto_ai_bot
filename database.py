@@ -26,6 +26,8 @@ VALID_TABLES = frozenset({
     "market_microstructure",
     "momentum_trades",
     "momentum_decisions",
+    "breakout_trades",
+    "breakout_decisions",
 })
 
 
@@ -374,6 +376,50 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_momentum_decisions_ts ON momentum_decisions(timestamp);
         CREATE INDEX IF NOT EXISTS idx_momentum_decisions_cycle ON momentum_decisions(cycle_id);
         CREATE INDEX IF NOT EXISTS idx_momentum_decisions_outcome ON momentum_decisions(outcome);
+    """)
+    conn.commit()
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS breakout_trades (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp           TEXT,
+            symbol              TEXT,
+            direction           TEXT,
+            entry_price         REAL,
+            exit_price          REAL,
+            sl_price            REAL,
+            tp1_price           REAL,
+            tp2_price           REAL,
+            position_size_usd   REAL,
+            pnl_pct             REAL,
+            pnl_usd             REAL,
+            exit_reason         TEXT,
+            capital_after       REAL,
+            param_version       TEXT,
+            duration_candles    INTEGER DEFAULT 0,
+            mfe_pct             REAL DEFAULT 0,
+            mae_pct             REAL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS breakout_decisions (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp           TEXT,
+            cycle_id            TEXT,
+            symbol              TEXT,
+            direction           TEXT,
+            blocked_by          TEXT DEFAULT 'none',
+            range_pct           REAL DEFAULT 0,
+            bb_bandwidth        REAL DEFAULT 0,
+            vol_ratio           REAL DEFAULT 0,
+            body_ratio          REAL DEFAULT 0,
+            lookback            INTEGER DEFAULT 0,
+            param_version       TEXT DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_breakout_trades_ts ON breakout_trades(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_breakout_trades_symbol ON breakout_trades(symbol);
+        CREATE INDEX IF NOT EXISTS idx_breakout_decisions_ts ON breakout_decisions(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_breakout_decisions_cycle ON breakout_decisions(cycle_id);
     """)
     conn.commit()
 
@@ -732,6 +778,68 @@ def insert_momentum_decision(decision: dict):
             decision.get("param_version", "momentum-pullback-v1.1"),
             decision.get("session_bucket", ""),
             decision.get("asset_bucket", ""),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_breakout_trade(trade: dict):
+    conn = _get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO breakout_trades (
+                timestamp, symbol, direction,
+                entry_price, exit_price, sl_price, tp1_price, tp2_price,
+                position_size_usd, pnl_pct, pnl_usd,
+                exit_reason, capital_after, param_version,
+                duration_candles, mfe_pct, mae_pct
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            trade["timestamp"],
+            trade["symbol"],
+            trade["direction"],
+            trade["entry_price"],
+            trade.get("exit_price"),
+            trade.get("sl_price"),
+            trade.get("tp1_price"),
+            trade.get("tp2_price"),
+            trade.get("position_size_usd"),
+            trade.get("pnl_pct"),
+            round(trade.get("pnl_usd", 0), 2),
+            trade.get("exit_reason", "open"),
+            round(trade.get("capital_after", 0), 2),
+            trade.get("param_version", "breakout-5m-v1.0"),
+            trade.get("duration_candles"),
+            trade.get("mfe_pct", 0),
+            trade.get("mae_pct", 0),
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_breakout_decision(decision: dict):
+    conn = _get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO breakout_decisions (
+                timestamp, cycle_id, symbol, direction, blocked_by,
+                range_pct, bb_bandwidth, vol_ratio, body_ratio,
+                lookback, param_version
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            decision["timestamp"],
+            decision.get("cycle_id", ""),
+            decision["symbol"],
+            decision.get("direction", ""),
+            decision.get("blocked_by", "none"),
+            decision.get("range_pct", 0),
+            decision.get("bb_bandwidth", 0),
+            decision.get("vol_ratio", 0),
+            decision.get("body_ratio", 0),
+            decision.get("lookback", 0),
+            decision.get("param_version", "breakout-5m-v1.0"),
         ))
         conn.commit()
     finally:

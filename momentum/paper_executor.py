@@ -120,6 +120,15 @@ def open_position(state: dict, signal: MomentumSignal, cycle_id: str) -> list[st
     if symbol in state.get("cooldowns", {}):
         return msgs
 
+    # Position router: check if breakout engine has position on this symbol
+    try:
+        from breakout.paper_executor import load_state as load_breakout_state
+        breakout_state = load_breakout_state()
+        if symbol in breakout_state.get("positions", {}):
+            return msgs
+    except Exception:
+        pass
+
     entry = signal.entry_price
     sl = signal.sl_price
     tp1 = signal.tp1_price

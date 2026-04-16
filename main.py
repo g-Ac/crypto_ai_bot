@@ -225,6 +225,34 @@ def run_bot():
         print("\n========================================")
         print("MOMENTUM PULLBACK: DESABILITADO (MOMENTUM_TRADER_ENABLED=false)\n")
 
+    # Breakout 5m Strategy
+    if cfg.BREAKOUT_TRADER_ENABLED:
+        print("\n========================================")
+        print("BREAKOUT 5M STRATEGY\n")
+
+        try:
+            try:
+                breakout_suspended = enforce_circuit_breaker("breakout") or is_paused()
+            except Exception as e:
+                print(f"  [ERRO] Falha ao verificar circuit breaker breakout: {e}")
+                breakout_suspended = True
+            if breakout_suspended:
+                print("  Circuit breaker ativo ou bot pausado - gerenciando posicoes")
+            from breakout.paper_executor import process_breakout_cycle, get_breakout_status
+            breakout_msgs = process_breakout_cycle(
+                cfg.BREAKOUT_SYMBOLS,
+                open_new=not breakout_suspended,
+            )
+            for msg in breakout_msgs:
+                print(f"  {msg}")
+                send_telegram_message(f"\U0001f4ca <b>[BREAKOUT 5M]</b> {msg}")
+            print(f"\n  {get_breakout_status()}")
+        except Exception as e:
+            print(f"  [ERRO] Falha no breakout 5m: {e}")
+    else:
+        print("\n========================================")
+        print("BREAKOUT 5M: DESABILITADO (BREAKOUT_TRADER_ENABLED=false)\n")
+
     # Daily Report (envia 1x por dia apos meia-noite)
     try:
         check_daily_report()

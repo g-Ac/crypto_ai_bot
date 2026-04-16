@@ -6,6 +6,7 @@ from engines_5m.base import Engine5m
 from engines_5m.breakout import BreakoutEngine5m
 from indicators_5m import add_indicators_5m
 from signal_types import Direction, Signal
+from breakout.paper_executor import process_breakout_cycle
 
 
 class TestEngine5mBase:
@@ -90,3 +91,39 @@ class TestBreakoutEngine5m:
         })
         df = add_indicators_5m(df)
         assert engine.analyze("BTCUSDT", df) is None
+
+
+class TestBreakoutExecutor:
+    def test_process_cycle_no_signal(self, tmp_path, monkeypatch):
+        """Cycle with no signal returns empty messages."""
+        monkeypatch.setattr(
+            "breakout.paper_executor.BREAKOUT_STATE_FILE",
+            str(tmp_path / "state.json"),
+        )
+
+        def flat_candles(symbol, interval, limit):
+            n = 50
+            return pd.DataFrame({
+                "open": [100.0] * n,
+                "high": [100.5] * n,
+                "low": [99.5] * n,
+                "close": [100.0] * n,
+                "volume": [100.0] * n,
+                "time": pd.date_range("2026-01-01", periods=n, freq="5min"),
+            })
+
+        msgs = process_breakout_cycle(
+            ["BTCUSDT"],
+            open_new=True,
+            candle_fn=flat_candles,
+        )
+        assert isinstance(msgs, list)
+
+    def test_get_breakout_status(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "breakout.paper_executor.BREAKOUT_STATE_FILE",
+            str(tmp_path / "state.json"),
+        )
+        from breakout.paper_executor import get_breakout_status
+        status = get_breakout_status()
+        assert "BREAKOUT 5M" in status

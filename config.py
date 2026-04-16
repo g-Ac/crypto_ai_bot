@@ -176,6 +176,12 @@ MOMENTUM_TRADER_ENABLED = os.environ.get("MOMENTUM_TRADER_ENABLED", "false").str
 MOMENTUM_SYMBOLS = [s.strip() for s in os.environ.get("MOMENTUM_SYMBOLS", "BTCUSDT,ETHUSDT").split(",") if s.strip()]
 MOMENTUM_MAX_POSITIONS = 1
 
+# Breakout 5m Strategy
+BREAKOUT_TRADER_ENABLED = os.environ.get("BREAKOUT_TRADER_ENABLED", "false").strip().lower() in ("true", "1", "yes")
+BREAKOUT_SYMBOLS = [s.strip() for s in os.environ.get("BREAKOUT_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT").split(",") if s.strip()]
+BREAKOUT_MAX_POSITIONS = 2
+BREAKOUT_INITIAL_CAPITAL = float(os.environ.get("BOT_BREAKOUT_INITIAL_CAPITAL", "1000"))
+
 # Dashboard Auth (HTTP Basic Auth para rotas POST)
 # Defina via env vars DASHBOARD_USER / DASHBOARD_PASS no Pi.
 # Se ambas estiverem vazias, auth fica desabilitada (apenas rede local confiavel).
