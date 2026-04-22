@@ -2,7 +2,12 @@
 import numpy as np
 import pytest
 
-from pair_trading.robustness_check import holdout_oos, monthly_consistency, regime_breakdown
+from pair_trading.robustness_check import (
+    correlation_bucket_analysis,
+    holdout_oos,
+    monthly_consistency,
+    regime_breakdown,
+)
 
 
 def _mock_trades_with_month(month_pfs):
@@ -91,3 +96,27 @@ def test_regime_breakdown_collapse_fails():
     result = regime_breakdown(trades, min_trades_per_regime=20, pf_floor=0.5)
     assert result["passes"] is False
     assert result["regime_stats"]["TRENDING"]["pf"] < 0.5
+
+
+def test_correlation_bucket_edge_in_high_corr():
+    """Edge concentrated in high-correlation bucket = expected, OK."""
+    trades = (
+        [{"correlation": 0.8, "pnl_total_pct": 2.0} for _ in range(20)]
+        + [{"correlation": 0.4, "pnl_total_pct": -1.0} for _ in range(20)]
+    )
+    result = correlation_bucket_analysis(trades)
+    # Report only — always passes (diagnostic)
+    assert result["passes"] is True
+    assert "high" in result["bucket_stats"]
+    assert result["bucket_stats"]["high"]["pf"] > result["bucket_stats"]["low"]["pf"]
+
+
+def test_correlation_bucket_edge_in_low_corr_warns():
+    trades = (
+        [{"correlation": 0.3, "pnl_total_pct": 2.0} for _ in range(20)]
+        + [{"correlation": 0.8, "pnl_total_pct": -1.0} for _ in range(20)]
+    )
+    result = correlation_bucket_analysis(trades)
+    assert result["passes"] is True  # diagnostic only — does not block
+    assert result["warning"] is not None
+    assert "low" in result["warning"].lower()

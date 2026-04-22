@@ -121,3 +121,38 @@ def regime_breakdown(
         "failing_regimes": fails,
         "passes": len(fails) == 0,
     }
+
+
+def correlation_bucket_analysis(trades: List[Dict]) -> Dict:
+    """TEST 4: Bucket trades by correlation at entry and report PF per bucket.
+
+    Diagnostic: always returns passes=True, but emits a warning if edge
+    concentrates in the LOW correlation bucket (suspect).
+    """
+    buckets = {"low": [], "med": [], "high": []}  # 0.3-0.5, 0.5-0.7, 0.7+
+    for t in trades:
+        c = float(t.get("correlation") or 0.0)
+        pnl = t["pnl_total_pct"]
+        if c < 0.5:
+            buckets["low"].append(pnl)
+        elif c < 0.7:
+            buckets["med"].append(pnl)
+        else:
+            buckets["high"].append(pnl)
+
+    stats = {name: {"n": len(pnls), "pf": _pf(pnls)} for name, pnls in buckets.items()}
+    # Warn if edge concentrates in low correlation
+    pf_low = stats["low"]["pf"] if stats["low"]["n"] >= 5 else 0.0
+    pf_high = stats["high"]["pf"] if stats["high"]["n"] >= 5 else 0.0
+    warning = None
+    if pf_low > pf_high and pf_low > 1.0:
+        warning = (
+            "Edge concentra em bucket 'low' de baixa correlação — suspeito "
+            "(pair trading assume co-movimento). Investigar."
+        )
+
+    return {
+        "bucket_stats": stats,
+        "warning": warning,
+        "passes": True,  # always diagnostic
+    }
