@@ -44,4 +44,44 @@ def decide(
     config: PairConfig,
     circuit_breaker_active: bool = False,
 ) -> PairDecision:
-    raise NotImplementedError("Implemented in Task 5 and Task 6")
+    # Invalid snapshot → no action regardless of state
+    if not snapshot.is_valid:
+        return PairDecision(PairAction.NO_ACTION, blocked_by="invalid_zscore")
+
+    # Position management (exit logic) — implemented in Task 6
+    if position is not None:
+        return _decide_exit(snapshot, position, config)
+
+    # Entry logic
+    if circuit_breaker_active:
+        return PairDecision(PairAction.NO_ACTION, blocked_by="circuit_breaker")
+
+    z = snapshot.z_score
+    abs_z = abs(z)
+
+    if abs_z < config.entry_z:
+        return PairDecision(PairAction.NO_ACTION, blocked_by="z_below_threshold")
+
+    if abs_z > config.entry_max_z:
+        return PairDecision(PairAction.NO_ACTION, blocked_by="z_above_entry_guard")
+
+    # Valid entry zone: config.entry_z <= |z| <= config.entry_max_z
+    if z > 0:
+        return PairDecision(
+            PairAction.OPEN_SHORT_BTC_LONG_ETH,
+            trigger_reason=f"z={z:.2f}>=+{config.entry_z}",
+        )
+    else:
+        return PairDecision(
+            PairAction.OPEN_LONG_BTC_SHORT_ETH,
+            trigger_reason=f"z={z:.2f}<=-{config.entry_z}",
+        )
+
+
+def _decide_exit(
+    snapshot: SpreadSnapshot,
+    position: PairPosition,
+    config: PairConfig,
+) -> PairDecision:
+    # Stub — implemented in Task 6
+    raise NotImplementedError("exit logic implemented in Task 6")
