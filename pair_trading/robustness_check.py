@@ -66,3 +66,26 @@ def monthly_consistency(
         "pf_threshold": pf_threshold,
         "passes": passes,
     }
+
+
+def holdout_oos(
+    holdout_trades: List[Dict],
+    pf_threshold: float = 0.8,
+) -> Dict:
+    """TEST 2: PF over a pre-window (out-of-sample) period must be >= threshold.
+
+    Typically run on 30 days preceding the main backtest window.
+    """
+    if not holdout_trades:
+        return {
+            "pf": 0.0, "n_trades": 0, "pf_threshold": pf_threshold,
+            "passes": False, "note": "no trades in holdout",
+        }
+    pnls = [t["pnl_total_pct"] for t in holdout_trades]
+    pf = _pf(pnls)
+    return {
+        "pf": pf,
+        "n_trades": len(holdout_trades),
+        "pf_threshold": pf_threshold,
+        "passes": pf >= pf_threshold,
+    }

@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from pair_trading.robustness_check import monthly_consistency
+from pair_trading.robustness_check import holdout_oos, monthly_consistency
 
 
 def _mock_trades_with_month(month_pfs):
@@ -51,4 +51,18 @@ def test_monthly_consistency_1_of_3_fails():
     trades = _mock_trades_with_month([1.5, 0.3, 0.5])
     result = monthly_consistency(trades, n_months=3)
     assert result["n_positive_pf"] == 1
+    assert result["passes"] is False
+
+
+def test_holdout_oos_pass():
+    # Holdout PF = 0.9 passes (>= 0.8)
+    holdout_trades = _mock_trades_with_month([0.9])[:10]
+    result = holdout_oos(holdout_trades, pf_threshold=0.8)
+    assert result["pf"] >= 0.8
+    assert result["passes"] is True
+
+
+def test_holdout_oos_fail():
+    holdout_trades = _mock_trades_with_month([0.5])[:10]
+    result = holdout_oos(holdout_trades, pf_threshold=0.8)
     assert result["passes"] is False
