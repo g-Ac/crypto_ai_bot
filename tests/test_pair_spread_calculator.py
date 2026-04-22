@@ -19,12 +19,20 @@ def test_flat_prices_return_zero_zscore():
 
 
 def test_divergent_prices_give_high_zscore():
-    # BTC rises monotonically, ETH stays flat → spread grows
-    btc = np.array([50000.0 * (1 + 0.001) ** i for i in range(200)])
-    eth = np.full(200, 3000.0)
+    # BTC and ETH both have baseline noise; BTC gets extra drift in the last
+    # 30 candles. This makes the MOST RECENT cum_spread diverge strongly
+    # from its rolling-window history, producing high |z-score|.
+    # Seed fixed for reproducibility.
+    rng = np.random.default_rng(42)
+    n = 300
+    btc_ret = rng.normal(0, 0.01, n)
+    eth_ret = rng.normal(0, 0.01, n)
+    btc_ret[-30:] += 0.02  # late BTC outperformance
+    btc = 50000.0 * np.exp(np.cumsum(btc_ret))
+    eth = 3000.0 * np.exp(np.cumsum(eth_ret))
     snap = compute_snapshot(btc, eth, window=96, zscore_window=96)
     assert snap.is_valid
-    assert snap.z_score > 1.0  # BTC outperformed → positive z
+    assert snap.z_score > 2.0  # late divergence → elevated recent spread vs history
 
 
 def test_short_history_returns_invalid():
