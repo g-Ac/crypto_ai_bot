@@ -83,5 +83,28 @@ def _decide_exit(
     position: PairPosition,
     config: PairConfig,
 ) -> PairDecision:
-    # Stub — implemented in Task 6
-    raise NotImplementedError("exit logic implemented in Task 6")
+    """Exit priority: SL > TIMEOUT > TP."""
+    abs_z = abs(snapshot.z_score)
+
+    # 1. SL
+    if abs_z >= config.exit_sl_z:
+        return PairDecision(
+            PairAction.CLOSE_SL,
+            trigger_reason=f"|z|={abs_z:.2f}>={config.exit_sl_z}",
+        )
+
+    # 2. TIMEOUT
+    if position.candles_held >= config.time_stop_candles:
+        return PairDecision(
+            PairAction.CLOSE_TIMEOUT,
+            trigger_reason=f"candles_held={position.candles_held}>={config.time_stop_candles}",
+        )
+
+    # 3. TP
+    if abs_z <= config.exit_tp_z:
+        return PairDecision(
+            PairAction.CLOSE_TP,
+            trigger_reason=f"tp: |z|={abs_z:.2f}<={config.exit_tp_z}",
+        )
+
+    return PairDecision(PairAction.HOLD)
