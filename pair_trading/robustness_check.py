@@ -89,3 +89,35 @@ def holdout_oos(
         "pf_threshold": pf_threshold,
         "passes": pf >= pf_threshold,
     }
+
+
+def regime_breakdown(
+    trades: List[Dict],
+    min_trades_per_regime: int = 20,
+    pf_floor: float = 0.5,
+) -> Dict:
+    """TEST 3: No regime with PF < pf_floor in n >= min_trades_per_regime.
+
+    Groups by btc_regime_entry field.
+    """
+    by_regime: Dict[str, list] = {}
+    for t in trades:
+        r = t.get("btc_regime_entry", "UNKNOWN") or "UNKNOWN"
+        by_regime.setdefault(r, []).append(t["pnl_total_pct"])
+
+    regime_stats = {}
+    fails = []
+    for regime, pnls in by_regime.items():
+        pf = _pf(pnls)
+        n = len(pnls)
+        regime_stats[regime] = {"n": n, "pf": pf}
+        if n >= min_trades_per_regime and pf < pf_floor:
+            fails.append(regime)
+
+    return {
+        "regime_stats": regime_stats,
+        "min_trades_per_regime": min_trades_per_regime,
+        "pf_floor": pf_floor,
+        "failing_regimes": fails,
+        "passes": len(fails) == 0,
+    }

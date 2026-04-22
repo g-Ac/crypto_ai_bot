@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from pair_trading.robustness_check import holdout_oos, monthly_consistency
+from pair_trading.robustness_check import holdout_oos, monthly_consistency, regime_breakdown
 
 
 def _mock_trades_with_month(month_pfs):
@@ -66,3 +66,28 @@ def test_holdout_oos_fail():
     holdout_trades = _mock_trades_with_month([0.5])[:10]
     result = holdout_oos(holdout_trades, pf_threshold=0.8)
     assert result["passes"] is False
+
+
+def test_regime_breakdown_no_collapse():
+    trades = [
+        {"btc_regime_entry": "TRENDING", "pnl_total_pct": 2.0} for _ in range(20)
+    ] + [
+        {"btc_regime_entry": "TRENDING", "pnl_total_pct": -1.0} for _ in range(10)
+    ] + [
+        {"btc_regime_entry": "WEAK_TREND", "pnl_total_pct": 3.0} for _ in range(15)
+    ] + [
+        {"btc_regime_entry": "WEAK_TREND", "pnl_total_pct": -1.0} for _ in range(5)
+    ]
+    result = regime_breakdown(trades, min_trades_per_regime=20, pf_floor=0.5)
+    assert result["passes"] is True
+    assert "TRENDING" in result["regime_stats"]
+
+
+def test_regime_breakdown_collapse_fails():
+    trades = (
+        [{"btc_regime_entry": "TRENDING", "pnl_total_pct": 1.0} for _ in range(5)]
+        + [{"btc_regime_entry": "TRENDING", "pnl_total_pct": -5.0} for _ in range(20)]
+    )
+    result = regime_breakdown(trades, min_trades_per_regime=20, pf_floor=0.5)
+    assert result["passes"] is False
+    assert result["regime_stats"]["TRENDING"]["pf"] < 0.5
