@@ -197,6 +197,33 @@ Sem colapso por regime. Edge concentrado em WEAK_TREND (PF 3.94), TRENDING borde
 
 ---
 
+### EXP-004: Pair Trading BTC/ETH (H1)
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Cross-asset statistical arbitrage (nova familia) |
+| **Versao** | v1.0 (params em `pair_trading/config.py`) |
+| **Estagio** | HYPOTHESIS → BACKTEST (em implementacao Phase 1) |
+| **Hipotese** | Em TF 15m, quando z-score do cumulative return spread BTC/ETH em janela de 96 candles (24h) atinge \|z\| >= 2.0, ha probabilidade elevada de reversao a \|z\| <= 0.5 em ate 24h, gerando edge via trade pair (long o underperformer, short o outperformer) |
+| **Timeframe** | 15m |
+| **Ativos** | BTCUSDT, ETHUSDT |
+| **Periodo planejado** | 90d backtest + 30d holdout OOS |
+| **Data de criacao** | 2026-04-21 |
+| **Aprovacao** | Pending (aguarda resultado do primeiro backtest) |
+
+**Motivacao:** Gap-filling para regimes onde momentum v1.1 nao opera (VOLATILE + RANGING, ~52% do tempo). Familia "cross-asset stat arb" nunca testada neste projeto.
+
+**Diferenciacao vs familias DEAD:**
+- Nao e CFER/RAVR porque e cross-asset e opera em spread de retornos, nao em desvio single-asset de indicador tecnico
+- Nao e breakout 5m porque timeframe e logica sao distintos
+- Nao e scalping porque nao usa microestrutura (funding/liquidation/basis)
+
+**Referencia:**
+- `docs/superpowers/specs/2026-04-21-h1-pair-trading-design.md`
+- `docs/superpowers/plans/2026-04-21-h1-pair-trading-backtest.md` (Phase 1)
+
+---
+
 ## Indice Rapido
 
 | ID | Nome | Familia | Estagio | PF (melhor) | Decisao |
@@ -204,6 +231,7 @@ Sem colapso por regime. Edge concentrado em WEAK_TREND (PF 3.94), TRENDING borde
 | EXP-001 | CFER v0.2 | Defensive | DEAD | 0.43 | Hipotese nao existe |
 | EXP-002 | RAVR v2 | Defensive | DEAD | 0.90 | Edge insuficiente |
 | EXP-003 | Momentum v1.1 | Momentum | PAPER (impl.) | 1.48 | Baseline oficial (B1) |
+| EXP-004 | Pair BTC/ETH v1.0 | Cross-asset stat arb | HYPOTHESIS → BACKTEST | — | Aguardando primeiro backtest |
 
 ---
 
