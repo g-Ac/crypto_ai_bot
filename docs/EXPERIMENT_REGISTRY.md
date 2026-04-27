@@ -254,6 +254,34 @@ Sem colapso por regime. Edge concentrado em WEAK_TREND (PF 3.94), TRENDING borde
 
 ---
 
+### EXP-005: Momentum Universe Expansion (BTC/ETH → ~12 simbolos)
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Momentum (extensao do v1.1 baseline) |
+| **Versao** | v1.0 (params congelados do v1.1; sizing S-B novo) |
+| **Estagio** | HYPOTHESIS → BACKTEST (em implementacao Phase 1) |
+| **Hipotese (H-C')** | Adicionar um universo liquido pre-congelado ao Momentum Pullback v1.1 melhora o baseline BTC/ETH em walk-forward, com PF agregado superior, DD relativo controlado, estabilidade entre folds aceitavel, e sem dependencia excessiva de um unico simbolo ou um unico fold. |
+| **Timeframe** | 15m |
+| **Universo candidato (13 simbolos)** | BTC, ETH, SOL, XRP, DOGE, BNB, ADA, LINK, AVAX, SUI, AAVE, LTC, NEAR (USDT-M perpetuals); universo final apos preflight pode ser 11-13 |
+| **Periodo planejado** | 365d main + 90d holdout (~455d total por simbolo) |
+| **Sizing** | S-B: capital pool fixo dividido por \|universo\|; max_positions = N |
+| **GO/NO-GO** | 10 criterios bloqueantes (PF main >=1.25; >1.10x baseline v1.1; DD <=1.30x baseline; 9/12 folds positivos; LOO simbolo todos > baseline; LOO fold tolera 1 outlier; holdout PF>1.0 e >0.9x main; sem simbolo destrutivo PF<0.5 com n>=60; sobreviver slippage 0.10% universal). C3-normalized e BH equal-weight bloqueantes. |
+| **Aprovacao** | Pending (aguarda backtest operacional) |
+| **Data de criacao** | 2026-04-27 |
+
+**Motivacao:** Memory `feedback_v1_frozen_at_local_optimum` indica que melhoria do v1.1 vem de mais dados ou estrategia complementar, nao de param tuning (3 NO-GOs em tuning). Universe expansion e o eixo natural.
+
+**Diferenciacao vs EXP-004:** EXP-004 testou cross-asset stat-arb (pair trading) e morreu. EXP-005 testa generalizacao da MESMA mecanica (Momentum Pullback v1.1) para mais simbolos. Sem reuso de codigo do EXP-004 (archived branch).
+
+**Trava metodologica:** Buckets (core/high_beta/infra) sao raio-X diagnostico, NAO criterio de selecao pos-hoc. Se EXP-005 falhar e algum bucket parecer bom, vira EXP-006 separado (Signal Selection / Portfolio Router) com hipotese nova.
+
+**Referencia:**
+- `docs/superpowers/specs/2026-04-27-exp-005-universe-expansion-design.md`
+- `docs/superpowers/plans/2026-04-27-exp-005-universe-expansion-plan.md`
+
+---
+
 ## Indice Rapido
 
 | ID | Nome | Familia | Estagio | PF (melhor) | Decisao |
@@ -262,6 +290,7 @@ Sem colapso por regime. Edge concentrado em WEAK_TREND (PF 3.94), TRENDING borde
 | EXP-002 | RAVR v2 | Defensive | DEAD | 0.90 | Edge insuficiente |
 | EXP-003 | Momentum v1.1 | Momentum | PAPER (impl.) | 1.48 | Baseline oficial (B1) |
 | EXP-004 | Pair BTC/ETH v1.0 | Cross-asset stat arb | DEAD (no BACKTEST) | 0.32 | Falhou 5/7 criterios; random trader supera 4.5x |
+| EXP-005 | Momentum Universe v1.0 | Momentum (extensao) | HYPOTHESIS → BACKTEST | — | Aguardando backtest operacional |
 
 ---
 
