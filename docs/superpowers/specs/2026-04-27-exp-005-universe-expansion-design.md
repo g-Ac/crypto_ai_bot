@@ -73,7 +73,7 @@ Buckets sao congelados antes de qualquer backtest. Nao podem ser ajustados apos 
   "required_days": 455,
   "universe": ["BTCUSDT", "ETHUSDT", ...],
   "ineligible": {
-    "SUIUSDT": {"first_kline": "2024-10-15", "days_available": 559}
+    "NEWCOINUSDT": {"first_kline": "2026-01-10", "days_available": 107, "reason": "below_required_days"}
   },
   "candidates_checked": 13,
   "universe_size": 12
@@ -293,9 +293,9 @@ def run_portfolio_backtest(
 | Cenario | Tratamento |
 |---|---|
 | Binance API failure (network, 5xx) | Retry com backoff exponencial (3 tentativas: 1s, 5s, 15s). Se falhar: ABORT run. DB e JSON nao escritos. |
-| Simbolo sem 455d completos | Preflight marca `eligible=false`. Nao entra no `expansion_v1_preflight.json`. |
+| Simbolo sem 455d completos | Preflight marca `eligible=false`. **Fica fora do `universe` e entra em `ineligible`** (registrado no `expansion_v1_preflight.json` com motivo). |
 | Simbolo com gap > 0.5% dos candles esperados | **Run validation falha e aborta com relatorio.** Exige atualizar o preflight artifact (regerar JSON versionado). Nao dropa silenciosamente. Relatorio (stderr + retorno do CLI): `{"validation": "failed", "reason": "gap_threshold_exceeded", "symbol": "X", "expected_candles": N, "actual_candles": M, "gap_pct": ...}`. |
-| Simbolo sem candle em timestamp T | Naquele candle, simbolo nao gera decisao. Loop continua nos demais. **Sem forward-fill de OHLC.** |
+| Simbolo sem candle em timestamp T | **Permitido apenas se o simbolo ja passou no gap threshold de 0.5%** (validation pre-backtest). Naquele candle, simbolo nao gera decisao; loop continua nos demais. **Sem forward-fill de OHLC.** Se gap excede 0.5%, abort antes do backtest (linha acima). |
 | Capital pool exhausted | Sinal logged como `blocked_by="no_capital"` em `expansion_decisions`. Nao abre posicao. Nao e erro fatal. |
 | Sinais simultaneos > N simbolos | Logica S-B garante: cada um pega `1/N` do pool, soma <= 100%. Sem race. |
 | `evaluate_momentum_pullback` exception (run oficial) | **ABORT.** Skips silenciosos enviesam o resultado. Em modo diagnostico/teste, pode logar e continuar. |
