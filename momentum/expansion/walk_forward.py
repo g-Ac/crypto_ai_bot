@@ -39,3 +39,50 @@ def partition_into_folds(
         }
         folds.append(FoldData(fold_idx=i, candles_by_symbol=fold_candles))
     return folds
+
+
+from typing import Callable, Optional
+
+from momentum.expansion.config import ExpansionConfig
+from momentum.expansion.research_runner import (
+    ExpansionResult,
+    run_portfolio_backtest,
+)
+
+
+@dataclass(frozen=True)
+class FoldResult:
+    fold_idx: int
+    metrics: dict
+    n_trades: int
+    expansion_result: ExpansionResult
+
+
+def run_walk_forward(
+    *,
+    config: ExpansionConfig,
+    folds: list[FoldData],
+    signal_fn: Callable,
+    capital_pool_usdt: float,
+    risk_fraction: float,
+    regime_fn: Optional[Callable[[str], str]] = None,
+) -> list[FoldResult]:
+    """Run run_portfolio_backtest on each fold; return per-fold metrics."""
+    results: list[FoldResult] = []
+    for fold in folds:
+        # Each fold gets a fresh PortfolioState (no carryover across folds)
+        result = run_portfolio_backtest(
+            config=config,
+            candles_by_symbol=fold.candles_by_symbol,
+            signal_fn=signal_fn,
+            capital_pool_usdt=capital_pool_usdt,
+            risk_fraction=risk_fraction,
+            regime_fn=regime_fn,
+        )
+        results.append(FoldResult(
+            fold_idx=fold.fold_idx,
+            metrics=result.metrics,
+            n_trades=result.metrics["n_trades"],
+            expansion_result=result,
+        ))
+    return results
