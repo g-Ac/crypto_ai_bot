@@ -1,0 +1,56 @@
+{
+  "main_db": "research/pair_v1_90d.db",
+  "holdout_db": "research/pair_v1_holdout.db",
+  "n_main_trades": 159,
+  "n_holdout_trades": 58,
+  "test_1_monthly_consistency": {
+    "n_months": 3,
+    "month_pfs": [
+      0.4133141575581977,
+      0.25308123173275676,
+      0.27626618990176116
+    ],
+    "n_positive_pf": 0,
+    "pf_threshold": 1.0,
+    "passes": false
+  },
+  "test_2_holdout_oos": {
+    "pf": 0.08265384522181976,
+    "n_trades": 58,
+    "pf_threshold": 0.8,
+    "passes": false
+  },
+  "test_3_regime_breakdown": {
+    "regime_stats": {
+      "UNKNOWN": {
+        "n": 159,
+        "pf": 0.3173673610873149
+      }
+    },
+    "min_trades_per_regime": 20,
+    "pf_floor": 0.5,
+    "failing_regimes": [
+      "UNKNOWN"
+    ],
+    "passes": false
+  },
+  "test_4_correlation_bucket": {
+    "bucket_stats": {
+      "low": {
+        "n": 159,
+        "pf": 0.3173673610873149
+      },
+      "med": {
+        "n": 0,
+        "pf": 0.0
+      },
+      "high": {
+        "n": 0,
+        "pf": 0.0
+      }
+    },
+    "warning": null,
+    "passes": true
+  },
+  "all_pass": false
+}
