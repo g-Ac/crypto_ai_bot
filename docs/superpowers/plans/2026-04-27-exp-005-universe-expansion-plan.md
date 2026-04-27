@@ -647,6 +647,11 @@ Create `momentum/expansion/signal_engine_adapter.py`:
 """Thin adapter to call the live evaluate_momentum_pullback engine.
 
 The engine is NOT forked. EXP-005 imports the same function used in production.
+
+The live evaluate_momentum_pullback ALWAYS returns a MomentumSignal (never None);
+non-trade outcomes (REGIME_BLOCKED, NO_TREND, NO_VALID_PULLBACK, etc.) are encoded
+as MomentumOutcome values. This adapter filters: returns None unless outcome == TRADE,
+preserving the 'None = no trade' contract used by run_portfolio_backtest.
 """
 from __future__ import annotations
 
@@ -654,7 +659,7 @@ from typing import Optional
 
 import pandas as pd
 
-from momentum.config import MomentumConfig
+from momentum.config import MomentumConfig, MomentumOutcome
 from momentum.momentum_trader import MomentumSignal, evaluate_momentum_pullback
 
 
@@ -666,19 +671,22 @@ def evaluate_signal_for_symbol(
     timestamp: str,
     config: Optional[MomentumConfig] = None,
 ) -> Optional[MomentumSignal]:
-    """Pass through to evaluate_momentum_pullback with EXP-005 conventions.
+    """Pass through to evaluate_momentum_pullback; filter to TRADE outcomes only.
 
-    Returns the live MomentumSignal or None. Does not mutate inputs.
+    Returns the live MomentumSignal when outcome == TRADE, else None.
+    Does not mutate inputs.
     """
     cfg = config or MomentumConfig()
-    regime_data = {"regime_label": regime_label}
-    return evaluate_momentum_pullback(
+    sig = evaluate_momentum_pullback(
         candles=candles,
-        regime_data=regime_data,
+        regime=regime_label,
         config=cfg,
         symbol=symbol,
         timestamp=timestamp,
     )
+    if sig.outcome != MomentumOutcome.TRADE:
+        return None
+    return sig
 ```
 
 - [ ] **Step 4: Run tests**
@@ -1344,15 +1352,19 @@ def _no_signal_fn(*, candles, symbol, regime_label, timestamp, config=None):
 
 
 def _force_long_signal_fn(*, candles, symbol, regime_label, timestamp, config=None):
-    """Always emits a long signal at the most recent candle."""
+    """Always emits a TRADE long signal at the most recent candle."""
+    from momentum.config import MomentumDirection, MomentumOutcome
     from momentum.momentum_trader import MomentumSignal
     last = candles.iloc[-1]
     entry = float(last["close"])
     return MomentumSignal(
-        symbol=symbol, direction="long",
-        entry=entry, sl=entry * 0.98, tp1=entry * 1.02, tp2=entry * 1.05,
-        timestamp=timestamp, regime=regime_label,
-        score=1.0, signal_subtype="forced",
+        outcome=MomentumOutcome.TRADE,
+        direction=MomentumDirection.LONG,
+        entry_price=entry,
+        sl_price=entry * 0.98,
+        tp1_price=entry * 1.02,
+        tp2_price=entry * 1.05,
+        symbol=symbol, regime=regime_label, timestamp=timestamp,
     )
 
 
@@ -1636,12 +1648,15 @@ def run_portfolio_backtest(
             except ValueError:
                 decisions.append({"symbol": sym, "ts": ts_iso, "blocked_by": "no_capital"})
                 continue
+            # Normalize direction (enum or str) to a plain string used by _check_exit.
+            raw_dir = getattr(sig, "direction", "long")
+            direction_str = raw_dir.value if hasattr(raw_dir, "value") else str(raw_dir).lower()
             open_positions[sym] = {
-                "direction": getattr(sig, "direction", "long"),
+                "direction": direction_str,
                 "entry": entry_price,
-                "sl": float(getattr(sig, "sl", entry_price * 0.98)),
-                "tp1": float(getattr(sig, "tp1", entry_price * 1.02)),
-                "tp2": float(getattr(sig, "tp2", entry_price * 1.05)),
+                "sl": float(getattr(sig, "sl_price", entry_price * 0.98)),
+                "tp1": float(getattr(sig, "tp1_price", entry_price * 1.02)),
+                "tp2": float(getattr(sig, "tp2_price", entry_price * 1.05)),
                 "entry_ts": _ts_to_iso(int(exec_row["close_time_ms"])),
                 "regime": regime,
                 "candles_held": 0,
