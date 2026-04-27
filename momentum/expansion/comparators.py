@@ -71,3 +71,67 @@ def compute_c2_buy_and_hold_equal_weight(
         "total_pnl_pct": float(total_pnl_pct),
         "n_symbols": n_symbols,
     }
+
+
+from typing import Callable, Optional
+
+from momentum.expansion.config import ExpansionConfig
+from momentum.expansion.research_runner import run_portfolio_backtest
+
+
+_BASELINE_UNIVERSE = ("BTCUSDT", "ETHUSDT")
+
+
+def compute_c3_normalized(
+    *,
+    config: ExpansionConfig,
+    candles_by_symbol: dict,
+    signal_fn: Callable,
+    capital_pool_usdt: float,
+    risk_fraction: float,
+    regime_fn: Optional[Callable[[str], str]] = None,
+    slippage_override_pct: Optional[float] = None,
+) -> dict:
+    """C3-normalized: v1.1 baseline (BTC/ETH) under same S-B framework.
+
+    Builds a reduced ExpansionConfig with universe=(BTC,ETH), invokes
+    run_portfolio_backtest with the SAME capital_pool_usdt and risk_fraction.
+    """
+    missing = [s for s in _BASELINE_UNIVERSE if s not in candles_by_symbol]
+    if missing:
+        raise ValueError(f"C3 requires candles for {_BASELINE_UNIVERSE}; missing {missing}")
+    reduced_config = ExpansionConfig(
+        universe=_BASELINE_UNIVERSE,
+        period_main_days=config.period_main_days,
+        period_holdout_days=config.period_holdout_days,
+        n_folds=config.n_folds,
+        required_history_days=config.required_history_days,
+        gap_threshold_pct=config.gap_threshold_pct,
+        slippage_universal_sensitivity=config.slippage_universal_sensitivity,
+    )
+    reduced_candles = {sym: candles_by_symbol[sym] for sym in _BASELINE_UNIVERSE}
+    result = run_portfolio_backtest(
+        config=reduced_config, candles_by_symbol=reduced_candles,
+        signal_fn=signal_fn, capital_pool_usdt=capital_pool_usdt,
+        risk_fraction=risk_fraction, regime_fn=regime_fn,
+        slippage_override_pct=slippage_override_pct,
+    )
+    return {
+        "name": "C3_normalized",
+        "profit_factor": result.metrics["profit_factor"],
+        "max_drawdown_pct": result.metrics["max_drawdown_pct"],
+        "total_pnl_pct": result.metrics["total_pnl_pct"],
+        "n_trades": result.metrics["n_trades"],
+        "win_rate": result.metrics["win_rate"],
+    }
+
+
+def compute_c3_live_marker(*, n_trades_live: int, pf_live: float, dd_live: float) -> dict:
+    """C3-live: reported for transparency only; values come from operational DB query."""
+    return {
+        "name": "C3_live",
+        "profit_factor": pf_live,
+        "max_drawdown_pct": dd_live,
+        "n_trades": n_trades_live,
+        "note": "non-blocking; reported as transparency",
+    }
