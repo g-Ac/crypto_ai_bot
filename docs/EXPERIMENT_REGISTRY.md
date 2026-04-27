@@ -203,24 +203,54 @@ Sem colapso por regime. Edge concentrado em WEAK_TREND (PF 3.94), TRENDING borde
 |---|---|
 | **Familia** | Cross-asset statistical arbitrage (nova familia) |
 | **Versao** | v1.0 (params em `pair_trading/config.py`) |
-| **Estagio** | HYPOTHESIS → BACKTEST (em implementacao Phase 1) |
+| **Estagio** | **DEAD (no BACKTEST)** — falhou GO/NO-GO em 5/7 criterios |
 | **Hipotese** | Em TF 15m, quando z-score do cumulative return spread BTC/ETH em janela de 96 candles (24h) atinge \|z\| >= 2.0, ha probabilidade elevada de reversao a \|z\| <= 0.5 em ate 24h, gerando edge via trade pair (long o underperformer, short o outperformer) |
 | **Timeframe** | 15m |
 | **Ativos** | BTCUSDT, ETHUSDT |
-| **Periodo planejado** | 90d backtest + 30d holdout OOS |
+| **Periodo testado** | 90d (2026-01-15 → 2026-04-15) + 30d holdout (2025-12-16 → 2026-01-15) |
 | **Data de criacao** | 2026-04-21 |
-| **Aprovacao** | Pending (aguarda resultado do primeiro backtest) |
+| **Data do postmortem** | 2026-04-27 |
 
-**Motivacao:** Gap-filling para regimes onde momentum v1.1 nao opera (VOLATILE + RANGING, ~52% do tempo). Familia "cross-asset stat arb" nunca testada neste projeto.
+**Motivacao original:** Gap-filling para regimes onde momentum v1.1 nao opera (VOLATILE + RANGING, ~52% do tempo). Familia "cross-asset stat arb" nunca testada neste projeto.
 
 **Diferenciacao vs familias DEAD:**
 - Nao e CFER/RAVR porque e cross-asset e opera em spread de retornos, nao em desvio single-asset de indicador tecnico
 - Nao e breakout 5m porque timeframe e logica sao distintos
 - Nao e scalping porque nao usa microestrutura (funding/liquidation/basis)
 
+#### Postmortem
+
+**Resultado do BACKTEST (90d main):** n=159, PF=0.32, WR=31.4%, PnL=-25.66%, DD=25.93%.
+**Holdout 30d (OOS):** n=58, PF=0.08, WR=12.1%, PnL=-11.01%. Pior que main — sem reversion para ser explorada.
+**Slippage sensitivity:** PF 0.32 → 0.08 (slip 0.05%) → 0.02 (slip 0.10%). Estrategia ja perdedora a slip=0; degradacao monotonica.
+**Look-ahead diagnostic:** shift=0 PnL=-21.2% vs shift=1 PnL=-25.66%. Gap 17% (abaixo do limiar 20% pra suspeitar de leak). Ambos negativos: hipotese morre nos dados, nao por bug.
+
+**Robustness (4 testes — 3 falham):**
+- Test 1 monthly_consistency: PFs mensais [0.41, 0.25, 0.28], n_positive_pf=0 (precisa >=2/3) — ❌
+- Test 2 holdout_oos: PF=0.083 < threshold 0.8 — ❌
+- Test 3 regime_breakdown: regime UNKNOWN com 159 trades, PF=0.32 < floor 0.5 — ❌
+- Test 4 correlation_bucket: passa por trivialidade (todos os trades caem em bucket "low") — ⚠️
+
+**GO/NO-GO formal — 5 falhas de 7 criterios:**
+- `pf_main` (0.32 < 1.2)
+- `win_rate` (31.4 < 45)
+- `max_drawdown` (25.9 > 15)
+- `random_baseline` (0.32 < random p95=1.43 — **random trader supera nossa estrategia 4.5x**)
+- `slippage_sensitivity` (PF 0.02 a slip 0.10%, < min 1.0)
+
+**Sinal adicional:** `buy_hold_btc_pf = 0.0` e `buy_hold_eth_pf = 0.0` — BTC e ETH foram flat-or-down no periodo de 90d (Jan-Apr 2026). Regime adverso para mean reversion via spread.
+
+**Conclusao:** A hipotese de que |z|>=2.0 do spread cumulativo BTC/ETH em 24h reverte em 24h **nao se sustenta nos dados** de 2026-Q1. A penalizacao de 4 fees+slippage por ciclo (long BTC + short ETH + close BTC + close ETH) torna o break-even inviavel mesmo se houver sinal direcional fraco. Random trader p95 supera por 4.5x — isto e ruido pior que aleatorio.
+
+**Decisao:** EXP-004 marcado DEAD. Nao avancar para PAPER. Familia "cross-asset stat arb" descontinuada nesta forma. Possiveis variantes futuras (janela diferente, threshold diferente, multi-asset) ficam desencorajadas sem nova hipotese mecanica forte.
+
+**Codigo preservado:** `pair_trading/` modulo permanece no repo como referencia + testes (757 testes verdes). Nao integrado ao main loop.
+
 **Referencia:**
 - `docs/superpowers/specs/2026-04-21-h1-pair-trading-design.md`
 - `docs/superpowers/plans/2026-04-21-h1-pair-trading-backtest.md` (Phase 1)
+- `research/pair_v1_robustness.json` (artefato deste backtest)
+- `~/obsidian-vault/context/decisoes/2026-04-27-h1-pair-trading-dead.md`
 
 ---
 
@@ -231,7 +261,7 @@ Sem colapso por regime. Edge concentrado em WEAK_TREND (PF 3.94), TRENDING borde
 | EXP-001 | CFER v0.2 | Defensive | DEAD | 0.43 | Hipotese nao existe |
 | EXP-002 | RAVR v2 | Defensive | DEAD | 0.90 | Edge insuficiente |
 | EXP-003 | Momentum v1.1 | Momentum | PAPER (impl.) | 1.48 | Baseline oficial (B1) |
-| EXP-004 | Pair BTC/ETH v1.0 | Cross-asset stat arb | HYPOTHESIS → BACKTEST | — | Aguardando primeiro backtest |
+| EXP-004 | Pair BTC/ETH v1.0 | Cross-asset stat arb | DEAD (no BACKTEST) | 0.32 | Falhou 5/7 criterios; random trader supera 4.5x |
 
 ---
 
