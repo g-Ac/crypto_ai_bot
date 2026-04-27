@@ -16,3 +16,21 @@ def loo_by_symbol(
         remaining = [t for t in trades_list if t.get("symbol") != sym]
         out[sym] = compute_portfolio_metrics(remaining)
     return out
+
+
+def loo_by_fold(fold_results: Iterable[Mapping]) -> dict[int, dict]:
+    """For each fold, compute aggregate metrics WITHOUT that fold's trades.
+
+    fold_results: iterable of dicts with keys 'fold_idx' and 'trades'.
+    """
+    folds = list(fold_results)
+    out: dict[int, dict] = {}
+    for skip in folds:
+        skip_idx = skip["fold_idx"]
+        remaining_trades: list = []
+        for f in folds:
+            if f["fold_idx"] == skip_idx:
+                continue
+            remaining_trades.extend(f["trades"])
+        out[skip_idx] = compute_portfolio_metrics(remaining_trades)
+    return out
