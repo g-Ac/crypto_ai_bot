@@ -254,6 +254,68 @@ Sem colapso por regime. Edge concentrado em WEAK_TREND (PF 3.94), TRENDING borde
 
 ---
 
+### EXP-006: Momentum Position Router (Executor Study)
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Executor/Router (otimizacao operacional da v1.1, nao estrategia nova) |
+| **Versao** | V0-V3 (score composto congelado a priori) |
+| **Estagio** | **NO-GO (no SHADOW/replay study)** — equivale a DEAD: hipotese de roteamento sem edge |
+| **Hipotese** | O vies de selecao temporal do executor (FIFO max_positions=1) escolhe subamostra pior que os sinais concorrentes bloqueados; um router top-by-score (0.45*rr + 0.35*regime + 0.20*trend) capturaria o edge deixado na mesa |
+| **Timeframe** | 15m (mesmo da v1.1) |
+| **Ativos** | BTCUSDT, ETHUSDT |
+| **Janela de dados** | 532 shadow outcomes completos / 39 dias (2026-04-16 → 2026-05-25) |
+| **Data de criacao** | 2026-04-27 |
+| **Data do veredito** | 2026-05-27 |
+| **Decisao** | NO-GO por sondagem pre-replay. Premissa regrediu (bloqueados PF 1.49→0.67) e 80% do peso do score (rr 45% + regime 35%) aponta na direcao contraria aos dados. Replay completo nao construido — fundacao do score refutada |
+
+#### Postmortem
+
+**Premissa regrediu com mais dados:**
+
+| max_positions (bloqueados) | amostra | PF |
+|---|---|---|
+| Foto 27/04 (abriu o exp) | 79 | 1.49 |
+| 162 outcomes seguintes | 162 | 0.67 |
+| Total atual | 241 | 0.86 |
+
+Os 3 buckets `blocked_by` hoje todos PF<1 (max_positions 0.86, no_confirmation 0.69, none 0.75).
+
+**Sondagem A — rr_score (45% do peso) nao prediz:**
+
+| risco/retorno | trades | WR | PF |
+|---|---|---|---|
+| rr < 1.0 | 423 | 57.7% | 0.81 |
+| rr 1.0-1.5 | 74 | 36.5% | 0.62 |
+| rr 1.5-2.0 | 21 | 33.3% | 0.59 |
+| rr >= 2.0 | 14 | 42.9% | 0.72 |
+
+Relacao plana/inversa. rr alto = TP1 distante = menor taxa de acerto; a v1.1 depende de TP1_hit.
+
+**Sondagem B — efeito FIFO-vs-selecao marginal + regime_score invertido:**
+
+| regime | grupo | n | PF |
+|---|---|---|---|
+| TRENDING | bloqueados | 147 | 0.71 |
+| TRENDING | executados | 40 | 0.64 |
+| WEAK_TREND | bloqueados | 94 | 1.07 |
+| WEAK_TREND | executados | 45 | 0.84 |
+
+Bloqueados > executados nos dois regimes, mas margem pequena; unico bucket PF>1.0 e WEAK_TREND blocked. IRONIA: regime_score (peso 35%) prioriza TRENDING (perde) sobre WEAK_TREND (unico positivo).
+
+**Confounding (documentado desde 2026-04-29):** comparacao blocked vs executed carrega vies de selecao condicional (blocked so ocorre com posicao aberta → correlaciona com regime). Walk-forward fold-a-fold nao pega. A Sondagem B controlou por regime — e o efeito quase sumiu.
+
+**Decisao:** NO-GO. Replay portfolio-aware das 4 variantes NAO construido — a spec congelou o score V3 a priori e a sondagem mostrou que 80% do peso desse score contradiz os dados; rodar o replay testaria instrumento ja refutado na fundacao. NAO consertar o score e re-testar nos mesmos 532 (overfitting). EXP-007 (Risk Sizing) sai da mesa (estava pre-condicionado a GO). v1.1 (EXP-003) inalterada — o NO-GO e da hipotese de roteamento, nao da estrategia.
+
+**Codigo preservado:** `shadow_simulator.py` + tabela `momentum_shadow_outcomes` permanecem (coleta idempotente). Nao integrado a nenhuma mudanca de executor.
+
+**Referencia:**
+- `~/obsidian-vault/context/decisoes/2026-05-27-exp-006-position-router-no-go.md`
+- `~/obsidian-vault/context/decisoes/2026-04-27-exp-006-mini-spec.md`
+- Memory: `project_exp_006_position_router`, `feedback_confounding_selection_bias`, `feedback_winrate_nao_prova_edge`
+
+---
+
 ## Indice Rapido
 
 | ID | Nome | Familia | Estagio | PF (melhor) | Decisao |
@@ -262,6 +324,7 @@ Sem colapso por regime. Edge concentrado em WEAK_TREND (PF 3.94), TRENDING borde
 | EXP-002 | RAVR v2 | Defensive | DEAD | 0.90 | Edge insuficiente |
 | EXP-003 | Momentum v1.1 | Momentum | PAPER (impl.) | 1.48 | Baseline oficial (B1) |
 | EXP-004 | Pair BTC/ETH v1.0 | Cross-asset stat arb | DEAD (no BACKTEST) | 0.32 | Falhou 5/7 criterios; random trader supera 4.5x |
+| EXP-006 | Momentum Position Router | Executor/Router | NO-GO (SHADOW) | 1.07* | Premissa regrediu (1.49→0.67); 80% do peso do score aponta errado |
 
 ---
 
