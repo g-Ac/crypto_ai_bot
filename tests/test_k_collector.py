@@ -403,3 +403,131 @@ def test_upsert_open_interest_idempotent(conn, now, monkeypatch):
     assert n2 == 0
     cnt = conn.execute("SELECT COUNT(*) FROM k_open_interest").fetchone()[0]
     assert cnt == 1
+
+
+# ─── taker buy volume (order flow agregado) ─────────────────────────────
+
+
+def test_parse_klines_includes_taker_volume():
+    # campos 9 e 10 do payload de klines = taker buy base / quote volume
+    raw = [
+        [1777521600000, "75881.60", "75931.70", "75363.20", "75458.30",
+         "4706.240", 1777525199999, "355674488.31770", 116871, "2185.122",
+         "165158588.63390", "0"]
+    ]
+    parsed = kc.parse_klines_response(raw, "BTCUSDT")
+    assert parsed[0]["taker_buy_base"] == pytest.approx(2185.122)
+    assert parsed[0]["taker_buy_quote"] == pytest.approx(165158588.6339)
+
+
+def test_parse_klines_taker_defaults_when_short():
+    # payload curto (sem campos 9/10) nao deve dropar a linha — taker default 0
+    raw = [[1777521600000, "75000", "75100", "74900", "75050", "1000"]]
+    parsed = kc.parse_klines_response(raw, "BTCUSDT")
+    assert len(parsed) == 1
+    assert parsed[0]["taker_buy_base"] == 0.0
+    assert parsed[0]["taker_buy_quote"] == 0.0
+
+
+def test_upsert_prices_persists_taker_volume(conn, now, monkeypatch):
+    monkeypatch.setattr(kc, "now_ts", lambda: now)
+    rows = [make_price(now, taker_buy_base=600.0, taker_buy_quote=45_000_000.0)]
+    kc.upsert_prices(conn, rows, collected_at=now)
+    row = conn.execute(
+        "SELECT taker_buy_base, taker_buy_quote FROM k_prices"
+    ).fetchone()
+    assert row[0] == pytest.approx(600.0)
+    assert row[1] == pytest.approx(45_000_000.0)
+
+
+def test_ensure_price_columns_adds_to_legacy_table():
+    # simula banco vivo: k_prices criada SEM colunas de taker (migracao idempotente)
+    c = sqlite3.connect(":memory:")
+    c.executescript(
+        "CREATE TABLE k_prices ("
+        " symbol TEXT NOT NULL, bucket_ts INTEGER NOT NULL,"
+        " open_price REAL, close_price REAL, high_price REAL,"
+        " low_price REAL, volume REAL, collected_at INTEGER,"
+        " PRIMARY KEY (symbol, bucket_ts));"
+    )
+    kc.ensure_price_columns(c)
+    cols = {row[1] for row in c.execute("PRAGMA table_info(k_prices)")}
+    assert "taker_buy_base" in cols
+    assert "taker_buy_quote" in cols
+    kc.ensure_price_columns(c)  # idempotente: rodar de novo nao quebra
+
+
+# ─── basis (perp-spot spread) ───────────────────────────────────────────
+
+
+def make_basis(now: int, **overrides) -> dict:
+    base = {
+        "symbol": "BTCUSDT",
+        "bucket_ts": (now // 3600) * 3600 - 3600,
+        "basis": -27.5,
+        "basis_rate": -0.0004,
+        "index_price": 71565.2,
+        "futures_price": 71537.7,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_parse_basis_well_formed():
+    raw = [{
+        "indexPrice": "71565.20652174",
+        "contractType": "PERPETUAL",
+        "basisRate": "-0.0004",
+        "futuresPrice": "71537.70",
+        "annualizedBasisRate": "",
+        "basis": "-27.50652174",
+        "pair": "BTCUSDT",
+        "timestamp": 1780333200000,
+    }]
+    parsed = kc.parse_basis_response(raw, "BTCUSDT")
+    assert len(parsed) == 1
+    p = parsed[0]
+    assert p["symbol"] == "BTCUSDT"
+    assert p["bucket_ts"] == 1780333200
+    assert p["basis"] == pytest.approx(-27.50652174)
+    assert p["basis_rate"] == pytest.approx(-0.0004)
+    assert p["index_price"] == pytest.approx(71565.20652174)
+    assert p["futures_price"] == pytest.approx(71537.70)
+
+
+def test_parse_basis_skips_malformed():
+    raw = [
+        {"pair": "BTCUSDT", "timestamp": 1780333200000},  # sem basisRate
+        {"basisRate": "0.0001", "timestamp": "bad"},  # ts invalido
+        {"pair": "BTCUSDT", "basisRate": "0.0001", "basis": "5.0",
+         "indexPrice": "100", "futuresPrice": "100.1", "timestamp": 1780333200000},
+    ]
+    parsed = kc.parse_basis_response(raw, "BTCUSDT")
+    assert len(parsed) == 1
+
+
+def test_validate_basis_ok(now):
+    assert kc.validate_basis(make_basis(now), now)
+
+
+def test_validate_basis_misaligned_bucket(now):
+    assert not kc.validate_basis(make_basis(now, bucket_ts=now - 100), now)
+
+
+def test_validate_basis_future(now):
+    assert not kc.validate_basis(make_basis(now, bucket_ts=now + 7200), now)
+
+
+def test_validate_basis_absurd_rate(now):
+    assert not kc.validate_basis(make_basis(now, basis_rate=5.0), now)
+
+
+def test_upsert_basis_idempotent(conn, now, monkeypatch):
+    monkeypatch.setattr(kc, "now_ts", lambda: now)
+    rows = [make_basis(now)]
+    n1 = kc.upsert_basis(conn, rows, collected_at=now)
+    n2 = kc.upsert_basis(conn, rows, collected_at=now)
+    assert n1 == 1
+    assert n2 == 0
+    cnt = conn.execute("SELECT COUNT(*) FROM k_basis").fetchone()[0]
+    assert cnt == 1

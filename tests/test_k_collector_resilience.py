@@ -52,6 +52,15 @@ def _insert_price(conn, symbol, bucket_ts, collected_at=0):
     )
 
 
+def _insert_basis(conn, symbol, bucket_ts, collected_at=0):
+    conn.execute(
+        "INSERT OR IGNORE INTO k_basis "
+        "(symbol, bucket_ts, basis, basis_rate, collected_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (symbol, bucket_ts, -10.0, -0.0004, collected_at),
+    )
+
+
 # ─── last_bucket_ts ─────────────────────────────────────────────────────────
 def test_last_bucket_ts_none_quando_tabela_vazia(conn):
     assert kc.last_bucket_ts(conn, "k_ratios", "BTCUSDT") is None
@@ -94,6 +103,7 @@ def test_compute_dynamic_limit_gap_pequeno_retorna_overlap(conn):
     for sym in kc.SYMBOLS:
         _insert_ratio(conn, sym, recent)
         _insert_price(conn, sym, recent)
+        _insert_basis(conn, sym, recent)
         conn.execute(
             "INSERT INTO k_open_interest "
             "(symbol, bucket_ts, sum_open_interest, collected_at) "
@@ -113,6 +123,7 @@ def test_compute_dynamic_limit_gap_grande_aumenta_limit(conn):
     for sym in kc.SYMBOLS:
         _insert_ratio(conn, sym, recent)
         _insert_price(conn, sym, recent)
+        _insert_basis(conn, sym, recent)
         conn.execute(
             "INSERT INTO k_open_interest "
             "(symbol, bucket_ts, sum_open_interest, collected_at) "

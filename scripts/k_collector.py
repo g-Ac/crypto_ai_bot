@@ -3,9 +3,10 @@
 Coleta hourly do Binance Futures (free tier, sem API key):
 - topLongShortPositionRatio
 - globalLongShortAccountRatio
-- klines 1h (open/high/low/close/volume)
+- klines 1h (OHLCV + taker buy base/quote = order flow agregado)
 - fundingRate (8h)
 - openInterestHist 1h
+- basis perp-spot (futures-spot spread) 1h
 
 Para 14 simbolos do sub-regime EXP-008-K.
 
@@ -64,6 +65,7 @@ ENDPOINT_GLOBAL = "/futures/data/globalLongShortAccountRatio"
 ENDPOINT_KLINES = "/fapi/v1/klines"
 ENDPOINT_FUNDING = "/fapi/v1/fundingRate"
 ENDPOINT_OPEN_INTEREST = "/futures/data/openInterestHist"
+ENDPOINT_BASIS = "/futures/data/basis"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS k_ratios (
@@ -87,6 +89,8 @@ CREATE TABLE IF NOT EXISTS k_prices (
     high_price     REAL     NOT NULL,
     low_price      REAL     NOT NULL,
     volume         REAL     NOT NULL,
+    taker_buy_base  REAL    DEFAULT 0,
+    taker_buy_quote REAL    DEFAULT 0,
     collected_at   INTEGER  NOT NULL,
     PRIMARY KEY (symbol, bucket_ts)
 );
@@ -124,6 +128,19 @@ CREATE TABLE IF NOT EXISTS k_open_interest (
 );
 CREATE INDEX IF NOT EXISTS idx_k_open_interest_symbol_ts
     ON k_open_interest(symbol, bucket_ts);
+
+CREATE TABLE IF NOT EXISTS k_basis (
+    symbol         TEXT     NOT NULL,
+    bucket_ts      INTEGER  NOT NULL,
+    basis          REAL,
+    basis_rate     REAL     NOT NULL,
+    index_price    REAL,
+    futures_price  REAL,
+    collected_at   INTEGER  NOT NULL,
+    PRIMARY KEY (symbol, bucket_ts)
+);
+CREATE INDEX IF NOT EXISTS idx_k_basis_symbol_ts
+    ON k_basis(symbol, bucket_ts);
 """
 
 
@@ -202,6 +219,10 @@ def parse_klines_response(rows: list, symbol: str) -> list[dict]:
                 "low_price": float(r[3]),
                 "close_price": float(r[4]),
                 "volume": float(r[5]),
+                # campos 9/10 = taker buy base/quote vol (agressao compradora).
+                # Opcionais: payload curto (edge/teste) nao deve dropar a linha.
+                "taker_buy_base": float(r[9]) if len(r) > 9 else 0.0,
+                "taker_buy_quote": float(r[10]) if len(r) > 10 else 0.0,
             })
         except (IndexError, ValueError, TypeError):
             continue
@@ -238,6 +259,28 @@ def parse_open_interest_response(rows: list, symbol: str) -> list[dict]:
             }
             if r.get("sumOpenInterestValue") not in (None, ""):
                 item["sum_open_interest_value"] = float(r["sumOpenInterestValue"])
+            parsed.append(item)
+        except (KeyError, ValueError, TypeError):
+            continue
+    return parsed
+
+
+def parse_basis_response(rows: list, symbol: str) -> list[dict]:
+    parsed: list[dict] = []
+    for r in rows:
+        try:
+            item = {
+                "symbol": r.get("pair", symbol),
+                "bucket_ts": int(r["timestamp"]) // 1000,
+                "basis": float(r["basis"]),
+                "basis_rate": float(r["basisRate"]),
+                "index_price": None,
+                "futures_price": None,
+            }
+            if r.get("indexPrice") not in (None, ""):
+                item["index_price"] = float(r["indexPrice"])
+            if r.get("futuresPrice") not in (None, ""):
+                item["futures_price"] = float(r["futuresPrice"])
             parsed.append(item)
         except (KeyError, ValueError, TypeError):
             continue
@@ -316,6 +359,26 @@ def validate_open_interest(row: dict, now: int) -> bool:
     return True
 
 
+def validate_basis(row: dict, now: int) -> bool:
+    bts = row["bucket_ts"]
+    if bts % 3600 != 0:
+        return False
+    if bts > now + 60:
+        return False
+    if now - bts > 35 * 86400:
+        return False
+    rate = row["basis_rate"]
+    if not (-1.0 <= rate <= 1.0):
+        return False
+    ip = row.get("index_price")
+    fp = row.get("futures_price")
+    if ip is not None and ip <= 0:
+        return False
+    if fp is not None and fp <= 0:
+        return False
+    return True
+
+
 def upsert_ratios(conn: sqlite3.Connection, rows: list[dict], collected_at: int) -> int:
     inserted = 0
     now = now_ts()
@@ -346,13 +409,15 @@ def upsert_prices(conn: sqlite3.Connection, rows: list[dict], collected_at: int)
         cur = conn.execute(
             "INSERT OR IGNORE INTO k_prices "
             "(symbol, bucket_ts, open_price, close_price, high_price, "
-            " low_price, volume, collected_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " low_price, volume, taker_buy_base, taker_buy_quote, collected_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 r["symbol"], r["bucket_ts"],
                 r["open_price"], r["close_price"],
                 r["high_price"], r["low_price"],
-                r["volume"], collected_at,
+                r["volume"],
+                r.get("taker_buy_base", 0.0), r.get("taker_buy_quote", 0.0),
+                collected_at,
             ),
         )
         inserted += cur.rowcount
@@ -397,7 +462,7 @@ def upsert_open_interest(conn: sqlite3.Connection, rows: list[dict], collected_a
     return inserted
 
 
-def fetch_for_symbol(symbol: str, limit: int) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+def fetch_for_symbol(symbol: str, limit: int) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict]]:
     top_raw = http_get_json(ENDPOINT_TOP,
                             {"symbol": symbol, "period": "1h", "limit": limit})
     glob_raw = http_get_json(ENDPOINT_GLOBAL,
@@ -408,12 +473,37 @@ def fetch_for_symbol(symbol: str, limit: int) -> tuple[list[dict], list[dict], l
                                 {"symbol": symbol, "limit": min(limit, 1000)})
     oi_raw = http_get_json(ENDPOINT_OPEN_INTEREST,
                            {"symbol": symbol, "period": "1h", "limit": limit})
+    basis_raw = http_get_json(ENDPOINT_BASIS,
+                              {"pair": symbol, "contractType": "PERPETUAL",
+                               "period": "1h", "limit": limit})
     ratios = parse_ratio_response(top_raw, "top_position")
     ratios += parse_ratio_response(glob_raw, "global_account")
     prices = parse_klines_response(klines_raw, symbol)
     funding = parse_funding_response(funding_raw, symbol)
     open_interest = parse_open_interest_response(oi_raw, symbol)
-    return ratios, prices, funding, open_interest
+    basis = parse_basis_response(basis_raw, symbol)
+    return ratios, prices, funding, open_interest, basis
+
+
+def upsert_basis(conn: sqlite3.Connection, rows: list[dict], collected_at: int) -> int:
+    inserted = 0
+    now = now_ts()
+    for r in rows:
+        if not validate_basis(r, now):
+            continue
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO k_basis "
+            "(symbol, bucket_ts, basis, basis_rate, index_price, "
+            " futures_price, collected_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                r["symbol"], r["bucket_ts"], r.get("basis"),
+                r["basis_rate"], r.get("index_price"),
+                r.get("futures_price"), collected_at,
+            ),
+        )
+        inserted += cur.rowcount
+    return inserted
 
 
 def run(conn: sqlite3.Connection, limit: int, dry_run: bool) -> tuple[str, int, int, int, list[str]]:
@@ -436,9 +526,10 @@ def run(conn: sqlite3.Connection, limit: int, dry_run: bool) -> tuple[str, int, 
 
     for sym in SYMBOLS:
         try:
-            ratios, prices, funding, open_interest = fetch_for_symbol(sym, limit)
+            ratios, prices, funding, open_interest, basis = fetch_for_symbol(sym, limit)
             if dry_run:
-                rows_total += len(ratios) + len(prices) + len(funding) + len(open_interest)
+                rows_total += (len(ratios) + len(prices) + len(funding)
+                               + len(open_interest) + len(basis))
                 sym_ok += 1
                 continue
             try:
@@ -447,8 +538,10 @@ def run(conn: sqlite3.Connection, limit: int, dry_run: bool) -> tuple[str, int, 
                 inserted_p = upsert_prices(conn, prices, collected_at)
                 inserted_f = upsert_funding(conn, funding, collected_at)
                 inserted_oi = upsert_open_interest(conn, open_interest, collected_at)
+                inserted_b = upsert_basis(conn, basis, collected_at)
                 conn.execute("COMMIT")
-                rows_total += inserted_r + inserted_p + inserted_f + inserted_oi
+                rows_total += (inserted_r + inserted_p + inserted_f
+                               + inserted_oi + inserted_b)
                 sym_ok += 1
             except sqlite3.Error as e:
                 try:
@@ -527,6 +620,7 @@ def compute_dynamic_limit(conn: sqlite3.Connection, now: int) -> tuple[int, dict
         ("k_ratios", "bucket_ts"),
         ("k_prices", "bucket_ts"),
         ("k_open_interest", "bucket_ts"),
+        ("k_basis", "bucket_ts"),
         # k_funding_rates tem cadência 8h e retenção maior — não dita limit
         # mas reportamos staleness pra observabilidade
     ]
@@ -562,6 +656,19 @@ def compute_dynamic_limit(conn: sqlite3.Connection, now: int) -> tuple[int, dict
     return limit, staleness
 
 
+def ensure_price_columns(conn: sqlite3.Connection) -> None:
+    """Migra k_prices legada: adiciona colunas de taker volume se faltarem.
+
+    CREATE TABLE IF NOT EXISTS nao altera tabela existente, entao o banco vivo
+    (criado antes do taker volume) precisa de ALTER TABLE idempotente.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(k_prices)")}
+    if "taker_buy_base" not in cols:
+        conn.execute("ALTER TABLE k_prices ADD COLUMN taker_buy_base REAL DEFAULT 0")
+    if "taker_buy_quote" not in cols:
+        conn.execute("ALTER TABLE k_prices ADD COLUMN taker_buy_quote REAL DEFAULT 0")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="K-axis ratio collector")
     parser.add_argument("--backfill", action="store_true",
@@ -589,6 +696,7 @@ def main() -> int:
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA busy_timeout=10000")
         conn.executescript(SCHEMA)
+        ensure_price_columns(conn)
         conn.commit()
 
         first_run = conn.execute("SELECT COUNT(*) FROM k_ratios").fetchone()[0] == 0
