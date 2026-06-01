@@ -44,19 +44,29 @@ DB_DIR = PROJECT_ROOT / "research"
 BINANCE_URL = "https://api.binance.com/api/v3/klines"
 
 
-def _parse_days() -> int:
-    """Parse --days=N from argv. Default 30."""
+def _parse_args() -> tuple[int, float, float, float]:
+    """Parse --days=N, --breakeven=F, --pullback-min=N, --pullback-max=N from argv."""
     import argparse
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--days", type=int, default=30)
+    parser.add_argument("--breakeven", type=float, default=0.0)
+    parser.add_argument("--pullback-min", type=float, default=30.0)
+    parser.add_argument("--pullback-max", type=float, default=70.0)
     args, _ = parser.parse_known_args()
-    return args.days
+    return args.days, args.breakeven, args.pullback_min, args.pullback_max
 
 
-def _paths(days: int):
-    suffix = f"_{days}d" if days != 30 else ""
-    db = DB_DIR / f"matrix_v1{suffix}.db"
-    report = DB_DIR / f"matrix_v1{suffix}_report.txt"
+def _paths(days: int, breakeven: float = 0.0,
+           pullback_min: float = 30.0, pullback_max: float = 70.0):
+    day_suffix = f"_{days}d" if days != 30 else ""
+    be_suffix = ""
+    if breakeven > 0:
+        be_suffix = f"_be{int(round(breakeven * 100))}"
+    pb_suffix = ""
+    if pullback_min != 30.0 or pullback_max != 70.0:
+        pb_suffix = f"_pb{int(round(pullback_min))}_{int(round(pullback_max))}"
+    db = DB_DIR / f"matrix_v1{day_suffix}{be_suffix}{pb_suffix}.db"
+    report = DB_DIR / f"matrix_v1{day_suffix}{be_suffix}{pb_suffix}_report.txt"
     return db, report
 
 
@@ -184,18 +194,41 @@ def lookup_regime(regimes_df: pd.DataFrame, ts_15m) -> str:
 # Main replay
 # ---------------------------------------------------------------------------
 
-def run_matrix(days: int | None = None) -> dict:
-    if days is None:
-        days = _parse_days()
+def run_matrix(
+    days: int | None = None,
+    breakeven: float | None = None,
+    pullback_min: float | None = None,
+    pullback_max: float | None = None,
+) -> dict:
+    if days is None or breakeven is None or pullback_min is None or pullback_max is None:
+        d, be, pb_min, pb_max = _parse_args()
+        if days is None:
+            days = d
+        if breakeven is None:
+            breakeven = be
+        if pullback_min is None:
+            pullback_min = pb_min
+        if pullback_max is None:
+            pullback_max = pb_max
 
-    db_path, report_path = _paths(days)
+    db_path, report_path = _paths(days, breakeven, pullback_min, pullback_max)
 
+    variant_bits = []
+    if breakeven > 0:
+        variant_bits.append(f"BE={breakeven}")
+    if pullback_min != 30.0 or pullback_max != 70.0:
+        variant_bits.append(f"PB={pullback_min}-{pullback_max}")
+    variant = (" + " + " + ".join(variant_bits)) if variant_bits else ""
     print("=" * 55)
-    print(f"  MOMENTUM PULLBACK — RESEARCH MATRIX v1 ({days} days)")
+    print(f"  MOMENTUM PULLBACK — RESEARCH MATRIX v1{variant} ({days} days)")
     print("=" * 55)
     print(f"  Symbols: {', '.join(SYMBOLS)}")
     print(f"  Period:  {days} days + {WARMUP_DAYS} days warmup (1h)")
     print(f"  Window:  {WINDOW} candles per evaluation")
+    if breakeven > 0:
+        print(f"  Variant: breakeven_trigger_pct={breakeven}")
+    if pullback_min != 30.0 or pullback_max != 70.0:
+        print(f"  Variant: pullback_min_pct={pullback_min}, pullback_max_pct={pullback_max}")
     print()
 
     # --- Time range ---
@@ -240,7 +273,11 @@ def run_matrix(days: int | None = None) -> dict:
         db_path.unlink()
     ensure_tables(db_path)
 
-    config = MomentumConfig()
+    config = MomentumConfig(
+        breakeven_trigger_pct=breakeven,
+        pullback_min_pct=pullback_min,
+        pullback_max_pct=pullback_max,
+    )
 
     # --- Replay loop ---
     min_len = min(len(all_data[s]["candles_15m"]) for s in SYMBOLS)
