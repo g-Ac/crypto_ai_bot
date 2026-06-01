@@ -1,0 +1,13 @@
+[Unit]
+Description=Backup diario do bot.db (sqlite3 .backup + gzip)
+# Sem network — backup é local
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/crypto_ai_bot
+ExecStart=/home/pi/crypto_ai_bot/scripts/backup_bot_db.sh
+StandardOutput=append:/home/pi/crypto_ai_bot/logs/backup_bot_db.log
+StandardError=append:/home/pi/crypto_ai_bot/logs/backup_bot_db.log
+SuccessExitStatus=0

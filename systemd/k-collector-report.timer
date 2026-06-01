@@ -1,0 +1,11 @@
+[Unit]
+Description=Dispara k-collector-report diario as 09:00
+Requires=k-collector-report.service
+
+[Timer]
+OnCalendar=*-*-* 09:00:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

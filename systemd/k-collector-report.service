@@ -1,0 +1,15 @@
+[Unit]
+Description=Relatorio diario do k_collector via Telegram
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/crypto_ai_bot
+EnvironmentFile=-/home/pi/crypto_ai_bot/.env
+ExecStart=/home/pi/crypto_ai_bot/.venv/bin/python /home/pi/crypto_ai_bot/scripts/k_collector_daily_report.py
+StandardOutput=append:/home/pi/crypto_ai_bot/logs/k_collector_daily_report.log
+StandardError=append:/home/pi/crypto_ai_bot/logs/k_collector_daily_report.log
+SuccessExitStatus=0 1

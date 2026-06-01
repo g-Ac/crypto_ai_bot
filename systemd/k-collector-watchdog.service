@@ -1,0 +1,18 @@
+[Unit]
+Description=k_collector watchdog (detecta staleness e dispara recovery)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/crypto_ai_bot
+# Carrega .env do projeto pra TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+# K_COLLECTOR_TELEGRAM_CHAT_ID (override) e K_COLLECTOR_STALE_HOURS
+EnvironmentFile=-/home/pi/crypto_ai_bot/.env
+ExecStart=/home/pi/crypto_ai_bot/.venv/bin/python /home/pi/crypto_ai_bot/scripts/watchdog_k_collector.py
+StandardOutput=append:/home/pi/crypto_ai_bot/logs/watchdog_k_collector.log
+StandardError=append:/home/pi/crypto_ai_bot/logs/watchdog_k_collector.log
+# Watchdog não pode crashar o systemd; sai com warning se falhar
+SuccessExitStatus=0 1

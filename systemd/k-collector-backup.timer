@@ -1,0 +1,11 @@
+[Unit]
+Description=Dispara backup diario do bot.db as 04:00
+Requires=k-collector-backup.service
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

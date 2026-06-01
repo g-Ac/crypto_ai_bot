@@ -1,0 +1,13 @@
+[Unit]
+Description=Dispara k-collector-watchdog a cada hora
+Requires=k-collector-watchdog.service
+
+[Timer]
+# Roda a cada hora no minuto :35 — DEFASADO 30min do cron do collector (que roda :05)
+# pra dar tempo da rodada do collector terminar antes do watchdog auditar.
+OnCalendar=*-*-* *:35:00
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
