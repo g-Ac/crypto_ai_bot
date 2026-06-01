@@ -108,7 +108,8 @@ def _calculate_position_size(capital: float, entry: float, sl: float) -> float:
     return min(position_size, capital)
 
 
-def open_position(state: dict, signal: MomentumSignal, cycle_id: str) -> list[str]:
+def open_position(state: dict, signal: MomentumSignal, cycle_id: str,
+                  regime_data: Optional[dict] = None) -> list[str]:
     """Open a paper position from a TRADE signal. Returns Telegram messages."""
     msgs: list[str] = []
     symbol = signal.symbol
@@ -154,7 +155,7 @@ def open_position(state: dict, signal: MomentumSignal, cycle_id: str) -> list[st
     }
 
     try:
-        _log_decision(signal, cycle_id, blocked_by="none")
+        _log_decision(signal, cycle_id, blocked_by="none", regime_data=regime_data)
     except Exception as e:
         logger.warning("Failed to log momentum decision: %s", e)
 
@@ -263,7 +264,8 @@ def manage_positions(state: dict, candles: dict[str, dict],
     return msgs
 
 
-def _log_decision(signal: MomentumSignal, cycle_id: str, blocked_by: str = "none"):
+def _log_decision(signal: MomentumSignal, cycle_id: str, blocked_by: str = "none",
+                  regime_data: Optional[dict] = None):
     """Log a momentum decision to bot.db."""
     try:
         from audit_helpers import get_session_bucket, get_asset_bucket
@@ -273,6 +275,8 @@ def _log_decision(signal: MomentumSignal, cycle_id: str, blocked_by: str = "none
     except Exception:
         session = ""
         asset = ""
+
+    rd = regime_data or {}
 
     db.insert_momentum_decision({
         "timestamp": signal.timestamp or "",
@@ -294,6 +298,8 @@ def _log_decision(signal: MomentumSignal, cycle_id: str, blocked_by: str = "none
         "param_version": signal.param_version,
         "session_bucket": session,
         "asset_bucket": asset,
+        "adx_slope_3": float(rd.get("adx_slope_3", 0.0) or 0.0),
+        "di_spread": float(rd.get("di_spread", 0.0) or 0.0),
     })
 
 
@@ -379,15 +385,17 @@ def process_momentum_cycle(
             timestamp=str(last.get("time", "")),
         )
 
+        regime_data_dict = regime_data if isinstance(regime_data, dict) else None
+
         if signal.outcome == MomentumOutcome.TRADE and open_new:
-            entry_msgs = open_position(state, signal, cycle_id)
+            entry_msgs = open_position(state, signal, cycle_id, regime_data=regime_data_dict)
             msgs.extend(entry_msgs)
             if not entry_msgs:
                 blocked = "max_positions" if len(state["positions"]) >= MOMENTUM_MAX_POSITIONS else "cooldown"
-                _log_decision(signal, cycle_id, blocked_by=blocked)
+                _log_decision(signal, cycle_id, blocked_by=blocked, regime_data=regime_data_dict)
         else:
             blocked = signal.outcome.value if signal.outcome != MomentumOutcome.TRADE else "suspended"
-            _log_decision(signal, cycle_id, blocked_by=blocked)
+            _log_decision(signal, cycle_id, blocked_by=blocked, regime_data=regime_data_dict)
 
     # Only tick cooldowns when at least one new 15m candle arrived
     if new_candle_symbols:

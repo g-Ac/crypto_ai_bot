@@ -368,7 +368,9 @@ def init_db():
             pullback_rejection  TEXT DEFAULT '',
             param_version       TEXT DEFAULT '',
             session_bucket      TEXT DEFAULT '',
-            asset_bucket        TEXT DEFAULT ''
+            asset_bucket        TEXT DEFAULT '',
+            adx_slope_3         REAL DEFAULT 0,
+            di_spread           REAL DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_momentum_trades_ts ON momentum_trades(timestamp);
@@ -758,8 +760,9 @@ def insert_momentum_decision(decision: dict):
                 ema_fast_value, ema_slow_value, ema_gap_pct,
                 retracement_pct, impulse_start_price, impulse_end_price,
                 pullback_rejection, param_version,
-                session_bucket, asset_bucket
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                session_bucket, asset_bucket,
+                adx_slope_3, di_spread
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             decision["timestamp"],
             decision.get("cycle_id", ""),
@@ -778,6 +781,8 @@ def insert_momentum_decision(decision: dict):
             decision.get("param_version", "momentum-pullback-v1.1"),
             decision.get("session_bucket", ""),
             decision.get("asset_bucket", ""),
+            decision.get("adx_slope_3", 0.0),
+            decision.get("di_spread", 0.0),
         ))
         conn.commit()
     finally:

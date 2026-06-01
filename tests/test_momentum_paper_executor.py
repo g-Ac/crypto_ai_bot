@@ -292,6 +292,82 @@ class TestProcessCycle:
         # The flat candles should produce a reject (no trend)
         assert rows[0]["outcome"] != "trade" or rows[0]["blocked_by"] != "none"
 
+    def test_logs_adx_slope_and_di_spread_from_regime_data(self, state_file, tmp_db):
+        """Regime Gate v2 fields (adx_slope_3, di_spread) must be persisted in momentum_decisions."""
+        from momentum.paper_executor import process_momentum_cycle
+
+        def mock_candle_fn(symbol, interval, limit):
+            n = 100
+            data = {
+                "time": pd.date_range("2026-01-01", periods=n, freq="15min"),
+                "open": np.full(n, 85000.0),
+                "high": np.full(n, 85100.0),
+                "low": np.full(n, 84900.0),
+                "close": np.full(n, 85000.0),
+                "volume": np.full(n, 100.0),
+            }
+            return pd.DataFrame(data)
+
+        def mock_regime_fn(symbol):
+            return {
+                "regime_label": "TRENDING",
+                "adx_slope_3": 5.2,
+                "di_spread": 18.5,
+            }
+
+        process_momentum_cycle(
+            symbols=["BTCUSDT"],
+            open_new=True,
+            candle_fn=mock_candle_fn,
+            regime_fn=mock_regime_fn,
+        )
+
+        conn = sqlite3.connect(tmp_db)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT adx_slope_3, di_spread FROM momentum_decisions LIMIT 1"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row["adx_slope_3"] == 5.2
+        assert row["di_spread"] == 18.5
+
+    def test_logs_regime_v2_fields_default_zero_when_missing(self, state_file, tmp_db):
+        """If regime_fn returns dict without v2 fields, persist zeros (backward compat)."""
+        from momentum.paper_executor import process_momentum_cycle
+
+        def mock_candle_fn(symbol, interval, limit):
+            n = 100
+            data = {
+                "time": pd.date_range("2026-01-01", periods=n, freq="15min"),
+                "open": np.full(n, 85000.0),
+                "high": np.full(n, 85100.0),
+                "low": np.full(n, 84900.0),
+                "close": np.full(n, 85000.0),
+                "volume": np.full(n, 100.0),
+            }
+            return pd.DataFrame(data)
+
+        def mock_regime_fn(symbol):
+            return {"regime_label": "TRENDING"}
+
+        process_momentum_cycle(
+            symbols=["BTCUSDT"],
+            open_new=True,
+            candle_fn=mock_candle_fn,
+            regime_fn=mock_regime_fn,
+        )
+
+        conn = sqlite3.connect(tmp_db)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT adx_slope_3, di_spread FROM momentum_decisions LIMIT 1"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row["adx_slope_3"] == 0.0
+        assert row["di_spread"] == 0.0
+
     def test_same_15m_candle_does_not_duplicate_decision_log(self, state_file, tmp_db):
         from momentum.paper_executor import process_momentum_cycle
 
