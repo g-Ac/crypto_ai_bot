@@ -339,6 +339,25 @@ Bloqueados > executados nos dois regimes, mas margem pequena; unico bucket PF>1.
 
 ---
 
+### EXP-014: Trend-following diario (BTC/ETH/SOL) — TESTE FINAL
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Trend-following (ultima candidata de price-action em majors) |
+| **Estagio** | **NO-GO (inconclusivo)** — linha BTC/ETH/SOL FECHADA |
+| **Hipotese** | Trend-following no 1d (unico TF onde o fee vira ruido) tem edge selecionavel, ou e so drift + estrutura de saida? |
+| **Periodo** | ~2 anos diario, ~25-28 estacoes/simbolo |
+| **Data** | 2026-06-02 |
+| **Decisao** | NO-GO. Os 3 com IC do PF cruzando 1,0 (inconclusivo, selado = NO-GO). BTC/SOL nem batem entrada aleatoria. ETH parece forte (PF 2,16, perc 96%) mas IC [0,65-6,16] + multiplicidade + concentracao + ciclo unico = nao distinguivel de sorte |
+
+**Parametros (congelados a priori):** ADX>25, ATR(14), stop 2·ATR, trailing chandelier 3·ATR, custo 0,10%. GO exigia 4 criterios + IC conclusivo.
+
+**Significado:** a busca por edge de price-action simples em majors esta **exaurida com dados** (v1.1 15m, intraday fee, funding basis, trend diario inconclusivo). Pre-compromisso honrado: sem #5, sem altcoin, sem "mais dado".
+
+**Codigo:** `scripts/trend_following_study.py` + `tests/test_trend_following_study.py` (10 testes). **Ref:** `~/obsidian-vault/context/decisoes/2026-06-02-exp-014-trend-following-diario-no-go.md`
+
+---
+
 ## Indice Rapido
 
 | ID | Nome | Familia | Estagio | PF (melhor) | Decisao |
@@ -349,6 +368,7 @@ Bloqueados > executados nos dois regimes, mas margem pequena; unico bucket PF>1.
 | EXP-004 | Pair BTC/ETH v1.0 | Cross-asset stat arb | DEAD (no BACKTEST) | 0.32 | Falhou 5/7 criterios; random trader supera 4.5x |
 | EXP-006 | Momentum Position Router | Executor/Router | NO-GO (SHADOW) | 1.07* | Premissa regrediu (1.49→0.67); 80% do peso do score aponta errado |
 | EXP-013 | Sinal de entrada v1.1 (diagnostico) | Validacao | NO-GO | — | Timing nao-significante, direcao ≈ acaso; perdedor com custo (IC PF [0.36,0.87]) |
+| EXP-014 | Trend-following diario BTC/ETH/SOL | Trend-following | NO-GO (inconclusivo) | 2.16* | Ultima candidata; IC cruza 1.0 nos 3; ETH seduz mas nao robusto. LINHA FECHADA |
 
 ---
 
