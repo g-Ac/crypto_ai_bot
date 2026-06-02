@@ -316,6 +316,29 @@ Bloqueados > executados nos dois regimes, mas margem pequena; unico bucket PF>1.
 
 ---
 
+> **Nota:** EXP-007 a EXP-012 e EXP-FH-01 foram registrados em `docs/pre_registros/` + `~/obsidian-vault/context/decisoes/` (registry principal nao atualizado em tempo). Veredictos: 007 morto (pre-condicionado a 006), 008/011 funding/LSR NO-GO, FH-01 funding harvest NO-GO de regime.
+
+---
+
+### EXP-013: Sinal de entrada do v1.1 — fundamento ou sorte?
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Diagnostico do v1.1 (nao e estrategia nova, nao tuna o v1.1) |
+| **Estagio** | **NO-GO** (estudo exploratorio) |
+| **Hipotese** | Os ganhos do v1.1 (PF 0.82 bruto) tem fundamento estatistico, ou sao compativeis com sorte? O timing e/ou a direcao de entrada carregam informacao? |
+| **Periodo** | 118 trades reais, 16/04 → 01/06 2026 |
+| **Data** | 2026-06-01 |
+| **Decisao** | NO-GO. Timing nao significante (percentil 68%, p≈0.32), direcao ≈ cara-ou-coroa (percentil 59%, p≈0.41). Liquido de custo, perdedor com 95% de confianca (IC PF [0.36, 0.87]) |
+
+**Metodo:** Monte Carlo de entrada aleatoria (1a timing, 1b direcao) + bootstrap IC (2) + permutacao win/loss (3), reusando `check_exit` (zero skew). Decomposicao de execucao validou o simulador (entry real reproduz 0.75 vs 0.82 banco).
+
+**Achado estrutural:** o sistema perde por DUAS barreiras empilhadas — atraso de execucao (0.43 PF) + fee drag (0.37 PF). Mesmo idealizado-liquido fica 0.82 < 1. Nao e falha de sinal consertavel.
+
+**Codigo:** `scripts/entry_signal_study.py` + `tests/test_entry_signal_study.py` (19 testes). **Ref:** `~/obsidian-vault/context/decisoes/2026-06-01-exp-013-sinal-entrada-no-go.md`
+
+---
+
 ## Indice Rapido
 
 | ID | Nome | Familia | Estagio | PF (melhor) | Decisao |
@@ -325,6 +348,7 @@ Bloqueados > executados nos dois regimes, mas margem pequena; unico bucket PF>1.
 | EXP-003 | Momentum v1.1 | Momentum | PAPER (impl.) | 1.48 | Baseline oficial (B1) |
 | EXP-004 | Pair BTC/ETH v1.0 | Cross-asset stat arb | DEAD (no BACKTEST) | 0.32 | Falhou 5/7 criterios; random trader supera 4.5x |
 | EXP-006 | Momentum Position Router | Executor/Router | NO-GO (SHADOW) | 1.07* | Premissa regrediu (1.49→0.67); 80% do peso do score aponta errado |
+| EXP-013 | Sinal de entrada v1.1 (diagnostico) | Validacao | NO-GO | — | Timing nao-significante, direcao ≈ acaso; perdedor com custo (IC PF [0.36,0.87]) |
 
 ---
 
