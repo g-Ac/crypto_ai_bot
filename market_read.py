@@ -546,7 +546,7 @@ FRESHNESS_SOURCES = [
     ("preco",   "k_prices",        "bucket_ts",    1,    120 * 60),
     ("LSR",     "k_ratios",        "bucket_ts",    1,    120 * 60),
     ("OI",      "k_open_interest", "bucket_ts",    1,    120 * 60),
-    ("basis",   "k_basis",         "bucket_ts",    1,    120 * 60),
+    ("basis",   "k_basis",         "bucket_ts",    1,    180 * 60),  # +1h: basis tem lag estrutural de ~1h na Binance
     ("funding", "k_funding_rates", "funding_time", 1,    600 * 60),
     ("liq",     "k_liquidations",  "event_ts",     1000, 60 * 60),
 ]

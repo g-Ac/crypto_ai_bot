@@ -450,6 +450,17 @@ def test_fmt_age():
     assert mr._fmt_age(None) == "s/dado"
 
 
+def test_read_freshness_basis_tolerates_structural_lag(conn):
+    now = NOW_S
+    # basis tem lag estrutural de ~1h (defasagem da Binance); 2h05 NAO deve alarmar
+    add_basis(conn, "BTCUSDT", bucket_ts=now - 125 * 60)   # 2h05
+    assert mr.read_freshness(conn, now)["basis"]["stale"] is False
+    # 3h05 ja e atraso real (coletor perdeu ciclo) -> stale
+    conn.execute("DELETE FROM k_basis")
+    add_basis(conn, "BTCUSDT", bucket_ts=now - 185 * 60)   # 3h05
+    assert mr.read_freshness(conn, now)["basis"]["stale"] is True
+
+
 def test_read_freshness_ages_and_stale(conn):
     now = NOW_S
     add_price(conn, "BTCUSDT", bucket_ts=now - 600)          # 10 min -> fresco
