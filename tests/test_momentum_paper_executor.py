@@ -256,6 +256,84 @@ class TestClosePosition:
         assert state["hwm"] > 1000.0
 
 
+class TestExecutionCost:
+    """Fee: gross -> net. Capital bruto governa o sizing v1.1 (intocado)."""
+
+    def test_fee_acumula_sem_tocar_capital_bruto(self, state_file, tmp_db):
+        from momentum.paper_executor import (
+            load_state, open_position, manage_positions,
+        )
+        from config import (
+            MOMENTUM_PAPER_ENTRY_FEE_RATE, MOMENTUM_PAPER_EXIT_FEE_RATE,
+        )
+
+        state = load_state()
+        signal = _make_trade_signal()
+        open_position(state, signal, "cycle1")
+        size = state["positions"]["BTCUSDT"]["position_size_usd"]
+
+        candle = {"high": 85900.0, "low": 85000.0, "close": 85850.0}  # bate TP1
+        manage_positions(state, {"BTCUSDT": candle})
+
+        # Capital BRUTO = inicial + pnl bruto; a fee NAO o reduz (sizing intocado)
+        assert state["capital"] == pytest.approx(1000.0 + state["total_pnl_usd"])
+
+        # Fee acumulada a parte = notional * (entry+exit)/100, independe do pnl
+        expected_fee = size * (
+            MOMENTUM_PAPER_ENTRY_FEE_RATE + MOMENTUM_PAPER_EXIT_FEE_RATE
+        ) / 100.0
+        assert state["total_fee_usd"] == pytest.approx(expected_fee)
+        assert state["total_fee_usd"] > 0
+
+        # Net acumulado = bruto - fee
+        assert state["total_net_pnl_usd"] == pytest.approx(
+            state["total_pnl_usd"] - state["total_fee_usd"]
+        )
+
+    def test_close_grava_campos_net_no_db(self, state_file, tmp_db):
+        from momentum.paper_executor import (
+            load_state, open_position, manage_positions,
+        )
+
+        state = load_state()
+        signal = _make_trade_signal()
+        open_position(state, signal, "cycle1")
+        candle = {"high": 85900.0, "low": 85000.0, "close": 85850.0}
+        manage_positions(state, {"BTCUSDT": candle})
+
+        conn = sqlite3.connect(tmp_db)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM momentum_trades").fetchone()
+        conn.close()
+
+        assert row["total_fee_usd"] is not None and row["total_fee_usd"] > 0
+        assert row["gross_pnl_usd"] is not None
+        assert row["net_pnl_usd"] is not None
+        assert row["net_pnl_usd"] == pytest.approx(
+            row["gross_pnl_usd"] - row["total_fee_usd"], abs=0.02
+        )
+        assert row["fee_model"] is not None
+        assert row["entry_liquidity_assumption"] is not None
+        # Campo legado (bruto) preservado e coerente com gross
+        assert row["pnl_usd"] == pytest.approx(row["gross_pnl_usd"], abs=0.02)
+
+    def test_status_mostra_capital_liquido(self, state_file, tmp_db):
+        from momentum.paper_executor import (
+            load_state, save_state, open_position, manage_positions,
+            get_momentum_status,
+        )
+
+        state = load_state()
+        signal = _make_trade_signal()
+        open_position(state, signal, "cycle1")
+        candle = {"high": 85900.0, "low": 85000.0, "close": 85850.0}
+        manage_positions(state, {"BTCUSDT": candle})
+        save_state(state)
+
+        status = get_momentum_status()
+        assert "Net" in status
+
+
 class TestProcessCycle:
     def test_logs_reject_decision(self, state_file, tmp_db):
         from momentum.paper_executor import process_momentum_cycle

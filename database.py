@@ -557,6 +557,34 @@ def init_db():
             except Exception:
                 pass
 
+    # ── Migração: custo de execucao (fee) em momentum_trades ─────────────────
+    # Transforma PnL bruto em liquido. Colunas SEM default de proposito:
+    # linhas antigas (trades pre-fee) ficam NULL = "nao medido", nunca
+    # 0 = "fee zero". Nao altera a logica nem os params congelados da v1.1.
+    _momentum_fee_cols = [
+        ("gross_pnl_pct", "REAL"),
+        ("gross_pnl_usd", "REAL"),
+        ("entry_fee_rate", "REAL"),
+        ("exit_fee_rate", "REAL"),
+        ("fee_entry_usd", "REAL"),
+        ("fee_exit_usd", "REAL"),
+        ("fee_entry_bps", "REAL"),
+        ("fee_exit_bps", "REAL"),
+        ("total_fee_usd", "REAL"),
+        ("total_cost_bps", "REAL"),
+        ("net_pnl_pct", "REAL"),
+        ("net_pnl_usd", "REAL"),
+        ("fee_model", "TEXT"),
+        ("entry_liquidity_assumption", "TEXT"),
+        ("exit_liquidity_assumption", "TEXT"),
+    ]
+    for col, coltype in _momentum_fee_cols:
+        try:
+            conn.execute(f"ALTER TABLE momentum_trades ADD COLUMN {col} {coltype}")
+            conn.commit()
+        except Exception:
+            pass  # coluna já existe
+
     conn.close()
 
 
@@ -721,8 +749,15 @@ def insert_momentum_trade(trade: dict):
                 position_size_usd, pnl_pct, pnl_usd,
                 exit_reason, capital_after, param_version,
                 duration_candles, mfe_pct, mae_pct,
-                session_bucket, asset_bucket
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                session_bucket, asset_bucket,
+                gross_pnl_pct, gross_pnl_usd,
+                entry_fee_rate, exit_fee_rate,
+                fee_entry_usd, fee_exit_usd,
+                fee_entry_bps, fee_exit_bps,
+                total_fee_usd, total_cost_bps,
+                net_pnl_pct, net_pnl_usd,
+                fee_model, entry_liquidity_assumption, exit_liquidity_assumption
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             trade["timestamp"],
             trade["symbol"],
@@ -744,6 +779,22 @@ def insert_momentum_trade(trade: dict):
             trade.get("mae_pct", 0),
             trade.get("session_bucket", ""),
             trade.get("asset_bucket", ""),
+            # Custo de execucao (gross -> net). Ausente => NULL = nao medido.
+            trade.get("gross_pnl_pct"),
+            trade.get("gross_pnl_usd"),
+            trade.get("entry_fee_rate"),
+            trade.get("exit_fee_rate"),
+            trade.get("fee_entry_usd"),
+            trade.get("fee_exit_usd"),
+            trade.get("fee_entry_bps"),
+            trade.get("fee_exit_bps"),
+            trade.get("total_fee_usd"),
+            trade.get("total_cost_bps"),
+            trade.get("net_pnl_pct"),
+            trade.get("net_pnl_usd"),
+            trade.get("fee_model"),
+            trade.get("entry_liquidity_assumption"),
+            trade.get("exit_liquidity_assumption"),
         ))
         conn.commit()
     finally:

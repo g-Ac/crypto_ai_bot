@@ -176,6 +176,19 @@ MOMENTUM_TRADER_ENABLED = os.environ.get("MOMENTUM_TRADER_ENABLED", "false").str
 MOMENTUM_SYMBOLS = [s.strip() for s in os.environ.get("MOMENTUM_SYMBOLS", "BTCUSDT,ETHUSDT").split(",") if s.strip()]
 MOMENTUM_MAX_POSITIONS = 1
 
+# Custo de execucao do momentum paper (gross -> net). So MEDE/debita custo —
+# nao altera a logica nem os params congelados da v1.1.
+# Default = taker REAL Binance USDT-M Futures VIP 0 = 0.05%/lado (round-trip
+# 0.10%), confirmado 2026 (FAQ oficial). NAO usamos SINGLE_SIDE_FEE_PCT (0.04):
+# e a taxa taker ANTIGA da Binance e subestima o custo real para capital real.
+# MOMENTUM_PAPER_FEE_RATE seta ambos os lados; entry/exit podem ser individuais.
+_MOMENTUM_TAKER_FEE_PCT = 0.05
+_momentum_fee_default = os.environ.get("MOMENTUM_PAPER_FEE_RATE", str(_MOMENTUM_TAKER_FEE_PCT))
+MOMENTUM_PAPER_ENTRY_FEE_RATE = float(os.environ.get("MOMENTUM_PAPER_ENTRY_FEE_RATE", _momentum_fee_default))
+MOMENTUM_PAPER_EXIT_FEE_RATE = float(os.environ.get("MOMENTUM_PAPER_EXIT_FEE_RATE", _momentum_fee_default))
+MOMENTUM_PAPER_LIQUIDITY = os.environ.get("MOMENTUM_PAPER_LIQUIDITY", "taker").strip().lower()
+MOMENTUM_PAPER_FEE_MODEL = os.environ.get("MOMENTUM_PAPER_FEE_MODEL", f"flat_{MOMENTUM_PAPER_LIQUIDITY}")
+
 # Breakout 5m Strategy
 BREAKOUT_TRADER_ENABLED = os.environ.get("BREAKOUT_TRADER_ENABLED", "false").strip().lower() in ("true", "1", "yes")
 BREAKOUT_SYMBOLS = [s.strip() for s in os.environ.get("BREAKOUT_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT").split(",") if s.strip()]

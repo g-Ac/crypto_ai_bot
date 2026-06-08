@@ -17,9 +17,14 @@ import threading
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-from config import MOMENTUM_INITIAL_CAPITAL, MOMENTUM_MAX_POSITIONS
+from config import (
+    MOMENTUM_INITIAL_CAPITAL, MOMENTUM_MAX_POSITIONS,
+    MOMENTUM_PAPER_ENTRY_FEE_RATE, MOMENTUM_PAPER_EXIT_FEE_RATE,
+    MOMENTUM_PAPER_LIQUIDITY, MOMENTUM_PAPER_FEE_MODEL,
+)
 from momentum.momentum_trader import MomentumSignal, evaluate_momentum_pullback
 from momentum.config import MomentumOutcome, MomentumConfig
+from momentum.fees import compute_trade_costs
 from momentum.research_runner import check_exit
 import database as db
 
@@ -40,6 +45,8 @@ def _default_state() -> dict:
         "wins": 0,
         "losses": 0,
         "total_pnl_usd": 0.0,
+        "total_fee_usd": 0.0,
+        "total_net_pnl_usd": 0.0,
         "hwm": float(MOMENTUM_INITIAL_CAPITAL),
     }
 
@@ -55,6 +62,10 @@ def load_state() -> dict:
             if "hwm" not in state:
                 state["hwm"] = max(state.get("capital", MOMENTUM_INITIAL_CAPITAL),
                                    MOMENTUM_INITIAL_CAPITAL)
+            # Migracao suave: acumuladores de custo podem faltar em state antigo.
+            # Trades passados foram brutos (fee nao medida) => net == bruto ate aqui.
+            state.setdefault("total_fee_usd", 0.0)
+            state.setdefault("total_net_pnl_usd", state.get("total_pnl_usd", 0.0))
             return state
         except (json.JSONDecodeError, ValueError):
             return _default_state()
@@ -80,6 +91,9 @@ def get_momentum_status() -> str:
     l = state["losses"]
     total = state["total_trades"]
     pnl = state["total_pnl_usd"]
+    total_fee = state.get("total_fee_usd", 0.0)
+    net_cap = cap - total_fee          # capital liquido derivado (capital bruto - fees)
+    net_pnl = pnl - total_fee
     wr = (w / total * 100) if total > 0 else 0
     positions = state.get("positions", {})
     n_pos = len(positions)
@@ -88,6 +102,7 @@ def get_momentum_status() -> str:
 
     lines = [
         f"MOMENTUM PULLBACK | ${cap:.2f} | {total}t {w}W/{l}L WR={wr:.1f}% | PnL ${pnl:+.2f}",
+        f"  Net=${net_cap:.2f} (PnL ${net_pnl:+.2f}, fees ${total_fee:.2f})",
         f"  HWM=${hwm:.2f} DD={dd_pct:.1f}% | Pos={n_pos}",
     ]
     if positions:
@@ -207,9 +222,25 @@ def manage_positions(state: dict, candles: dict[str, dict],
         if result["closed"]:
             pnl_pct = result["pnl_pct"]
             pnl_usd = pos["position_size_usd"] * pnl_pct / 100
-            state["capital"] += pnl_usd
+            state["capital"] += pnl_usd          # capital BRUTO governa o sizing v1.1
             state["total_pnl_usd"] += pnl_usd
             state["total_trades"] += 1
+
+            # Custo de execucao: gross -> net. O capital bruto NAO muda (sizing
+            # v1.1 intocado); a fee acumula a parte para derivar o net no status.
+            costs = compute_trade_costs(
+                gross_pnl_pct=pnl_pct,
+                position_size_usd=pos["position_size_usd"],
+                entry_fee_rate=MOMENTUM_PAPER_ENTRY_FEE_RATE,
+                exit_fee_rate=MOMENTUM_PAPER_EXIT_FEE_RATE,
+                fee_model=MOMENTUM_PAPER_FEE_MODEL,
+            )
+            # Acumula a partir do pnl_usd bruto (nao arredondado) menos a fee,
+            # mantendo a identidade total_net == total_pnl - total_fee exata.
+            state["total_fee_usd"] = state.get("total_fee_usd", 0.0) + costs["total_fee_usd"]
+            state["total_net_pnl_usd"] = (
+                state.get("total_net_pnl_usd", 0.0) + (pnl_usd - costs["total_fee_usd"])
+            )
 
             if pnl_pct > 0:
                 state["wins"] += 1
@@ -238,6 +269,10 @@ def manage_positions(state: dict, candles: dict[str, dict],
                     "duration_candles": pos.get("candles_elapsed", 0),
                     "mfe_pct": round(result["mfe_pct"], 4),
                     "mae_pct": round(result["mae_pct"], 4),
+                    # Custo de execucao (gross/fee/net em USD, % e bps)
+                    **costs,
+                    "entry_liquidity_assumption": MOMENTUM_PAPER_LIQUIDITY,
+                    "exit_liquidity_assumption": MOMENTUM_PAPER_LIQUIDITY,
                 })
             except Exception as e:
                 logger.warning("Failed to log momentum trade: %s", e)
