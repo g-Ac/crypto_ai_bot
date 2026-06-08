@@ -31,6 +31,8 @@ from datetime import datetime, date, timedelta
 from pathlib import Path
 from flask import Flask, render_template, redirect, url_for, jsonify, request, Response
 import database as db
+import market
+import raiox_data
 from compare_instances import build_snapshot, compare_snapshots
 from database import (
     get_all_time_stats,
@@ -52,6 +54,7 @@ from runtime_config import (
     DASHBOARD_PORT,
     DB_FILE,
     LOG_DIR,
+    MOMENTUM_STATE_FILE,
     PAPER_STATE_FILE,
     AGENT_STATE_FILE,
     PUMP_STATE_FILE,
@@ -1494,6 +1497,91 @@ def analytics_page():
 @app.route("/system")
 def system_page():
     return render_template("system.html", active_page="system")
+
+
+@app.route("/raiox/")
+def raiox_page():
+    return render_template("raiox.html", active_page="raiox")
+
+
+@app.route("/api/raiox/trades")
+def api_raiox_trades():
+    conn = db._get_conn()
+    try:
+        out = raiox_data.list_trades(conn, MOMENTUM_STATE_FILE)
+    finally:
+        conn.close()
+    return jsonify({"ok": True, **out})
+
+
+@app.route("/api/raiox/trade/<int:trade_id>")
+def api_raiox_trade(trade_id):
+    conn = db._get_conn()
+    try:
+        detail = raiox_data.trade_detail(conn, trade_id)
+    finally:
+        conn.close()
+    if detail is None:
+        return jsonify({"ok": False, "error": "not_found", "message": "trade nao encontrado"}), 404
+    return jsonify({"ok": True, "trade": detail})
+
+
+def _binance_candles_adapter(symbol, interval, limit):
+    """Adapta market.get_candles para o formato consumido por raiox_data.fetch_candles."""
+    df = market.get_candles(symbol, interval, limit)
+    if not hasattr(df, "copy"):
+        return df
+    df = df.copy()
+    if "time_s" not in df.columns:
+        raw_time = df["time"].astype("int64")
+        # pandas pode estar em datetime64[ns/us/ms/s] dependendo da origem;
+        # normaliza para epoch segundos sem truncar timestamp para valores como 1780.
+        max_raw = int(raw_time.max())
+        if max_raw > 10**17:      # ns
+            df["time_s"] = raw_time // 1_000_000_000
+        elif max_raw > 10**14:    # us
+            df["time_s"] = raw_time // 1_000_000
+        elif max_raw > 10**11:    # ms
+            df["time_s"] = raw_time // 1_000
+        else:                     # s
+            df["time_s"] = raw_time
+
+    class _Records:
+        def to_dict(self, orient):
+            return df[["time_s", "open", "high", "low", "close"]].to_dict(orient)
+
+    return _Records()
+
+
+@app.route("/api/raiox/candles")
+def api_raiox_candles():
+    symbol = request.args.get("symbol", "")
+    interval = request.args.get("interval", "")
+    if symbol not in raiox_data.VALID_SYMBOLS:
+        return jsonify({"ok": False, "error": "symbol_invalido", "message": "simbolo nao suportado"}), 400
+    if interval not in raiox_data.VALID_INTERVALS:
+        return jsonify({"ok": False, "error": "interval_invalido", "message": "timeframe invalido"}), 400
+    try:
+        start_s = int(request.args.get("start", "0"))
+        end_s = int(request.args.get("end", "0"))
+    except ValueError:
+        return jsonify({"ok": False, "error": "param_invalido", "message": "start/end invalidos"}), 400
+    if start_s >= end_s:
+        return jsonify({"ok": False, "error": "intervalo_invalido", "message": "start >= end"}), 400
+    try:
+        out = raiox_data.fetch_candles(
+            symbol, interval, start_s, end_s, int(time.time()),
+            get_candles_fn=_binance_candles_adapter,
+        )
+    except Exception:
+        return jsonify({
+            "ok": False,
+            "error": "binance_unavailable",
+            "message": "nao consegui carregar os candles agora",
+        }), 502
+    if not out["ok"]:
+        return jsonify(out), 400
+    return jsonify(out)
 
 
 @app.route("/legacy")

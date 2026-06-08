@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Raio-X{% endblock %}
+{% block content %}
+<!-- lightweight-charts 4.2.0 (local, sem CDN) -->
+<script src="/static/js/lightweight-charts.standalone.production.js"></script>
+<section class="card">
+  <div class="card-header">
+    <h1>🩻 Raio-X dos Trades</h1>
+    <p>Radiografia factual dos trades momentum. Sem sinal, sem recomendação.</p>
+  </div>
+  <div class="raiox-wrap" style="display:flex;gap:16px;flex-wrap:wrap">
+    <div style="flex:1;min-width:280px">
+      <h2>Feed</h2>
+      <div id="open-pos"></div>
+      <ul id="trade-feed" style="list-style:none;padding:0"></ul>
+    </div>
+    <div style="flex:2;min-width:340px">
+      <div id="tf-buttons" style="margin-bottom:8px"></div>
+      <div id="chart" style="height:420px"></div>
+      <pre id="trade-summary" style="white-space:pre-wrap;margin-top:12px"></pre>
+    </div>
+  </div>
+</section>
+<script src="/static/js/raiox.js"></script>
+{% endblock %}
