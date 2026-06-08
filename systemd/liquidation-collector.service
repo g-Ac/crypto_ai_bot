@@ -1,0 +1,19 @@
+[Unit]
+Description=Liquidation collector (grava liquidacoes reais Bybit em k_liquidations)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/crypto_ai_bot
+EnvironmentFile=-/home/pi/crypto_ai_bot/.env
+ExecStart=/home/pi/crypto_ai_bot/.venv/bin/python -u /home/pi/crypto_ai_bot/scripts/liquidation_collector.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/pi/crypto_ai_bot/logs/liquidation_collector.log
+StandardError=append:/home/pi/crypto_ai_bot/logs/liquidation_collector.log
+
+[Install]
+WantedBy=multi-user.target

@@ -48,6 +48,17 @@ _running = False
 _connected = False
 _stats = {"total_received": 0, "total_tracked": 0, "reconnects": 0, "last_event": 0.0}
 
+# Sink opcional de persistencia. Se setado, e chamado a cada liquidacao com
+# (event_ms, symbol, side, qty, price, notional). Aditivo e protegido —
+# uma falha no sink NUNCA derruba o feed (ver _process_message).
+_event_sink = None
+
+
+def set_event_sink(fn) -> None:
+    """Registra (ou remove, com None) um callback de persistencia. Opcional."""
+    global _event_sink
+    _event_sink = fn
+
 
 def init_feed(symbols: list[str], window_minutes: int = _DEFAULT_WINDOW_MINUTES) -> None:
     """Inicia o collector em background (idempotente — chamar multiplas vezes e seguro)."""
@@ -322,11 +333,19 @@ def _process_message(data: bytes) -> None:
 
     notional = qty * price
     now = time.time()
+    event_ms = int(order.get("T") or msg.get("E") or now * 1000)
     _stats["total_tracked"] += 1
     _stats["last_event"] = now
 
     with _lock:
         _liquidations[symbol].append((now, side, notional))
+
+    # Persistencia opcional (evento-cru). Protegido: nunca derruba o feed.
+    if _event_sink is not None:
+        try:
+            _event_sink(event_ms, symbol, side, qty, price, notional)
+        except Exception:
+            logger.exception("liquidation event_sink falhou (ignorado)")
 
 
 def _prune_old_entries() -> None:
