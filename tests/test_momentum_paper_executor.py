@@ -333,6 +333,27 @@ class TestExecutionCost:
         status = get_momentum_status()
         assert "Net" in status
 
+    def test_close_grava_session_e_asset_bucket(self, state_file, tmp_db):
+        # Gap de instrumentacao: o trade fechado deve gravar os buckets
+        # (antes ficavam "" — cegava analise por sessao/ativo).
+        from momentum.paper_executor import (
+            load_state, open_position, manage_positions,
+        )
+        state = load_state()
+        signal = _make_trade_signal()  # BTCUSDT, timestamp 2026-04-15T12:00:00
+        open_position(state, signal, "cycle1")
+        candle = {"high": 85900.0, "low": 85000.0, "close": 85850.0}
+        manage_positions(state, {"BTCUSDT": candle})
+
+        conn = sqlite3.connect(tmp_db)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM momentum_trades").fetchone()
+        conn.close()
+        assert row["asset_bucket"] == "btc"   # antes: "" (cego)
+        # valor exato ancora a derivacao no open_time (12:00 UTC -> europe),
+        # nao em datetime.now() — protege a dimensao "sessao da entrada"
+        assert row["session_bucket"] == "europe"
+
 
 class TestProcessCycle:
     def test_logs_reject_decision(self, state_file, tmp_db):

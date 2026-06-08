@@ -249,6 +249,18 @@ def manage_positions(state: dict, candles: dict[str, dict],
                 state.setdefault("cooldowns", {})[symbol] = 2
             # else: breakeven — counted in total_trades but neither win nor loss
 
+            # Buckets de instrumentacao (sessao da abertura + ativo). Derivados,
+            # nao alteram a logica da v1.1. Mesmo padrao do _log_decision.
+            try:
+                from audit_helpers import get_session_bucket, get_asset_bucket
+                open_dt = (datetime.fromisoformat(pos["open_time"])
+                           if pos.get("open_time") else None)
+                session_bucket = get_session_bucket(open_dt) if open_dt else ""
+                asset_bucket = get_asset_bucket(symbol)
+            except Exception:
+                session_bucket = ""
+                asset_bucket = ""
+
             try:
                 db.insert_momentum_trade({
                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -269,6 +281,8 @@ def manage_positions(state: dict, candles: dict[str, dict],
                     "duration_candles": pos.get("candles_elapsed", 0),
                     "mfe_pct": round(result["mfe_pct"], 4),
                     "mae_pct": round(result["mae_pct"], 4),
+                    "session_bucket": session_bucket,
+                    "asset_bucket": asset_bucket,
                     # Custo de execucao (gross/fee/net em USD, % e bps)
                     **costs,
                     "entry_liquidity_assumption": MOMENTUM_PAPER_LIQUIDITY,
