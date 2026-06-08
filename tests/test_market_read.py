@@ -358,3 +358,58 @@ def test_format_symbol_no_pressure(conn):
     assert "BTC" in msg
     assert len(msg) < 4096
     assert_no_signal_language(msg)
+
+
+# ---- Tradutor (legenda contextual no rodape) ----
+
+def test_t_flow_translates_taker():
+    assert "vendedor mais agressivo" in mr._t_flow(43)
+    assert "comprador mais agressivo" in mr._t_flow(60)
+    assert "equilibrad" in mr._t_flow(50)
+    assert mr._t_flow(None) is None
+
+
+def test_t_positioning_combines_lsr_funding():
+    s = mr._t_positioning(1.74, 0.0001)
+    assert "maioria comprada" in s and "longs pagam" in s
+    s2 = mr._t_positioning(0.8, -0.001)
+    assert "maioria vendida" in s2 and "shorts pagam" in s2
+    assert mr._t_positioning(None, None) is None
+
+
+def test_t_leverage_translates_oi():
+    assert "saindo" in mr._t_leverage(-3)
+    assert "entrando" in mr._t_leverage(5)
+    assert mr._t_leverage(None) is None
+
+
+def test_t_liquidations_dominance():
+    assert "shorts dominam" in mr._t_liquidations([{"longs_liq_usd": 100, "shorts_liq_usd": 400}])
+    assert "longs dominam" in mr._t_liquidations([{"longs_liq_usd": 400, "shorts_liq_usd": 100}])
+    assert mr._t_liquidations([]) is None
+
+
+def test_translate_macro_empty_is_empty(conn):
+    assert mr.translate_macro(mr.read_regime(conn), mr.read_pressure(conn)) == []
+
+
+def test_format_macro_includes_translation(conn):
+    for sym in mr.MAJORS:
+        add_price(conn, sym, bucket_ts=NOW_S - 24 * HOUR, close=100.0)
+        add_price(conn, sym, bucket_ts=NOW_S, close=104.0, volume=1000, taker_buy_base=400)
+    add_liq(conn, "BTCUSDT", NOW_MS, side="SELL", qty=10.0, price=100.0)
+    msg = mr.format_macro(mr.read_regime(conn), mr.read_pressure(conn))
+    assert "Traducao" in msg
+    assert "Liquidacoes: shorts dominam" in msg
+    assert_no_signal_language(msg)
+
+
+def test_format_symbol_includes_translation(conn):
+    add_price(conn, "ETHUSDT", bucket_ts=NOW_S - 24 * HOUR, close=100.0)
+    add_price(conn, "ETHUSDT", bucket_ts=NOW_S, close=106.0, volume=1000, taker_buy_base=400)
+    add_funding(conn, "ETHUSDT", NOW_S, rate=0.0001)
+    add_liq(conn, "ETHUSDT", NOW_MS, side="BUY", qty=3.0, price=100.0)
+    msg = mr.format_symbol(mr.read_symbol(conn, "ETHUSDT"))
+    assert "Traducao" in msg
+    assert "longs dominam" in msg   # BUY = long liquidado
+    assert_no_signal_language(msg)

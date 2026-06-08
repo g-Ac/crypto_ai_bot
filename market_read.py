@@ -334,6 +334,7 @@ def format_macro(regime: dict, pressure: list[dict], top_n: int = 8) -> str:
         for p in pressure[:top_n]:
             lines.append(f"  {_sym_short(p['symbol'])}: {_fmt_usd(p['total_usd'])} — "
                          f"{_pressure_label(p)} · {p['events']}ev")
+    lines += _translation_block(translate_macro(regime, pressure))
     return "\n".join(lines)
 
 
@@ -363,4 +364,144 @@ def format_symbol(data: dict) -> str:
                      f"{_pressure_label(p)} · {p['events']}ev")
     else:
         lines.append("\U0001f525 Pressao 24h: <i>sem liquidacoes</i>")
+    lines += _translation_block(translate_symbol(data))
     return "\n".join(lines)
+
+
+# ----------------------------------------------------------------------------
+# Tradutor: traduz cada componente para linguagem simples (determinístico).
+# Descreve o que cada metrica diz -- NAO agrega em veredito, NAO sugere acao.
+# Usa "comprador/vendedor" (nao "compra/venda") pois o output e leitura, nao ordem.
+# ----------------------------------------------------------------------------
+
+def _word_dir(values) -> str | None:
+    """Direcao agregada de uma lista de retornos: subindo/caindo/mistos (None se vazia)."""
+    vals = [v for v in values if v is not None]
+    if not vals:
+        return None
+    up = sum(1 for v in vals if v > 0)
+    if up == len(vals):
+        return "subindo"
+    if up == 0:
+        return "caindo"
+    return "mistos"
+
+
+def _t_trend(ret24_values, ret7_values, subject: str = "") -> str | None:
+    d = _word_dir(ret24_values)
+    w = _word_dir(ret7_values)
+    if d is None and w is None:
+        return None
+    pre = f"{subject} " if subject else ""
+    dia = f"{pre}{d} no dia" if d else "dia sem dados"
+    sem = f"{w} na semana" if w else "semana sem dados"
+    return f"Preco: {dia}, {sem}"
+
+
+def _t_breadth(breadth: dict) -> str | None:
+    total = breadth.get("total") or 0
+    if not total:
+        return None
+    pct = breadth["pct_up"]
+    if pct >= 65:
+        tag = "alta espalhada"
+    elif pct <= 35:
+        tag = "queda espalhada"
+    else:
+        tag = "movimento misto"
+    return f"Amplitude: {tag} ({breadth['up']} de {total} moedas verdes)"
+
+
+def _t_flow(taker: float | None) -> str | None:
+    if taker is None:
+        return None
+    if taker >= 55:
+        tag = "comprador mais agressivo que vendedor"
+    elif taker <= 45:
+        tag = "vendedor mais agressivo que comprador"
+    else:
+        tag = "comprador e vendedor equilibrados"
+    return f"Fluxo: {tag} (taker {taker:.0f}%)"
+
+
+def _t_positioning(lsr_global: float | None, funding_rate: float | None) -> str | None:
+    parts = []
+    if lsr_global is not None:
+        if lsr_global >= 1.1:
+            parts.append(f"maioria comprada (LSR {lsr_global:.2f})")
+        elif lsr_global <= 0.9:
+            parts.append(f"maioria vendida (LSR {lsr_global:.2f})")
+        else:
+            parts.append(f"comprados/vendidos equilibrados (LSR {lsr_global:.2f})")
+    if funding_rate is not None:
+        forca = "leve" if abs(funding_rate) < 0.0003 else "forte"
+        if funding_rate > 0:
+            parts.append(f"longs pagam funding ({forca})")
+        elif funding_rate < 0:
+            parts.append(f"shorts pagam funding ({forca})")
+        else:
+            parts.append("funding neutro")
+    if not parts:
+        return None
+    return "Posicionamento: " + ", ".join(parts)
+
+
+def _t_leverage(oi_change: float | None) -> str | None:
+    if oi_change is None:
+        return None
+    if oi_change >= 2:
+        tag = "entrando, OI subindo"
+    elif oi_change <= -2:
+        tag = "saindo, OI caindo"
+    else:
+        tag = "estavel"
+    return f"Alavancagem: {tag} ({oi_change:+.0f}%)"
+
+
+def _t_liquidations(pressure: list[dict]) -> str | None:
+    if not pressure:
+        return None
+    longs = sum(p.get("longs_liq_usd", 0) for p in pressure)
+    shorts = sum(p.get("shorts_liq_usd", 0) for p in pressure)
+    if longs == 0 and shorts == 0:
+        return None
+    if shorts >= longs:
+        return "Liquidacoes: shorts dominam = quem apostou na queda foi espremido (squeeze)"
+    return "Liquidacoes: longs dominam = quem apostou na alta foi estourado (cascata)"
+
+
+def translate_macro(regime: dict, pressure: list[dict]) -> list[str]:
+    """Linhas de traducao do macro (filtra componentes sem dado)."""
+    funding_btc = regime["funding"].get("BTCUSDT", {}).get("funding_rate")
+    lines = [
+        _t_trend(list(regime["returns_24h"].values()),
+                 list(regime["returns_7d"].values()), subject="majors"),
+        _t_breadth(regime["breadth_24h"]),
+        _t_flow(regime["taker_btc"]),
+        _t_positioning(regime["lsr_btc"]["global"], funding_btc),
+        _t_leverage(regime["oi_change_btc"]),
+        _t_liquidations(pressure),
+    ]
+    return [ln for ln in lines if ln]
+
+
+def translate_symbol(data: dict) -> list[str]:
+    """Linhas de traducao do zoom de uma moeda."""
+    pres = [data["pressure"]] if data.get("pressure") else []
+    lines = [
+        _t_trend([data["ret_24h"]], [data["ret_7d"]]),
+        _t_flow(data["taker_24h"]),
+        _t_positioning(data["lsr"]["global"], data["funding"]["funding_rate"]),
+        _t_leverage(data["oi_change_24h"]),
+        _t_liquidations(pres),
+    ]
+    return [ln for ln in lines if ln]
+
+
+def _translation_block(lines: list[str]) -> list[str]:
+    """Bloco HTML do tradutor (vazio se nao ha o que traduzir)."""
+    if not lines:
+        return []
+    out = ["", "\U0001f50d <b>Traducao</b> (o que os numeros dizem)"]
+    out += [f"  • {ln}" for ln in lines]
+    return out
