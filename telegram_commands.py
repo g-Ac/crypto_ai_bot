@@ -13,6 +13,7 @@ Comandos disponiveis:
   /relatorio   - envia o relatorio diario agora
   /ajuda       - lista de comandos
 """
+import inspect
 import json
 import os
 import shutil
@@ -288,8 +289,30 @@ def _cmd_ajuda():
         "/pausar - pausa novos trades\n"
         "/retomar - retoma operacao normal\n"
         "/relatorio - relatorio diario completo\n"
+        "/mercado [SIMBOLO] - leitura de mercado (regime + pressao); com simbolo = zoom\n"
         "/ajuda - esta mensagem"
     )
+
+
+def _cmd_mercado(arg: str = ""):
+    """Leitura de mercado sob demanda. Sem arg = macro; com arg = zoom no simbolo."""
+    import database as db
+    import market_read as mr
+
+    conn = db._get_conn()
+    try:
+        token = arg.strip().upper()
+        if not token:
+            return mr.format_macro(mr.read_regime(conn), mr.read_pressure(conn))
+        symbol = token if token.endswith("USDT") else f"{token}USDT"  # aceita "BTC" ou "BTCUSDT"
+        known = set(mr.all_symbols(conn))
+        if symbol not in known:
+            disponiveis = ", ".join(mr._sym_short(s) for s in sorted(known))
+            return (f"\u2753 <b>{token}</b> nao esta entre os simbolos coletados.\n"
+                    f"<i>Disponiveis:</i> {disponiveis}")
+        return mr.format_symbol(mr.read_symbol(conn, symbol))
+    finally:
+        conn.close()
 
 
 _HANDLERS = {
@@ -303,18 +326,25 @@ _HANDLERS = {
     "/relatorio": _cmd_relatorio,
     "/ajuda": _cmd_ajuda,
     "/help": _cmd_ajuda,
+    "/mercado": _cmd_mercado,
 }
 
 
 def _handle_command(text: str):
-    cmd = text.strip().lower().split()[0]
+    raw = text.strip()
+    cmd = raw.lower().split()[0]
     # Remove @botname suffix (ex: /status@MyBot)
     if "@" in cmd:
         cmd = cmd.split("@")[0]
     handler = _HANDLERS.get(cmd)
     if not handler:
         return None  # comando desconhecido - ignora silenciosamente
+    # argumento = resto do texto ORIGINAL (preserva case do simbolo)
+    parts = raw.split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
     try:
+        if inspect.signature(handler).parameters:
+            return handler(arg)
         return handler()
     except Exception as e:
         return f"\u274c <b>Erro ao executar {cmd}:</b>\n<code>{e}</code>"
