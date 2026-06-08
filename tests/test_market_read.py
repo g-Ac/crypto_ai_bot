@@ -300,18 +300,32 @@ def test_fmt_helpers():
     assert mr._fmt_pct(None) == "n/d"
 
 
-def test_pressure_label_long_is_cascade_down():
-    p = {"dominant_side": "LONG", "longs_liq_usd": 80.0, "shorts_liq_usd": 20.0, "total_usd": 100.0}
+def test_pressure_label_long_strong():
+    p = {"dominant_side": "LONG", "longs_liq_usd": 80.0, "shorts_liq_usd": 20.0, "total_usd": 100.0, "events": 50}
     label = mr._pressure_label(p)
     assert "long" in label.lower()
-    assert "↓" in label  # cascata para baixo
+    assert "↓" in label                 # cascata para baixo
+    assert "pouco volume" not in label
 
 
-def test_pressure_label_short_is_squeeze_up():
-    p = {"dominant_side": "SHORT", "longs_liq_usd": 20.0, "shorts_liq_usd": 80.0, "total_usd": 100.0}
+def test_pressure_label_short_strong():
+    p = {"dominant_side": "SHORT", "longs_liq_usd": 20.0, "shorts_liq_usd": 80.0, "total_usd": 100.0, "events": 50}
     label = mr._pressure_label(p)
     assert "short" in label.lower()
-    assert "↑" in label  # squeeze para cima
+    assert "↑" in label                 # squeeze para cima
+
+
+def test_pressure_label_balanced_when_near_5050():
+    p = {"dominant_side": "LONG", "longs_liq_usd": 51.0, "shorts_liq_usd": 49.0, "total_usd": 100.0, "events": 50}
+    label = mr._pressure_label(p)
+    assert "equilibrado" in label.lower()
+    assert "cascata" not in label and "squeeze" not in label
+
+
+def test_pressure_label_weak_volume_flag():
+    p = {"dominant_side": "SHORT", "longs_liq_usd": 4.0, "shorts_liq_usd": 46.0, "total_usd": 50.0, "events": 4}
+    label = mr._pressure_label(p)
+    assert "pouco volume" in label
 
 
 def test_format_macro_contains_components(conn):
@@ -383,10 +397,21 @@ def test_t_leverage_translates_oi():
     assert mr._t_leverage(None) is None
 
 
-def test_t_liquidations_dominance():
-    assert "shorts dominam" in mr._t_liquidations([{"longs_liq_usd": 100, "shorts_liq_usd": 400}])
-    assert "longs dominam" in mr._t_liquidations([{"longs_liq_usd": 400, "shorts_liq_usd": 100}])
+def test_t_liquidations_strong_dominance():
+    assert "shorts dominam" in mr._t_liquidations([{"longs_liq_usd": 100, "shorts_liq_usd": 400, "events": 50}])
+    assert "longs dominam" in mr._t_liquidations([{"longs_liq_usd": 400, "shorts_liq_usd": 100, "events": 50}])
     assert mr._t_liquidations([]) is None
+
+
+def test_t_liquidations_balanced():
+    r = mr._t_liquidations([{"longs_liq_usd": 51, "shorts_liq_usd": 49, "events": 50}])
+    assert "equilibrado" in r
+    assert "dominam" not in r
+
+
+def test_t_liquidations_weak_volume():
+    r = mr._t_liquidations([{"longs_liq_usd": 5, "shorts_liq_usd": 45, "events": 4}])
+    assert "pouco volume" in r
 
 
 def test_translate_macro_empty_is_empty(conn):

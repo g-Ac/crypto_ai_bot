@@ -22,6 +22,10 @@ LIQ_SHORT_SIDE = "SELL"
 # Majors usados no termometro macro. Lista total e derivada do banco (all_symbols).
 MAJORS = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 
+# Qualidade da leitura de liquidacoes (evita rotular ruido como sinal)
+PRESSURE_BALANCED_MAX = 0.60   # lado dominante abaixo disso -> "equilibrado" (sem lado claro)
+PRESSURE_WEAK_EVENTS = 10      # menos liquidacoes que isso -> leitura fraca (pouco volume)
+
 
 def all_symbols(conn: sqlite3.Connection) -> list[str]:
     """Simbolos efetivamente coletados (deriva do banco, nao hardcode)."""
@@ -285,13 +289,23 @@ def _sym_short(symbol: str) -> str:
 
 
 def _pressure_label(p: dict) -> str:
-    """Lado dominante: LONG liquidado=cascata baixa (vermelho); SHORT=squeeze alta (verde)."""
+    """Lado dominante traduzido. Perto de 50/50 -> equilibrado; poucas liquidacoes -> leitura fraca.
+    LONG liquidado=cascata baixa (vermelho); SHORT=squeeze alta (verde)."""
     total = p.get("total_usd") or 0.0
-    if p.get("dominant_side") == "LONG":
-        share = 100.0 * p["longs_liq_usd"] / total if total else 0.0
-        return f"\U0001f534 longs {share:.0f}% (cascata ↓)"
-    share = 100.0 * p["shorts_liq_usd"] / total if total else 0.0
-    return f"\U0001f7e2 shorts {share:.0f}% (squeeze ↑)"
+    longs = p.get("longs_liq_usd", 0.0)
+    shorts = p.get("shorts_liq_usd", 0.0)
+    dom_share = (max(longs, shorts) / total) if total else 0.0
+    if dom_share < PRESSURE_BALANCED_MAX:
+        l_pct = 100.0 * longs / total if total else 0.0
+        s_pct = 100.0 * shorts / total if total else 0.0
+        label = f"⚪ equilibrado ({l_pct:.0f}/{s_pct:.0f})"
+    elif p.get("dominant_side") == "LONG":
+        label = f"\U0001f534 longs {dom_share * 100:.0f}% (cascata ↓)"
+    else:
+        label = f"\U0001f7e2 shorts {dom_share * 100:.0f}% (squeeze ↑)"
+    if p.get("events", 0) < PRESSURE_WEAK_EVENTS:
+        label += " · pouco volume"
+    return label
 
 
 def format_macro(regime: dict, pressure: list[dict], top_n: int = 8,
@@ -468,11 +482,20 @@ def _t_liquidations(pressure: list[dict]) -> str | None:
         return None
     longs = sum(p.get("longs_liq_usd", 0) for p in pressure)
     shorts = sum(p.get("shorts_liq_usd", 0) for p in pressure)
-    if longs == 0 and shorts == 0:
+    events = sum(p.get("events", 0) for p in pressure)
+    total = longs + shorts
+    if total == 0:
         return None
-    if shorts >= longs:
-        return "Liquidacoes: shorts dominam = quem apostou na queda foi espremido (squeeze)"
-    return "Liquidacoes: longs dominam = quem apostou na alta foi estourado (cascata)"
+    dom_share = max(longs, shorts) / total
+    if dom_share < PRESSURE_BALANCED_MAX:
+        base = "Liquidacoes: equilibrado entre longs e shorts (sem lado claro)"
+    elif shorts >= longs:
+        base = "Liquidacoes: shorts dominam = quem apostou na queda foi espremido (squeeze)"
+    else:
+        base = "Liquidacoes: longs dominam = quem apostou na alta foi estourado (cascata)"
+    if events < PRESSURE_WEAK_EVENTS:
+        base += " (pouco volume)"
+    return base
 
 
 def translate_macro(regime: dict, pressure: list[dict]) -> list[str]:
