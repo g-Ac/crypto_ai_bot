@@ -413,3 +413,58 @@ def test_format_symbol_includes_translation(conn):
     assert "Traducao" in msg
     assert "longs dominam" in msg   # BUY = long liquidado
     assert_no_signal_language(msg)
+
+
+# ---- Frescor do dado (carimbo + aviso de staleness) ----
+
+def test_fmt_age():
+    assert mr._fmt_age(0) == "0min"
+    assert mr._fmt_age(300) == "5min"
+    assert mr._fmt_age(3600) == "1h00"
+    assert mr._fmt_age(8400) == "2h20"
+    assert mr._fmt_age(None) == "s/dado"
+
+
+def test_read_freshness_ages_and_stale(conn):
+    now = NOW_S
+    add_price(conn, "BTCUSDT", bucket_ts=now - 600)          # 10 min -> fresco
+    add_liq(conn, "BTCUSDT", event_ts=(now - 7200) * 1000)   # 2h -> liq stale (>60min)
+    f = mr.read_freshness(conn, now)
+    assert f["preco"]["age_s"] == 600
+    assert f["preco"]["stale"] is False
+    assert f["liq"]["age_s"] == 7200
+    assert f["liq"]["stale"] is True
+    # fonte vazia -> sem idade e considerada stale
+    assert f["funding"]["age_s"] is None
+    assert f["funding"]["stale"] is True
+
+
+def test_freshness_block_warns_when_stale():
+    fresh = {"preco": {"age_s": 600, "stale": False},
+             "liq": {"age_s": 7200, "stale": True}}
+    txt = "\n".join(mr._freshness_block(fresh))
+    assert "Frescor" in txt
+    assert "preco 10min" in txt
+    assert "atrasado" in txt
+    assert "liq" in txt
+
+
+def test_freshness_block_no_warning_when_fresh():
+    fresh = {"preco": {"age_s": 600, "stale": False}}
+    txt = "\n".join(mr._freshness_block(fresh))
+    assert "Frescor" in txt
+    assert "atrasado" not in txt
+
+
+def test_format_macro_with_freshness(conn):
+    add_price(conn, "BTCUSDT", bucket_ts=NOW_S, close=100.0)
+    add_price(conn, "BTCUSDT", bucket_ts=NOW_S - 24 * HOUR, close=100.0)
+    fresh = mr.read_freshness(conn, NOW_S)
+    msg = mr.format_macro(mr.read_regime(conn), mr.read_pressure(conn), freshness=fresh)
+    assert "Frescor" in msg
+
+
+def test_format_macro_without_freshness_has_no_block(conn):
+    add_price(conn, "BTCUSDT", bucket_ts=NOW_S, close=100.0)
+    msg = mr.format_macro(mr.read_regime(conn), mr.read_pressure(conn))
+    assert "Frescor" not in msg

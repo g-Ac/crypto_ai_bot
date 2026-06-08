@@ -301,16 +301,17 @@ def _cmd_mercado(arg: str = ""):
 
     conn = db._get_conn()
     try:
+        fresh = mr.read_freshness(conn, int(time.time()))
         token = arg.strip().upper()
         if not token:
-            return mr.format_macro(mr.read_regime(conn), mr.read_pressure(conn))
+            return mr.format_macro(mr.read_regime(conn), mr.read_pressure(conn), freshness=fresh)
         symbol = token if token.endswith("USDT") else f"{token}USDT"  # aceita "BTC" ou "BTCUSDT"
         known = set(mr.all_symbols(conn))
         if symbol not in known:
             disponiveis = ", ".join(mr._sym_short(s) for s in sorted(known))
             return (f"\u2753 <b>{token}</b> nao esta entre os simbolos coletados.\n"
                     f"<i>Disponiveis:</i> {disponiveis}")
-        return mr.format_symbol(mr.read_symbol(conn, symbol))
+        return mr.format_symbol(mr.read_symbol(conn, symbol), freshness=fresh)
     finally:
         conn.close()
 

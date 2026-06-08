@@ -294,7 +294,8 @@ def _pressure_label(p: dict) -> str:
     return f"\U0001f7e2 shorts {share:.0f}% (squeeze ↑)"
 
 
-def format_macro(regime: dict, pressure: list[dict], top_n: int = 8) -> str:
+def format_macro(regime: dict, pressure: list[dict], top_n: int = 8,
+                 freshness: dict | None = None) -> str:
     """Termometro macro + mapa de pressao em HTML. Mostra componentes, NAO veredito."""
     lines = ["\U0001f4ca <b>Leitura de Mercado</b>", ""]
 
@@ -335,10 +336,12 @@ def format_macro(regime: dict, pressure: list[dict], top_n: int = 8) -> str:
             lines.append(f"  {_sym_short(p['symbol'])}: {_fmt_usd(p['total_usd'])} — "
                          f"{_pressure_label(p)} · {p['events']}ev")
     lines += _translation_block(translate_macro(regime, pressure))
+    if freshness:
+        lines += _freshness_block(freshness)
     return "\n".join(lines)
 
 
-def format_symbol(data: dict) -> str:
+def format_symbol(data: dict, freshness: dict | None = None) -> str:
     """Zoom de uma moeda em HTML (sem veredito)."""
     sym = _sym_short(data["symbol"])
     lsr = data["lsr"]
@@ -365,6 +368,8 @@ def format_symbol(data: dict) -> str:
     else:
         lines.append("\U0001f525 Pressao 24h: <i>sem liquidacoes</i>")
     lines += _translation_block(translate_symbol(data))
+    if freshness:
+        lines += _freshness_block(freshness)
     return "\n".join(lines)
 
 
@@ -504,4 +509,57 @@ def _translation_block(lines: list[str]) -> list[str]:
         return []
     out = ["", "\U0001f50d <b>Traducao</b> (o que os numeros dizem)"]
     out += [f"  • {ln}" for ln in lines]
+    return out
+
+
+# ----------------------------------------------------------------------------
+# Frescor do dado: idade de cada fonte + aviso se um coletor atrasou.
+# E a unica leitura que compara com o relogio -> recebe now_s de fora.
+# Ritmo esperado: k_collector (preco/LSR/OI/basis) hourly; funding 8h; liq ao vivo.
+# ----------------------------------------------------------------------------
+
+FRESHNESS_SOURCES = [
+    # (label, tabela, coluna, divisor_para_segundos, stale_apos_segundos)
+    ("preco",   "k_prices",        "bucket_ts",    1,    120 * 60),
+    ("LSR",     "k_ratios",        "bucket_ts",    1,    120 * 60),
+    ("OI",      "k_open_interest", "bucket_ts",    1,    120 * 60),
+    ("basis",   "k_basis",         "bucket_ts",    1,    120 * 60),
+    ("funding", "k_funding_rates", "funding_time", 1,    600 * 60),
+    ("liq",     "k_liquidations",  "event_ts",     1000, 60 * 60),
+]
+
+
+def read_freshness(conn: sqlite3.Connection, now_s: int) -> dict:
+    """Idade (s) do dado mais recente de cada fonte e se passou do ritmo esperado.
+    Fonte vazia conta como stale (sem dado = nao confiavel)."""
+    out = {}
+    for label, table, col, div, stale_s in FRESHNESS_SOURCES:
+        m = conn.execute(f"SELECT MAX({col}) FROM {table}").fetchone()[0]
+        if m is None:
+            out[label] = {"age_s": None, "stale": True}
+        else:
+            age = max(0, int(now_s - m / div))
+            out[label] = {"age_s": age, "stale": age > stale_s}
+    return out
+
+
+def _fmt_age(age_s) -> str:
+    if age_s is None:
+        return "s/dado"
+    m = int(age_s // 60)
+    if m < 60:
+        return f"{m}min"
+    return f"{m // 60}h{m % 60:02d}"
+
+
+def _freshness_block(fresh: dict) -> list[str]:
+    """Carimbo de frescor + aviso se alguma fonte estiver atrasada."""
+    if not fresh:
+        return []
+    carimbo = " · ".join(f"{lbl} {_fmt_age(d['age_s'])}" for lbl, d in fresh.items())
+    out = ["", f"\U0001f550 <b>Frescor</b>: {carimbo}"]
+    velhos = [lbl for lbl, d in fresh.items() if d["stale"]]
+    if velhos:
+        out.append(f"⚠️ <b>{', '.join(velhos)}</b> atrasado(s) — "
+                   f"coletor pode ter caido, leia com cautela")
     return out

@@ -58,6 +58,16 @@ def test_cmd_mercado_symbol_zoom(market_db):
     assert "Pressao" in msg
 
 
+def test_cmd_mercado_macro_has_freshness(market_db):
+    from telegram_commands import _cmd_mercado
+    assert "Frescor" in _cmd_mercado("")
+
+
+def test_cmd_mercado_zoom_has_freshness(market_db):
+    from telegram_commands import _cmd_mercado
+    assert "Frescor" in _cmd_mercado("BTCUSDT")
+
+
 def test_cmd_mercado_unknown_symbol(market_db):
     from telegram_commands import _cmd_mercado
     msg = _cmd_mercado("FOOBAR")
