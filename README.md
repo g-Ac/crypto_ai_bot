@@ -65,6 +65,31 @@ pip install -r requirements-dev.txt    # dev (inclui pytest)
 cp .env.example .env  # editar com suas chaves
 ```
 
+## Disaster Recovery
+
+> Backup local no mesmo SD é cache operacional, não disaster recovery.
+
+Status (2026-06-09):
+
+- Runtime local backup: **operacional** (timer diário + bundle)
+- Restore verification: **operacional** (`--verify-only` validado)
+- Healthcheck: **operacional**
+- Offsite backup: **pendente — obrigatório para DR completo**
+- `.env` recovery: **manual**, via password manager (fora da Pi)
+
+Filosofia do projeto: `docs/CONSTITUTION.md`. Runbook completo de reconstrução
+(SD morreu): `docs/DISASTER_RECOVERY.md`.
+
+```bash
+bash scripts/backup_runtime_bundle.sh           # bundle DR: db + estado + crontab + units
+bash scripts/restore_runtime_bundle.sh <tar.gz> # restore conservador (não inicia nada)
+bash scripts/export_crontab.sh                  # versiona crontab em ops/crontab.current
+bash scripts/healthcheck.sh [--full]            # PASS/WARN/FAIL consolidado
+```
+
+Backup diário automático do `bot.db` via `k-collector-backup.timer` (04:00).
+O bundle deve sair da Pi (offsite) — ver `docs/DISASTER_RECOVERY.md` §4 e §8.
+
 ### Variaveis de ambiente (.env)
 
 ```

@@ -1,0 +1,14 @@
+# crontab.current — exportado por scripts/export_crontab.sh em 2026-06-09T16:55:35-03:00
+# Restore: revisar e aplicar com:  crontab ops/crontab.current
+*/30 * * * * bash /home/pi/obsidian-vault/sync-pull.sh
+
+# Monitor momentum 4x/dia via Telegram (zero API Anthropic)
+0 7,9,19,21 * * * /home/pi/crypto_ai_bot/.venv/bin/python /home/pi/crypto_ai_bot/scripts/daily_monitor.py >> /home/pi/crypto_ai_bot/logs/monitor.log 2>&1
+
+# Shadow simulator 4x/dia - 30min apos daily_monitor (idempotente, com flock e cd)
+30 7,9,19,21 * * * cd /home/pi/crypto_ai_bot && /usr/bin/flock -n /tmp/crypto_shadow_simulator.lock /home/pi/crypto_ai_bot/.venv/bin/python /home/pi/crypto_ai_bot/shadow_simulator.py >> /home/pi/crypto_ai_bot/logs/shadow.log 2>&1
+
+# K collector hourly - eixo K (top/retail divergence) research
+# Spec: ~/obsidian-vault/context/decisoes/2026-04-29-spec-coletor-K-hermes.md
+# Roda no minuto :05 com flock (idempotente, INSERT OR IGNORE)
+5 * * * * /usr/bin/flock -n /tmp/k_collector.lock /home/pi/crypto_ai_bot/.venv/bin/python /home/pi/crypto_ai_bot/scripts/k_collector.py >> /home/pi/crypto_ai_bot/logs/k_collector.log 2>&1
