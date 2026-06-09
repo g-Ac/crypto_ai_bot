@@ -358,6 +358,47 @@ Bloqueados > executados nos dois regimes, mas margem pequena; unico bucket PF>1.
 
 ---
 
+### EXP-015: Varredura de Liquidez + Retracao (LINK) — REJEITADA A PRIORI
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Price-action (liquidity sweep / Wyckoff spring) |
+| **Versao** | spec v1.0 (proposta Gabriel, 2026-06-09) |
+| **Estagio** | **DEAD (no HYPOTHESIS)** — rejeitada por anatomia estrutural a priori, nunca rodada |
+| **Hipotese** | Quando o low fura o fundo dos ultimos 8 candles (2h) mas o close volta acima dele (falso rompimento / stop hunt), a favor da tendencia 1h (close > EMA8), reverte >= 1R em ate 16 candles (4h) |
+| **Timeframe** | 15m (validacao 1h) |
+| **Ativo** | LINKUSDT |
+| **Data de criacao** | 2026-06-09 |
+| **Data de morte** | 2026-06-09 (mesmo dia — rejeicao a priori) |
+| **Decisao** | Nao rodar. Herda a causa de morte ja provada de EXP-004 e EXP-013; backtest testaria de novo o que ja reprovou, com roupa de altcoin |
+
+**Por que rejeitada SEM rodar (precedente metodologico):**
+
+Primeira hipotese do lab morta por **deducao estrutural a priori** — nao por dados novos. O argumento decisivo nao e o N=5 do teste preliminar (vies de amostra, que mais dados resolveriam); e a **anatomia de custo**, que mais dados NAO resolvem:
+
+- Stop na minima do pavio de varredura => R pequeno => o fee round-trip (~0,1% taker) vira fracao grande do R.
+- Se R ~ 0,5%, o fee ja come ~20% do R e o break-even sobe pra ~60% de acerto — **antes** de slippage. No LINK (menos liquido que BTC/ETH), o slippage real piora a conta.
+- Quanto melhor o RR aparente (stop mais apertado), PIOR o peso relativo do fee. O atrativo da estrategia e a propria armadilha.
+
+Mesma anatomia que ja matou:
+- **EXP-004** (pair trading): "penalizacao de fees torna break-even inviavel mesmo com sinal direcional fraco".
+- **EXP-013** (sinal de entrada v1.1): o v1.1 nao perde pelo SINAL — perde por fee drag (0.37 PF) + atraso de execucao (0.43 PF), empilhados. Sweep->1R em 15m herda a causa, nao so o sinal.
+
+**Colisao com pre-compromissos selados:**
+- EXP-014 (02/06) fechou price-action em majors como "exaurido com dados", LINHA FECHADA, pre-compromisso "sem #5, sem altcoin, sem mais dado". Esta era o #5, em altcoin.
+- Wyckoff/spring removido do menu de eixos (29/04) por overfit de regras ad-hoc. A spec e o spring de Wyckoff.
+- Reorientacao 01/06: de "prever direcao" para "capturar estrutura que paga sem prever". Sweep e prever direcao, 100% derivado do preco.
+- Plano regime-surfavel (07/06): Fase 0 = pausa; gatilho "2 NO-GOs -> pausa 90d" ativo ate ~13/07.
+
+**Condicao de reentrada (forward-only):** so reabre se um argumento mecanico mudar a ANATOMIA, nao a roupa:
+- um componente estrutural real (funding/OI/liquidacao/basis — info que nao deriva do preco) com fonte de friccao identificavel, respondendo as 3 perguntas popperianas; ou
+- um TF onde o fee vira ruido com sinal que sobreviva (mas trend diario ja deu NO-GO via EXP-014).
+- NUNCA reabre por "mais dados" ou "outro ativo".
+
+**Referencia:** `~/obsidian-vault/context/decisoes/2026-06-09-exp-015-liquidity-sweep-link-rejeitada-a-priori.md`
+
+---
+
 ## Indice Rapido
 
 | ID | Nome | Familia | Estagio | PF (melhor) | Decisao |
@@ -369,6 +410,7 @@ Bloqueados > executados nos dois regimes, mas margem pequena; unico bucket PF>1.
 | EXP-006 | Momentum Position Router | Executor/Router | NO-GO (SHADOW) | 1.07* | Premissa regrediu (1.49→0.67); 80% do peso do score aponta errado |
 | EXP-013 | Sinal de entrada v1.1 (diagnostico) | Validacao | NO-GO | — | Timing nao-significante, direcao ≈ acaso; perdedor com custo (IC PF [0.36,0.87]) |
 | EXP-014 | Trend-following diario BTC/ETH/SOL | Trend-following | NO-GO (inconclusivo) | 2.16* | Ultima candidata; IC cruza 1.0 nos 3; ETH seduz mas nao robusto. LINHA FECHADA |
+| EXP-015 | Varredura de liquidez + retracao (LINK) | Price-action (sweep) | DEAD (no HYPOTHESIS) | — | Rejeitada a priori: stop apertado => fee vira fracao do R; herda morte de EXP-004/013 |
 
 ---
 
