@@ -163,6 +163,17 @@ def test_trade_detail_none_when_absent(trades_conn):
     assert rx.trade_detail(trades_conn, 999) is None
 
 
+def test_trade_summary_has_id_and_formatted_prices(trades_conn):
+    _ins(trades_conn, id=80, timestamp="2026-06-08T17:07:43+00:00", symbol="BTCUSDT",
+         direction="LONG", regime="WEAK_TREND", entry_price=81293.1512345, sl_price=80886.68,
+         tp1_price=81902.85, tp2_price=82500.0, exit_price=80886.68424999999, exit_reason="sl_hit",
+         duration_candles=7, mfe_pct=0.06, mae_pct=-0.50, net_pnl_pct=-0.60, pnl_pct=-0.50)
+    summary = rx.trade_detail(trades_conn, 80)["summary"]
+    assert summary.startswith("#80 ·")
+    assert "81293.15" in summary and "80886.68" in summary
+    assert "80886.68424999999" not in summary and "81293.1512345" not in summary
+
+
 def test_trade_summary_is_factual_no_action_words(trades_conn):
     _ins(trades_conn, id=6, timestamp="2026-06-08T17:07:43+00:00", symbol="ETHUSDT",
          direction="LONG", regime="TRENDING", entry_price=1691.47, sl_price=1676.55,

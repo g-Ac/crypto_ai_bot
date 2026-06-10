@@ -1564,14 +1564,16 @@ def api_raiox_candles():
     try:
         start_s = int(request.args.get("start", "0"))
         end_s = int(request.args.get("end", "0"))
+        margin = int(request.args.get("margin", "20"))
     except ValueError:
-        return jsonify({"ok": False, "error": "param_invalido", "message": "start/end invalidos"}), 400
+        return jsonify({"ok": False, "error": "param_invalido", "message": "start/end/margin invalidos"}), 400
     if start_s >= end_s:
         return jsonify({"ok": False, "error": "intervalo_invalido", "message": "start >= end"}), 400
+    margin = max(0, min(margin, 300))
     try:
         out = raiox_data.fetch_candles(
             symbol, interval, start_s, end_s, int(time.time()),
-            get_candles_fn=_binance_candles_adapter,
+            get_candles_fn=_binance_candles_adapter, margin=margin,
         )
     except Exception:
         return jsonify({

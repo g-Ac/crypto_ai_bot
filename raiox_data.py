@@ -126,6 +126,12 @@ def list_trades(conn, state_path: str, limit: int = 50) -> dict:
     return {"open": open_position(state_path), "closed": closed}
 
 
+def _fmt_price(p) -> str:
+    if p is None:
+        return "n/d"
+    return f"{float(p):.2f}"
+
+
 def _trade_summary(d: dict) -> str:
     """Resumo factual do trade (sem frase de acao)."""
     mins = (d["duration_candles"] or 0) * MOMENTUM_INTERVAL_MIN
@@ -135,8 +141,8 @@ def _trade_summary(d: dict) -> str:
     mfe = f"+{d['mfe_pct']:.2f}%" if d.get("mfe_pct") is not None else "n/d"
     mae = f"{d['mae_pct']:.2f}%" if d.get("mae_pct") is not None else "n/d"
     return (
-        f"{d['direction']} · entrada estimada {d['entry_price']} · "
-        f"saida {d['exit_price']} ({d['exit_reason']}) · durou {dur} · "
+        f"#{d['id']} · {d['direction']} · entrada estimada {_fmt_price(d['entry_price'])} · "
+        f"saida {_fmt_price(d['exit_price'])} ({d['exit_reason']}) · durou {dur} · "
         f"resultado {pnl} · foi a {mfe} a favor e {mae} contra · regime {d['regime']}"
     )
 

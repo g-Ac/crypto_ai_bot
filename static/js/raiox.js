@@ -9,6 +9,9 @@ const RX = {
 };
 const q = (s) => document.querySelector(s);
 const TF = ["15m", "1h", "4h", "1d"];
+const TF_SEC = { "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
+const FETCH_MARGIN = 150;     // velas buscadas pra cada lado do trade (estrada pra arrastar/zoom)
+const VIEW_MARGIN_BARS = 20;  // velas visiveis em volta do trade ao abrir (mesmo foco de antes)
 
 function fmtTime(s) {
   return new Date(s * 1000).toLocaleString("pt-BR", {
@@ -51,7 +54,7 @@ async function loadFeed() {
   if (op) q("#live-btn").onclick = () => openLive(op);
   q("#trade-feed").innerHTML = d.closed.map(t =>
     `<li data-id="${t.id}" class="trade-row" style="cursor:pointer;margin:6px 0;padding:8px;border:1px solid #333;border-radius:6px">
-      ${t.exit_icon} ${t.symbol} ${t.direction} · ${t.pnl_pct.toFixed(2)}% · ${t.exit_reason} · ${fmtTime(t.timestamp_s)}
+      ${t.exit_icon} #${t.id} · ${t.symbol} ${t.direction} · ${t.pnl_pct.toFixed(2)}% · ${t.exit_reason} · ${fmtTime(t.timestamp_s)}
     </li>`).join("");
   q("#trade-feed").querySelectorAll("li").forEach(li =>
     li.onclick = () => openTrade(li.dataset.id));
@@ -108,7 +111,7 @@ async function loadChart(ctx, tf) {
   const t = ctx.t;
   const entry = ctx.kind === "closed" ? t.entry_time_s : t.open_time_s;
   const exit = ctx.kind === "closed" ? t.exit_time_s : Math.floor(Date.now() / 1000);
-  const url = `/api/raiox/candles?symbol=${t.symbol}&interval=${tf}&start=${entry}&end=${exit}`;
+  const url = `/api/raiox/candles?symbol=${t.symbol}&interval=${tf}&start=${entry}&end=${exit}&margin=${FETCH_MARGIN}`;
   const r = await fetch(url);
   const d = await r.json();
   if (!d.ok) {
@@ -116,7 +119,17 @@ async function loadChart(ctx, tf) {
     return;
   }
   RX.candleSeries.setData(d.candles);
-  RX.chart.timeScale().fitContent();
+  // abre focado no trade (como antes), mas com estrada carregada dos dois lados:
+  // arrasta o grafico pra ver o contexto anterior e a continuacao; rodinha da zoom.
+  if (d.candles.length) {
+    const effTfSec = TF_SEC[d.effective_interval] || TF_SEC[tf] || 900;
+    RX.chart.timeScale().setVisibleRange({
+      from: entry - VIEW_MARGIN_BARS * effTfSec,
+      to: exit + VIEW_MARGIN_BARS * effTfSec,
+    });
+  } else {
+    RX.chart.timeScale().fitContent();
+  }
   clearLines();
   addLine(t.entry_price, "#26a69a", "entrada");
   addLine(t.sl_price, "#ef5350", "stop");

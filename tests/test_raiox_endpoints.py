@@ -133,6 +133,51 @@ def test_candles_binance_down_returns_502(client, monkeypatch):
     assert r.get_json()["error"] == "binance_unavailable"
 
 
+def test_candles_margin_param_widens_window(client, monkeypatch):
+    import time as _time
+    now = int(_time.time())
+    rows = [{"time_s": now - i * 900, "open": 1, "high": 1, "low": 1, "close": 1}
+            for i in range(400)][::-1]
+    seen = []
+    class _DF:
+        def to_dict(self, orient):
+            return rows
+    def fake(s, i, limit):
+        seen.append(limit)
+        return _DF()
+    monkeypatch.setattr("market.get_candles", fake)
+    base = f"/api/raiox/candles?symbol=ETHUSDT&interval=15m&start={now-5*900}&end={now}"
+    n_default = len(client.get(base).get_json()["candles"])
+    d = client.get(base + "&margin=100").get_json()
+    assert d["ok"] is True
+    assert len(d["candles"]) > n_default          # margem maior = mais contexto retornado
+    assert abs((seen[1] - seen[0]) - 80) <= 1     # margin 100 vs default 20 (now do server avanca)
+
+
+def test_candles_margin_capped_at_300(client, monkeypatch):
+    import time as _time
+    now = int(_time.time())
+    seen = []
+    class _DF:
+        def to_dict(self, orient):
+            return []
+    def fake(s, i, limit):
+        seen.append(limit)
+        return _DF()
+    monkeypatch.setattr("market.get_candles", fake)
+    base = f"/api/raiox/candles?symbol=ETHUSDT&interval=15m&start={now-5*900}&end={now}"
+    assert client.get(base + "&margin=0").status_code == 200
+    assert client.get(base + "&margin=10000").status_code == 200
+    assert abs((seen[1] - seen[0]) - 300) <= 1    # cap silencioso em 300
+
+
+def test_candles_margin_invalido_400(client):
+    now = 1780941600
+    r = client.get(f"/api/raiox/candles?symbol=ETHUSDT&interval=15m&start={now-5*900}&end={now}&margin=abc")
+    assert r.status_code == 400
+    assert r.get_json()["error"] == "param_invalido"
+
+
 def test_raiox_page_renders(client):
     r = client.get("/raiox/")
     assert r.status_code == 200
