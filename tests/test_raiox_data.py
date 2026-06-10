@@ -100,6 +100,18 @@ def test_pnl_of_prefers_net():
     assert rx._pnl_of({"net_pnl_pct": None, "pnl_pct": 0.5}) == (0.5, "pnl_pct")
 
 
+def test_classify_result_win_loss_fee_ate():
+    assert rx._classify_result(0.49, 0.59) == "win"      # net > 0
+    assert rx._classify_result(-0.88, -0.78) == "loss"   # net <= 0, bruto <= 0
+    assert rx._classify_result(-0.05, 0.05) == "fee_ate" # bruto > 0, net <= 0
+
+
+def test_classify_result_bordas_zero():
+    assert rx._classify_result(0.0, 0.10) == "fee_ate"   # net == 0 com bruto positivo: fee comeu
+    assert rx._classify_result(0.0, 0.0) == "loss"       # tudo zero: loss
+    assert rx._classify_result(0.01, 0.0) == "win"       # net positivo manda, mesmo bruto zero
+
+
 def test_exit_icon():
     assert rx._exit_icon("tp1_hit") == "🟢"
     assert rx._exit_icon("sl_hit") == "🔴"
@@ -203,3 +215,53 @@ def test_fetch_candles_error_when_window_absurd():
     out = rx.fetch_candles("ETHUSDT", "15m", start, now, now, get_candles_fn=fn)
     assert out["ok"] is False
     assert out["error"] == "janela_muito_longa"
+
+
+def test_trades_overlay_filters_symbol_and_classifies(trades_conn):
+    _ins(trades_conn, id=1, timestamp="2026-06-01T12:00:00+00:00", symbol="BTCUSDT",
+         direction="LONG", entry_price=100000.0, exit_price=101000.0,
+         duration_candles=4, pnl_pct=1.0, net_pnl_pct=0.9)        # win
+    _ins(trades_conn, id=2, timestamp="2026-06-02T12:00:00+00:00", symbol="BTCUSDT",
+         direction="SHORT", entry_price=101000.0, exit_price=102000.0,
+         duration_candles=2, pnl_pct=-0.99, net_pnl_pct=-1.09)    # loss
+    _ins(trades_conn, id=3, timestamp="2026-06-03T12:00:00+00:00", symbol="BTCUSDT",
+         direction="LONG", entry_price=102000.0, exit_price=102050.0,
+         duration_candles=8, pnl_pct=0.05, net_pnl_pct=-0.05)     # fee_ate
+    _ins(trades_conn, id=4, timestamp="2026-06-04T12:00:00+00:00", symbol="ETHUSDT",
+         direction="LONG", entry_price=1700.0, exit_price=1717.0,
+         duration_candles=3, pnl_pct=1.0, net_pnl_pct=0.9)        # outro simbolo: fora
+    out = rx.trades_overlay(trades_conn, "BTCUSDT")
+    assert out["ok"] is True and out["symbol"] == "BTCUSDT"
+    assert [t["id"] for t in out["trades"]] == [1, 2, 3]          # ordem temporal crescente
+    assert [t["result"] for t in out["trades"]] == ["win", "loss", "fee_ate"]
+    t1 = out["trades"][0]
+    assert t1["exit_time_s"] == rx._to_epoch_s("2026-06-01T12:00:00+00:00")
+    assert t1["entry_time_s"] == t1["exit_time_s"] - 4 * 15 * 60  # estimativa igual a do trade_detail
+    assert t1["entry_time_s"] < t1["exit_time_s"]
+    assert t1["direction"] == "LONG"
+    assert t1["entry_price"] == 100000.0 and t1["exit_price"] == 101000.0
+    assert t1["pnl_pct"] == 0.9 and t1["pnl_source"] == "net_pnl_pct"
+
+
+def test_trades_overlay_empty_when_no_trades(trades_conn):
+    out = rx.trades_overlay(trades_conn, "BTCUSDT")
+    assert out["ok"] is True and out["symbol"] == "BTCUSDT"
+    assert out["trades"] == []
+
+
+def test_trades_overlay_net_null_classifica_pelo_bruto(trades_conn):
+    _ins(trades_conn, id=1, timestamp="2026-06-01T12:00:00+00:00", symbol="BTCUSDT",
+         direction="LONG", entry_price=100.0, exit_price=101.0,
+         duration_candles=1, pnl_pct=1.0, net_pnl_pct=None)
+    t = rx.trades_overlay(trades_conn, "BTCUSDT")["trades"][0]
+    assert t["result"] == "win"            # sem net nao existe "fee_ate": classifica pelo bruto
+    assert t["pnl_pct"] == 1.0 and t["pnl_source"] == "pnl_pct"
+
+
+def test_trades_overlay_factual_no_action_words(trades_conn):
+    _ins(trades_conn, id=1, timestamp="2026-06-01T12:00:00+00:00", symbol="BTCUSDT",
+         direction="LONG", entry_price=100.0, exit_price=101.0,
+         duration_candles=1, pnl_pct=1.0, net_pnl_pct=0.9)
+    blob = _json.dumps(rx.trades_overlay(trades_conn, "BTCUSDT"), ensure_ascii=False).lower()
+    for w in rx.FORBIDDEN_ACTION_PHRASES:
+        assert w not in blob, f"overlay contem frase de acao: {w!r}"

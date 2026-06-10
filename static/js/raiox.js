@@ -138,3 +138,6 @@ async function loadChart(ctx, tf) {
 
 initChart();
 loadFeed();
+// deep-link: /raiox/?trade=<id> abre direto o detalhe (usado pelo mapa)
+const deepId = new URLSearchParams(location.search).get("trade");
+if (deepId && /^\d+$/.test(deepId)) openTrade(deepId);

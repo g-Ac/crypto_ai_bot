@@ -1584,6 +1584,24 @@ def api_raiox_candles():
     return jsonify(out)
 
 
+@app.route("/raiox/mapa")
+def raiox_mapa_page():
+    return render_template("mapa.html", active_page="mapa")
+
+
+@app.route("/api/raiox/mapa")
+def api_raiox_mapa():
+    symbol = request.args.get("symbol", "")
+    if symbol not in raiox_data.VALID_SYMBOLS:
+        return jsonify({"ok": False, "error": "symbol_invalido", "message": "simbolo nao suportado"}), 400
+    conn = db._get_conn()
+    try:
+        out = raiox_data.trades_overlay(conn, symbol)
+    finally:
+        conn.close()
+    return jsonify(out)
+
+
 @app.route("/legacy")
 def legacy_index():
     """Dashboard V1 — mantido para fallback."""

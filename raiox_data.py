@@ -57,6 +57,15 @@ def _pnl_of(row) -> tuple[float, str]:
     return float(pnl), "pnl_pct"
 
 
+def _classify_result(pnl_net: float, pnl_bruto: float) -> str:
+    """Classifica o resultado do trade: win / loss / fee_ate (bruto positivo que a fee comeu)."""
+    if pnl_net > 0:
+        return "win"
+    if pnl_bruto > 0:
+        return "fee_ate"
+    return "loss"
+
+
 def _exit_icon(exit_reason: str) -> str:
     r = (exit_reason or "").lower()
     if "tp" in r:
@@ -161,6 +170,38 @@ def trade_detail(conn, trade_id: int) -> dict | None:
     }
     d["summary"] = _trade_summary(d)
     return d
+
+
+def trades_overlay(conn, symbol: str) -> dict:
+    """Todos os trades fechados de um simbolo como pontos de plotagem do mapa.
+
+    entry_time_s e ESTIMADO (timestamp - duration_candles * 15min), igual ao trade_detail.
+    Sem net_pnl_pct no row, classifica pelo bruto (nunca vira fee_ate).
+    """
+    rows = conn.execute(
+        "SELECT id, timestamp, direction, entry_price, exit_price, "
+        "duration_candles, pnl_pct, net_pnl_pct "
+        "FROM momentum_trades WHERE symbol=? ORDER BY id ASC", (symbol,)
+    ).fetchall()
+    trades = []
+    for r in rows:
+        pnl, source = _pnl_of(r)
+        exit_s = _to_epoch_s(r["timestamp"])
+        dur = r["duration_candles"] or 0
+        bruto = float(_row_get(r, "pnl_pct") or 0.0)
+        net = _row_get(r, "net_pnl_pct")
+        trades.append({
+            "id": r["id"],
+            "direction": r["direction"],
+            "entry_time_s": exit_s - dur * MOMENTUM_INTERVAL_MIN * 60,
+            "entry_price": r["entry_price"],
+            "exit_time_s": exit_s,
+            "exit_price": r["exit_price"],
+            "result": _classify_result(float(net) if net is not None else bruto, bruto),
+            "pnl_pct": pnl,
+            "pnl_source": source,
+        })
+    return {"ok": True, "symbol": symbol, "trades": trades}
 
 
 def _choose_interval(start_s: int, now_s: int, requested: str, margin: int, max_bars: int) -> str | None:

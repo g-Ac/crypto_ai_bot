@@ -137,3 +137,36 @@ def test_raiox_page_renders(client):
     r = client.get("/raiox/")
     assert r.status_code == 200
     assert b"Raio-X" in r.data
+
+
+def test_api_mapa_ok(client):
+    r = client.get("/api/raiox/mapa?symbol=ETHUSDT")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["ok"] is True and d["symbol"] == "ETHUSDT"
+    assert len(d["trades"]) == 1
+    t = d["trades"][0]
+    assert t["id"] == 1 and t["result"] == "loss"
+    assert t["entry_time_s"] < t["exit_time_s"]
+    assert t["pnl_source"] == "net_pnl_pct"
+
+
+def test_api_mapa_symbol_sem_trades(client):
+    r = client.get("/api/raiox/mapa?symbol=BTCUSDT")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["ok"] is True and d["trades"] == []
+
+
+def test_api_mapa_symbol_invalido(client):
+    r = client.get("/api/raiox/mapa?symbol=DOGEUSDT")
+    assert r.status_code == 400
+    assert r.get_json()["error"] == "symbol_invalido"
+
+
+def test_mapa_page_renders(client):
+    r = client.get("/raiox/mapa")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "Mapa da Moeda" in html
+    assert "mapa.js" in html
