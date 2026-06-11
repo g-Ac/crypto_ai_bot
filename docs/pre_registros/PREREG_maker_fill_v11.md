@@ -1,7 +1,7 @@
 # Pré-registro — Medição Maker-Fill do v1.1 (forward + replay retroativo)
 
 **Status:** SELADO 2026-06-10 (OK do Gabriel; emendas textuais incorporadas antes do commit, nenhum parâmetro alterado).
-**Versão:** 1.1 (2026-06-10 — emendas: fee profile congelado, convergência BTC/ETH mecânica, nota spot/futures post-only, semântica do PF corrigida).
+**Versão:** 1.2 (2026-06-10 — adendo factual de implementação descoberto na Fase R; ver §4-bis. Critérios de §5/§6 intocados).
 **Tipo:** medição de política de execução (instrumentação + contabilidade). **Não é experimento de edge novo, não é tuning do v1.1** (params congelados, estratégia intocada). Análogo metodológico do estudo fee-net (35fc717).
 **Posição na fila:** não compete com a fila pós-pausa (sinal BTC funding segue 1º para experimentos de descoberta). Instrumentação não espera amostra.
 
@@ -48,6 +48,15 @@ Sem direção pré-comprometida de "salvação": qualquer resultado fecha a dúv
 **Nota simulação vs implementação real:** o fill por candle usa *strict-through* como proxy conservador de fila — é regra de simulação, não de execução. Se um dia houver paper maker real, usar o tipo post-only do mercado operado: spot = `LIMIT_MAKER` (rejeitada se executaria imediatamente como taker); USDⓈ-M Futures = `LIMIT` com `timeInForce=GTX` (Good Till Crossing / Post Only). Não muda este teste.
 
 Sensibilidades **reportadas mas não decisórias**: fill só em `C+1`; maker 0.01/0.03. Se a conclusão flipar entre sensibilidades → reportar como frágil.
+
+### §4-bis. Adendo v1.2 — semântica real da entrada (descoberta na Fase R, antes de qualquer resultado válido)
+
+A premissa "entrada no close do candle de confirmação C" estava **errada como descrição do executor**: `process_momentum_cycle` avalia `candles.iloc[-1]`, que é o candle 15m **em formação** — o sinal dispara no 1º ciclo de 5min após a abertura de um candle novo N, e `entry_price` é o preço **parcial** de N naquele instante (não um close finalizado). Consequências mecânicas, sem alterar nenhum critério:
+
+- **Janela de fill** = resto de N + N+1 (a leitura fiel de "válida por 2 candles 15m" a partir da colocação; ~30min como pretendido). A série da simulação começa no próprio N.
+- **Âncora do replay** (Fase R): N é localizado por contenção (`low(N) ≤ entry ≤ high(N)`) sobre a estimativa `open(N) = floor15(t_close) − duration×15m`, offsets estruturais {0, −1}; offsets mais negativos = recuperação de gap de ciclo (downtime), reportados. Validação empírica: 156/156 trades ancoram (125 em 0, 11 em −1, 20 em gaps ≤ −14).
+- **Viés adicional declarado**: usar low/high completos de N inclui os primeiros minutos pré-sinal (fill e SL no candle de fill levemente otimistas/pessimistas mistos) — coberto pelo piso alto e pelo caráter kill-only da Fase R. Sensibilidade extra reportada: agregado só com âncoras estruturais {0, −1}.
+- O primeiro run da Fase R (âncora por close exato) pareou só 8/156 e foi **descartado como inválido** — nenhum veredicto foi extraído dele.
 
 ## 5. Fases
 

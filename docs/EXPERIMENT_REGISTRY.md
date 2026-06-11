@@ -399,6 +399,18 @@ Mesma anatomia que ja matou:
 
 ---
 
+## Medicao de execucao — Maker-Fill v1.1 (2026-06-10)
+
+Pre-registro selado a priori: `docs/pre_registros/PREREG_maker_fill_v11.md` (Fase R kill-only; Fase F julga com GO = fill>=50% + PF executados >=1.15 + dPnL>taker + captura >=5/10 top winners + convergencia mecanica BTC/ETH). **Medicao de politica de execucao, nao experimento de edge — sem promocao operacional em nenhum desfecho.**
+
+**Fase R (replay retroativo, 156/156 pareados, 2026-06-10): nao dispara kill.** Politica maker melhora materialmente o v1.1 versus taker (+2.39% net vs -3.23%; delta +5.62 pts; top-10 winners 10/10 preenchidos; fill rate 99.4%, provavelmente otimista — sem book/fila), mas o replay otimista fica **abaixo do piso de GO** (PF executados 1.058 < 1.15) e **falha robustez por simbolo** (BTC 0.998 / ETH 1.131). Conclusao extremamente sensivel a poucos bps de fee: maker 0.01 → PF 1.116; 0.03 → 1.003. **Prossegue apenas para medicao forward shadow (Fase F); sem promocao operacional.** Status: *v1.1 maker em observacao — replay sobreviveu, mas nao atingiu regua de robustez; forward shadow autorizado; producao nao autorizada.*
+
+**Achado colateral de 1a ordem (LAB-NOTE candle anchoring divergence):** o executor v1.1 decide no 1o ciclo de 5min do candle 15m novo com preco PARCIAL (`candles.iloc[-1]` em formacao) — o v1.1 medido em producao/paper **nao e semanticamente identico** ao v1.1 da matriz historica (closes finalizados). Nao invalida os 156 trades (sao o que aconteceu); enfraquece a ponte direta backtest↔producao. Sem correcao oportunista; sem reabrir tuning. Detalhe: §4-bis do pre-registro + `~/obsidian-vault/context/decisoes/2026-06-10-lab-note-v11-candle-anchoring-divergence.md`.
+
+Artefatos: `momentum/maker_shadow.py` (18 testes TDD), `scripts/replay_maker_shadow.py`, relatorio `docs/relatorios/2026-06-10-maker-fill-fase-r.json`. 1o run da Fase R (ancora por close exato, 8/156) **descartado como invalido** — nenhum veredicto extraido; registrado como nota de auditoria no §4-bis.
+
+---
+
 ## Indice Rapido
 
 | ID | Nome | Familia | Estagio | PF (melhor) | Decisao |
