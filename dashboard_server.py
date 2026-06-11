@@ -34,6 +34,7 @@ import database as db
 import market
 import raiox_data
 import mercado_data
+import raiox_paper
 from compare_instances import build_snapshot, compare_snapshots
 from database import (
     get_all_time_stats,
@@ -62,7 +63,10 @@ from runtime_config import (
     RUNTIME_BASE_DIR,
     SCALPING_STATE_FILE,
     runtime_metadata,
+    runtime_path,
 )
+
+RAIOX_PAPER_FILE = runtime_path("raiox_manual_paper.json")
 
 APP_ROOT = str(APP_DIR)
 app = Flask(__name__, template_folder=os.path.join(APP_ROOT, "templates"),
@@ -1626,6 +1630,77 @@ def mercado_symbol_page(symbol):
     finally:
         conn.close()
     return render_template("mercado_symbol.html", view=view, active_page="mercado")
+
+
+def _last_price(symbol):
+    """Ultimo preco de fechamento (15m) via market.get_candles. None se indisponivel."""
+    try:
+        rec = _binance_candles_adapter(symbol, "15m", 2).to_dict("records")
+        return float(rec[-1]["close"]) if rec else None
+    except Exception:
+        return None
+
+
+@app.route("/api/raiox/paper")
+def api_raiox_paper():
+    book = raiox_paper.load_book(RAIOX_PAPER_FILE)
+    auto = raiox_paper.mark_and_autoclose(book, _last_price)
+    if auto:
+        raiox_paper.save_book(RAIOX_PAPER_FILE, book)
+    return jsonify({"ok": True, "auto_closed": auto, **raiox_paper.view(book, _last_price)})
+
+
+@app.route("/api/raiox/paper/order", methods=["POST"])
+def api_raiox_paper_order():
+    data = request.get_json(silent=True) or {}
+    symbol = data.get("symbol", "")
+    if symbol not in raiox_data.VALID_SYMBOLS:
+        return jsonify({"ok": False, "error": "symbol_invalido"}), 400
+    try:
+        margin = float(data.get("margin_usd"))
+        leverage = float(data.get("leverage", 1))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "param_invalido"}), 400
+    entry = data.get("entry_price")
+    if entry in (None, "", 0, "0"):
+        entry = _last_price(symbol)
+        if entry is None:
+            return jsonify({"ok": False, "error": "preco_indisponivel"}), 502
+    book = raiox_paper.load_book(RAIOX_PAPER_FILE)
+    try:
+        pos = raiox_paper.open_order(
+            book, symbol=symbol, side=data.get("side"), entry_price=entry,
+            margin_usd=margin, leverage=leverage,
+            sl_price=data.get("sl_price"), tp_price=data.get("tp_price"))
+    except (ValueError, TypeError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    raiox_paper.save_book(RAIOX_PAPER_FILE, book)
+    return jsonify({"ok": True, "position": pos})
+
+
+@app.route("/api/raiox/paper/close/<int:pos_id>", methods=["POST"])
+def api_raiox_paper_close(pos_id):
+    data = request.get_json(silent=True) or {}
+    book = raiox_paper.load_book(RAIOX_PAPER_FILE)
+    price = data.get("price")
+    if price in (None, "", 0, "0"):
+        pos = next((p for p in book["positions"] if int(p["id"]) == pos_id), None)
+        if pos is None:
+            return jsonify({"ok": False, "error": "nao_encontrado"}), 404
+        price = _last_price(pos["symbol"])
+        if price is None:
+            return jsonify({"ok": False, "error": "preco_indisponivel"}), 502
+    closed = raiox_paper.close_position(book, pos_id, float(price), reason="manual")
+    if closed is None:
+        return jsonify({"ok": False, "error": "nao_encontrado"}), 404
+    raiox_paper.save_book(RAIOX_PAPER_FILE, book)
+    return jsonify({"ok": True, "closed": closed})
+
+
+@app.route("/api/raiox/paper/reset", methods=["POST"])
+def api_raiox_paper_reset():
+    raiox_paper.reset_book(RAIOX_PAPER_FILE)
+    return jsonify({"ok": True})
 
 
 @app.route("/legacy")

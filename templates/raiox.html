@@ -3,21 +3,840 @@
 {% block content %}
 <!-- lightweight-charts 4.2.0 (local, sem CDN) -->
 <script src="/static/js/lightweight-charts.standalone.production.js"></script>
-<section class="card">
-  <div class="card-header">
-    <h1>🩻 Raio-X dos Trades</h1>
-    <p>Radiografia factual dos trades momentum. Sem sinal, sem recomendação.</p>
-  </div>
-  <div class="raiox-wrap" style="display:flex;gap:16px;flex-wrap:wrap">
-    <div style="flex:1;min-width:280px">
-      <h2>Feed</h2>
-      <div id="open-pos"></div>
-      <ul id="trade-feed" style="list-style:none;padding:0"></ul>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  /* Base Style Overrides & CSS Variables */
+  .rx-pip {
+    --g: #00d395;
+    --g-dim: #007a55;
+    --g-deep: rgba(0, 211, 149, 0.08);
+    --g-glow: rgba(0, 211, 149, 0.25);
+    --line: rgba(255, 255, 255, 0.08);
+    --txt: #f0f4ff;
+    --muted: rgba(240, 244, 255, 0.55);
+    --amber: #ffd866;
+    --red: #ff3b6b;
+    --red-deep: rgba(255, 59, 107, 0.08);
+    --red-glow: rgba(255, 59, 107, 0.25);
+    --tp: #5fe3c8;
+    --panel: #0b0f15;
+    --panel2: #111823;
+    --panel3: #1a2233;
+    font-family: 'Inter', sans-serif;
+    color: var(--txt);
+  }
+
+  /* Header & Containers */
+  .rx-pip h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--txt);
+    letter-spacing: -0.5px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rx-pip h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--txt);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  .rx-pip .dim { color: var(--muted); font-size: 13px; }
+  
+  /* Glass Cards */
+  .rx-pip .panel {
+    background: rgba(17, 24, 35, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  
+  /* Stepper (Timeline/Steps) */
+  .rx-pip .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 16px 0 24px;
+  }
+  .rx-pip .step {
+    background: rgba(17, 24, 35, 0.4);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .rx-pip .step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--muted);
+    transition: all 0.3s ease;
+  }
+  .rx-pip .step.on {
+    background: rgba(0, 211, 149, 0.04);
+    border-color: var(--g-dim);
+    box-shadow: 0 0 15px rgba(0, 211, 149, 0.05);
+    transform: translateY(-2px);
+  }
+  .rx-pip .step.on .step-num {
+    background: var(--g);
+    color: #05070a;
+    border-color: var(--g);
+    box-shadow: 0 0 10px var(--g-glow);
+  }
+  .rx-pip .step.on span { color: var(--g); font-weight: 500; }
+  
+  /* Responsive Grids */
+  .rx-pip .rxgrid {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media(max-width: 992px) {
+    .rx-pip .rxgrid { grid-template-columns: 1fr; }
+  }
+
+  /* Form Elements & Inputs */
+  .rx-pip select, .rx-pip input[type=text], .rx-pip input[type=number] {
+    background: rgba(5, 7, 10, 0.7);
+    color: var(--txt);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .rx-pip select:focus, .rx-pip input:focus {
+    border-color: var(--g-dim);
+    box-shadow: 0 0 8px rgba(0, 211, 149, 0.15);
+  }
+  
+  /* Search Box */
+  .rx-pip .search-box-wrapper {
+    position: relative;
+    margin-bottom: 12px;
+  }
+  
+  /* Filters block */
+  .rx-pip .filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 8px 0;
+    align-items: center;
+  }
+  .rx-pip .count {
+    color: var(--muted);
+    font-size: 12px;
+    grid-column: span 2;
+    text-align: right;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Custom Lists & Feed Rows */
+  .rx-pip #trade-feed {
+    padding: 0;
+    margin: 10px 0 0;
+    max-height: 480px;
+    overflow-y: auto;
+  }
+  .rx-pip .row {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255,255,255,0.01);
+    transition: all 0.2s ease;
+    list-style: none;
+  }
+  .rx-pip .row:hover {
+    border-color: rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.03);
+    transform: translateX(2px);
+  }
+  .rx-pip .row.on {
+    border-color: var(--g);
+    background: rgba(0, 211, 149, 0.06);
+    box-shadow: inset 0 0 8px rgba(0, 211, 149, 0.05);
+  }
+  .rx-pip .row .sym {
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--txt);
+  }
+  .rx-pip .row .dir {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+  }
+  .rx-pip .row .dir.long { background: var(--g-deep); color: var(--g); }
+  .rx-pip .row .dir.short { background: var(--red-deep); color: var(--red); }
+  
+  /* Result badges */
+  .rx-pip .row-pnl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .rx-pip .win { color: var(--g); }
+  .rx-pip .loss { color: var(--red); }
+  
+  /* Live position card */
+  .rx-pip .open-card {
+    border: 1px solid var(--g-dim);
+    border-left: 4px solid var(--g);
+    border-radius: 6px;
+    background: rgba(0, 211, 149, 0.05);
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 15px rgba(0, 211, 149, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rx-pip .open-card .live {
+    color: var(--g);
+    font-weight: 600;
+    animation: rxpulse 1.6s infinite;
+  }
+  .rx-pip .open-empty {
+    color: var(--muted);
+    padding: 12px;
+    text-align: center;
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  @keyframes rxpulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .4; }
+  }
+
+  /* Timeframe and chart controls */
+  .rx-pip #tf-buttons {
+    display: flex;
+    gap: 6px;
+    margin: 12px 0;
+  }
+  .rx-pip #tf-buttons button {
+    background: rgba(255,255,255,0.03);
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .rx-pip #tf-buttons button:hover {
+    color: var(--txt);
+    border-color: rgba(255,255,255,0.15);
+  }
+  .rx-pip #tf-buttons button.on {
+    background: var(--g-deep);
+    color: var(--g);
+    border-color: var(--g-dim);
+    box-shadow: 0 0 10px rgba(0, 211, 149, 0.1);
+  }
+
+  /* Verdict panels */
+  .rx-pip .verdict {
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    border: 1px dashed var(--line);
+    background: rgba(255,255,255,0.01);
+  }
+  .rx-pip .verdict.w {
+    background: rgba(0, 211, 149, 0.05);
+    border: 1px solid var(--g-dim);
+    color: #e6fff0;
+  }
+  .rx-pip .verdict.l {
+    background: rgba(255, 59, 107, 0.05);
+    border: 1px solid rgba(255, 59, 107, 0.3);
+    color: #ffeef2;
+  }
+  .rx-pip .legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: 12px 0;
+    font-size: 12px;
+  }
+  .rx-pip .legend span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .rx-pip .swatch {
+    width: 14px;
+    height: 3px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .rx-pip #entry-note {
+    background: rgba(255, 216, 102, 0.08);
+    border: 1px solid rgba(255, 216, 102, 0.3);
+    color: var(--amber);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    margin: 10px 0;
+    display: none;
+    line-height: 1.4;
+  }
+  .rx-pip #chart-error {
+    background: rgba(255, 59, 107, 0.08);
+    border: 1px solid rgba(255, 59, 107, 0.3);
+    color: var(--red);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+    margin: 10px 0;
+    display: none;
+  }
+  .rx-pip #chart-error button {
+    margin-left: 10px;
+    background: rgba(255, 59, 107, 0.15);
+    color: #ffcaca;
+    border: 1px solid rgba(255, 59, 107, 0.4);
+    border-radius: 6px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    transition: all 0.2s;
+  }
+  .rx-pip #chart-error button:hover {
+    background: rgba(255, 59, 107, 0.25);
+  }
+
+  /* Utility Buttons */
+  .rx-pip .toolbtn {
+    background: rgba(255,255,255,0.03);
+    color: var(--txt);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 12.5px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .rx-pip .toolbtn:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.2);
+  }
+  .rx-pip #copy-feedback {
+    color: var(--g);
+    font-size: 12.5px;
+    margin-left: 8px;
+    display: none;
+    font-weight: 500;
+  }
+  .rx-pip pre.summary {
+    white-space: pre-wrap;
+    background: rgba(5,7,10,0.4);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    margin-top: 14px;
+    color: var(--txt);
+    line-height: 1.5;
+  }
+
+  /* Paper Trading Metric Panels */
+  .rx-pip .pp-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin: 16px 0 20px;
+  }
+  .rx-pip .pp-metric {
+    background: rgba(17, 24, 35, 0.4);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .rx-pip .pp-metric .k {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .rx-pip .pp-metric .v {
+    font-size: 20px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Side Tabs (Buy/Sell Toggle) */
+  .rx-pip .sidetabs {
+    display: flex;
+    background: rgba(5, 7, 10, 0.7);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    padding: 3px;
+    margin: 10px 0 16px;
+  }
+  .rx-pip .sidetabs button {
+    flex: 1;
+    background: none;
+    color: var(--muted);
+    border: none;
+    padding: 8px;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.25s ease;
+  }
+  .rx-pip .sidetabs button.buy.on {
+    background: var(--g);
+    color: #05070a;
+    box-shadow: 0 4px 10px var(--g-glow);
+  }
+  .rx-pip .sidetabs button.sell.on {
+    background: var(--red);
+    color: #ffffff;
+    box-shadow: 0 4px 10px var(--red-glow);
+  }
+
+  /* Ticket Inputs Layout */
+  .rx-pip .tk {
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .rx-pip .tk.long-mode {
+    border-color: rgba(0, 211, 149, 0.25);
+    box-shadow: 0 4px 20px rgba(0, 211, 149, 0.05);
+  }
+  .rx-pip .tk.short-mode {
+    border-color: rgba(255, 59, 107, 0.25);
+    box-shadow: 0 4px 20px rgba(255, 59, 107, 0.05);
+  }
+  .rx-pip .tk label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--muted);
+    margin: 12px 0 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .rx-pip .tk .twocol {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .rx-pip .tk .calc {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 12px;
+    line-height: 1.5;
+    background: rgba(5,7,10,0.3);
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Quick presets buttons */
+  .rx-pip .presets {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .rx-pip .presets button {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .rx-pip .presets button:hover {
+    background: rgba(255,255,255,0.08);
+    color: var(--txt);
+    border-color: rgba(255,255,255,0.15);
+  }
+  
+  /* Submit & Orders */
+  .rx-pip .submit {
+    width: 100%;
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    margin-top: 16px;
+    transition: all 0.2s ease, transform 0.1s active;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .rx-pip .submit:active {
+    transform: scale(0.98);
+  }
+  .rx-pip .submit.buy {
+    background: var(--g);
+    color: #05070a;
+    box-shadow: 0 4px 12px var(--g-glow);
+  }
+  .rx-pip .submit.buy:hover {
+    background: #00ea9f;
+    box-shadow: 0 4px 18px rgba(0, 211, 149, 0.4);
+  }
+  .rx-pip .submit.sell {
+    background: var(--red);
+    color: #ffffff;
+    box-shadow: 0 4px 12px var(--red-glow);
+  }
+  .rx-pip .submit.sell:hover {
+    background: #ff527c;
+    box-shadow: 0 4px 18px rgba(255, 59, 107, 0.4);
+  }
+  
+  /* Message layout */
+  .rx-pip .o-msg {
+    font-size: 12.5px;
+    margin-top: 10px;
+    min-height: 18px;
+    font-weight: 500;
+    text-align: center;
+  }
+  .rx-pip .o-msg.err { color: var(--red); }
+  .rx-pip .o-msg.ok { color: var(--g); }
+  
+  /* Dynamic position details */
+  .rx-pip .pos {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 10px;
+    background: rgba(255,255,255,0.01);
+  }
+  .rx-pip .pos .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .rx-pip .pos .top-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .rx-pip .pos .sym-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .rx-pip .pos .side-lbl {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  .rx-pip .pos .side-lbl.buy { background: var(--g-deep); color: var(--g); }
+  .rx-pip .pos .side-lbl.sell { background: var(--red-deep); color: var(--red); }
+  
+  .rx-pip .pos .closebtn {
+    background: rgba(255, 59, 107, 0.08);
+    color: var(--red);
+    border: 1px solid rgba(255, 59, 107, 0.2);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .rx-pip .pos .closebtn:hover {
+    background: var(--red);
+    color: #fff;
+    border-color: var(--red);
+  }
+  .rx-pip .pos .lvl {
+    color: var(--muted);
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+  }
+
+  /* Glossary styling */
+  .rx-pip .gloss dl {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 10px 14px;
+    margin: 0;
+  }
+  @media (max-width: 600px) {
+    .rx-pip .gloss dl { grid-template-columns: 1fr; gap: 4px 12px; }
+  }
+  .rx-pip .gloss dt {
+    color: var(--g);
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .rx-pip .gloss dd {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.4;
+  }
+</style>
+
+<section class="card rx-pip">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px">
+    <div>
+      <h1>&#129461; Raio-X dos Trades</h1>
+      <div class="dim">Análise factual e radiografia de trades momentum. Sem sinais futuros ou recomendações.</div>
     </div>
-    <div style="flex:2;min-width:340px">
-      <div id="tf-buttons" style="margin-bottom:8px"></div>
-      <div id="chart" style="height:420px"></div>
-      <pre id="trade-summary" style="white-space:pre-wrap;margin-top:12px"></pre>
+  </div>
+
+  <!-- Responsive Progress Stepper -->
+  <div class="steps" id="rx-steps">
+    <div class="step on" data-s="1">
+      <div class="step-num">1</div>
+      <div>
+        <span><b>Escolha</b></span><br>
+        <span class="dim">Clique em um trade do feed</span>
+      </div>
+    </div>
+    <div class="step" data-s="2">
+      <div class="step-num">2</div>
+      <div>
+        <span><b>Entrada</b></span><br>
+        <span class="dim">Identifique o ponto de gatilho</span>
+      </div>
+    </div>
+    <div class="step" data-s="3">
+      <div class="step-num">3</div>
+      <div>
+        <span><b>Saída</b></span><br>
+        <span class="dim">Veja onde e por que encerrou</span>
+      </div>
+    </div>
+    <div class="step" data-s="4">
+      <div class="step-num">4</div>
+      <div>
+        <span><b>Resultado</b></span><br>
+        <span class="dim">Mapeie o lucro ou stop</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="rxgrid">
+    <!-- Left Feed Panel -->
+    <div class="panel">
+      <h2>Feed de Histórico</h2>
+      <div id="open-pos"></div>
+      
+      <div class="search-box-wrapper">
+        <input type="text" id="rx-search" placeholder="🔍 Buscar moeda (Ex: BTC)..." autocomplete="off">
+      </div>
+
+      <div class="filters">
+        <select id="rx-filter-symbol"><option value="">Todos os símbolos</option></select>
+        <select id="rx-filter-result">
+          <option value="">Resultados</option>
+          <option value="ganho">Ganhos (TP)</option>
+          <option value="perda">Perdas (SL)</option>
+          <option value="timeout">Timeout</option>
+        </select>
+        <span class="count" id="rx-count"></span>
+      </div>
+      <ul id="trade-feed"></ul>
+    </div>
+
+    <!-- Right Chart Panel -->
+    <div class="panel">
+      <div id="rx-verdict" class="verdict dim" style="border-style:dashed">Selecione um trade no feed para iniciar a análise técnica.</div>
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">
+        <div id="tf-buttons"></div>
+        <div class="legend">
+          <span><i class="swatch" style="background:var(--g)"></i> Entrada</span>
+          <span><i class="swatch" style="background:var(--red)"></i> Stop</span>
+          <span><i class="swatch" style="background:var(--tp)"></i> Alvos (TP)</span>
+          <span class="dim">&#9650; Entrou &nbsp; &#9679; Saiu</span>
+        </div>
+      </div>
+
+      <div id="entry-note"></div>
+      <div id="chart-error"></div>
+      <div id="chart" style="height:380px; border:1px solid var(--line); border-radius:8px"></div>
+      
+      <div style="margin-top:14px; display:flex; justify-content:space-between; align-items:center">
+        <button class="toolbtn" id="copy-context-btn" type="button">
+          <span>📋</span> Copiar Contexto do Trade
+        </button>
+        <span id="copy-feedback">Copiado para a área de transferência!</span>
+      </div>
+      
+      <pre class="summary" id="trade-summary" style="display:none"></pre>
+    </div>
+  </div>
+
+  <h2 style="margin-top:32px">&#9889; Paper Trading Manual</h2>
+  <div class="dim" style="margin-bottom:12px">Simulador local sem uso de fundos reais e sem interferência no robô. Ordens autoclose automáticas baseadas nas cotações.</div>
+  
+  <!-- Metric stats bar -->
+  <div class="pp-bar">
+    <div class="pp-metric"><div class="k">Saldo Inicial</div><div class="v" id="pp-balance">&mdash;</div></div>
+    <div class="pp-metric"><div class="k">Patrimônio Líquido (Equity)</div><div class="v" id="pp-equity">&mdash;</div></div>
+    <div class="pp-metric"><div class="k">Saldo Disponível</div><div class="v" id="pp-available">&mdash;</div></div>
+    <div class="pp-metric"><div class="k">PnL Não Realizado</div><div class="v" id="pp-unreal">&mdash;</div></div>
+    <div class="pp-metric" style="display:flex; align-items:center; justify-content:center">
+      <button class="toolbtn" id="pp-reset" type="button" style="border-color: rgba(255,59,107,0.3); color: var(--red)">
+        Resetar Livro
+      </button>
+    </div>
+  </div>
+
+  <div class="rxgrid" style="margin-top:8px">
+    <!-- Ticket Form Panel -->
+    <div class="panel tk long-mode" id="ticket-form">
+      <h2>Montar Ordem</h2>
+      <div class="sidetabs" id="o-side">
+        <button type="button" class="buy buy-toggle on" data-side="LONG">Comprar / Long</button>
+        <button type="button" class="sell sell-toggle" data-side="SHORT">Vender / Short</button>
+      </div>
+      
+      <label>Ativo (Par)</label>
+      <select id="o-symbol">
+        <option>ETHUSDT</option>
+        <option>BTCUSDT</option>
+      </select>
+      
+      <div class="twocol">
+        <div>
+          <label>Entrada (USD)</label>
+          <input id="o-price" type="number" step="0.01" placeholder="Preço mercado">
+        </div>
+        <div>
+          <label>Margem (USD)</label>
+          <input id="o-margin" type="number" step="1" value="100">
+          <div class="presets" id="margin-presets">
+            <button type="button" data-pct="25">25%</button>
+            <button type="button" data-pct="50">50%</button>
+            <button type="button" data-pct="100">100%</button>
+          </div>
+        </div>
+      </div>
+      
+      <label>Alavancagem &middot; <span id="o-lev-out" style="font-family:'JetBrains Mono',monospace; font-weight:600">10x</span></label>
+      <input id="o-lev" type="range" min="1" max="25" step="1" value="10" style="width:100%">
+      <div class="presets" id="leverage-presets">
+        <button type="button" data-lev="5">5x</button>
+        <button type="button" data-lev="10">10x</button>
+        <button type="button" data-lev="20">20x</button>
+        <button type="button" data-lev="25">25x</button>
+      </div>
+      
+      <div class="twocol">
+        <div>
+          <label>Stop Loss (SL)</label>
+          <input id="o-sl" type="number" step="0.01" placeholder="Desativado">
+          <div class="presets" id="sl-presets"></div>
+        </div>
+        <div>
+          <label>Take Profit (TP)</label>
+          <input id="o-tp" type="number" step="0.01" placeholder="Desativado">
+          <div class="presets" id="tp-presets"></div>
+        </div>
+      </div>
+      
+      <div class="calc" id="o-calc"></div>
+      <button class="submit buy" id="o-submit" type="button">Comprar / Long</button>
+      <div class="o-msg" id="o-msg"></div>
+    </div>
+
+    <!-- Live Positions & History Panel -->
+    <div class="panel">
+      <h2>Posições Ativas</h2>
+      <div id="pp-positions">
+        <div class="open-empty">Nenhuma posição paper aberta no momento</div>
+      </div>
+      
+      <h2 style="margin-top:24px">Últimos Fechamentos</h2>
+      <div id="pp-closed">
+        <div class="open-empty">Nenhum fechamento registrado</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Helpful Glossary -->
+  <div style="margin-top:24px">
+    <div class="panel gloss">
+      <h2>Dicionário &amp; Ajuda Rápida</h2>
+      <dl>
+        <dt>Entrada</dt>
+        <dd>O preço de início do trade. Demarcado por uma linha verde contínua no gráfico.</dd>
+        <dt>Stop Loss (SL)</dt>
+        <dd>Limite máximo de prejuízo tolerado. Se a cotação tocar esse preço, a ordem fecha em prejuízo. Linha vermelha no gráfico.</dd>
+        <dt>Take Profit (TP)</dt>
+        <dd>Preço alvo para realização de lucros (parcial TP1 ou final TP2). Linhas em ciano.</dd>
+        <dt>MFE / MAE</dt>
+        <dd><strong>MFE (Maximum Favorable Excursion)</strong>: O pico máximo de lucro atingido durante o trade. <br><strong>MAE (Maximum Adverse Excursion)</strong>: O ponto máximo de perda temporária atingido.</dd>
+        <dt>Regime</dt>
+        <dd>Classificação matemática do mercado pelo robô no momento da entrada (Ex: TRENDING = tendência clara, RANGING = consolidado).</dd>
+        <dt>Timeframe</dt>
+        <dd>Intervalo de tempo de cada candle. 15m detalha a microtendência; 1d ilustra o contexto macro.</dd>
+      </dl>
     </div>
   </div>
 </section>
