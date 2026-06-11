@@ -189,6 +189,10 @@ MOMENTUM_PAPER_EXIT_FEE_RATE = float(os.environ.get("MOMENTUM_PAPER_EXIT_FEE_RAT
 MOMENTUM_PAPER_LIQUIDITY = os.environ.get("MOMENTUM_PAPER_LIQUIDITY", "taker").strip().lower()
 MOMENTUM_PAPER_FEE_MODEL = os.environ.get("MOMENTUM_PAPER_FEE_MODEL", f"flat_{MOMENTUM_PAPER_LIQUIDITY}")
 
+# Sombra maker-fill Fase F (PREREG_maker_fill_v11): medicao forward de
+# execucao maker hipotetica. So OBSERVA — nunca altera estrategia/executor.
+MOMENTUM_MAKER_SHADOW_ENABLED = os.environ.get("MOMENTUM_MAKER_SHADOW_ENABLED", "true").strip().lower() in ("true", "1", "yes")
+
 # Breakout 5m Strategy
 BREAKOUT_TRADER_ENABLED = os.environ.get("BREAKOUT_TRADER_ENABLED", "false").strip().lower() in ("true", "1", "yes")
 BREAKOUT_SYMBOLS = [s.strip() for s in os.environ.get("BREAKOUT_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT").split(",") if s.strip()]

@@ -21,6 +21,7 @@ from config import (
     MOMENTUM_INITIAL_CAPITAL, MOMENTUM_MAX_POSITIONS,
     MOMENTUM_PAPER_ENTRY_FEE_RATE, MOMENTUM_PAPER_EXIT_FEE_RATE,
     MOMENTUM_PAPER_LIQUIDITY, MOMENTUM_PAPER_FEE_MODEL,
+    MOMENTUM_MAKER_SHADOW_ENABLED,
 )
 from momentum.momentum_trader import MomentumSignal, evaluate_momentum_pullback
 from momentum.config import MomentumOutcome, MomentumConfig
@@ -174,6 +175,20 @@ def open_position(state: dict, signal: MomentumSignal, cycle_id: str,
     except Exception as e:
         logger.warning("Failed to log momentum decision: %s", e)
 
+    # Sombra maker Fase F (PREREG_maker_fill_v11): nasce no instante real do
+    # open (invariante 1). Falha aqui nunca pode bloquear o trade real.
+    if MOMENTUM_MAKER_SHADOW_ENABLED:
+        try:
+            from momentum.maker_shadow_collector import get_collector
+            shadow_id = get_collector().on_trade_opened(
+                symbol=symbol, direction=direction, entry_price=entry,
+                sl_price=sl, tp1_price=tp1, tp2_price=tp2,
+                candle_open_ts=signal.timestamp,
+            )
+            state["positions"][symbol]["maker_shadow_id"] = shadow_id
+        except Exception as e:
+            logger.warning("maker shadow on_trade_opened failed: %s", e)
+
     sl_dist = abs(entry - sl) / entry * 100
     msg = (
         f"{symbol} {direction} @ {entry:.2f} | "
@@ -241,6 +256,15 @@ def manage_positions(state: dict, candles: dict[str, dict],
             state["total_net_pnl_usd"] = (
                 state.get("total_net_pnl_usd", 0.0) + (pnl_usd - costs["total_fee_usd"])
             )
+
+            # Pareia o net taker real na sombra maker (PREREG_maker_fill_v11).
+            if MOMENTUM_MAKER_SHADOW_ENABLED and pos.get("maker_shadow_id"):
+                try:
+                    from momentum.maker_shadow_collector import get_collector
+                    get_collector().on_trade_closed(
+                        pos["maker_shadow_id"], costs["net_pnl_pct"])
+                except Exception as e:
+                    logger.warning("maker shadow on_trade_closed failed: %s", e)
 
             if pnl_pct > 0:
                 state["wins"] += 1
@@ -413,6 +437,27 @@ def process_momentum_cycle(
             "close": float(last["close"]),
             "time": candle_ts,
         }
+
+        # Sombra maker Fase F: tick a cada ciclo; candle fechado (iloc[-2])
+        # so quando um candle 15m novo abriu. Nunca pode derrubar o ciclo.
+        if MOMENTUM_MAKER_SHADOW_ENABLED:
+            try:
+                from momentum.maker_shadow_collector import get_collector
+                closed = None
+                if candle_ts != last_candle_ts.get(symbol, "") and len(candles) >= 2:
+                    prev = candles.iloc[-2]
+                    closed = {
+                        "time": str(prev.get("time", "")),
+                        "high": float(prev["high"]),
+                        "low": float(prev["low"]),
+                        "close": float(prev["close"]),
+                    }
+                get_collector().on_cycle(
+                    symbol=symbol, tick_price=float(last["close"]),
+                    now_candle_open_ts=candle_ts, closed_candle=closed,
+                )
+            except Exception as e:
+                logger.warning("maker shadow on_cycle failed: %s", e)
 
         # Track whether this is a new 15m candle (vs same candle seen last cycle)
         if candle_ts != last_candle_ts.get(symbol, ""):
