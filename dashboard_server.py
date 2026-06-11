@@ -33,6 +33,7 @@ from flask import Flask, render_template, redirect, url_for, jsonify, request, R
 import database as db
 import market
 import raiox_data
+import mercado_data
 from compare_instances import build_snapshot, compare_snapshots
 from database import (
     get_all_time_stats,
@@ -1602,6 +1603,29 @@ def api_raiox_mapa():
     finally:
         conn.close()
     return jsonify(out)
+
+
+@app.route("/raiox/mercado")
+def mercado_page():
+    conn = db._get_conn()
+    try:
+        view = mercado_data.macro_view(conn, int(time.time()))
+    finally:
+        conn.close()
+    return render_template("mercado.html", view=view, active_page="mercado")
+
+
+@app.route("/raiox/mercado/<symbol>")
+def mercado_symbol_page(symbol):
+    sym = mercado_data.normalize_symbol(symbol)
+    if sym is None:
+        return redirect("/raiox/mercado")
+    conn = db._get_conn()
+    try:
+        view = mercado_data.symbol_view(conn, sym, int(time.time()))
+    finally:
+        conn.close()
+    return render_template("mercado_symbol.html", view=view, active_page="mercado")
 
 
 @app.route("/legacy")

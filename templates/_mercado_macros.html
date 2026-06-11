@@ -1,0 +1,66 @@
+{# Macros compartilhadas das paginas Mercado (macro e zoom). Leitura, nao veredito. #}
+
+{% macro styles() %}
+<style>
+  .met-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; margin-top:10px; }
+  .met .label { font-size:12px; opacity:.65; }
+  .met .value { font-family:'JetBrains Mono',monospace; font-size:15px; }
+  .liq-bar { display:flex; height:10px; border-radius:5px; overflow:hidden; background:#222; min-width:120px; max-width:220px; }
+  .liq-bar .longs { background:#ef5350; }   /* longs liquidados = cascata (vermelho) */
+  .liq-bar .shorts { background:#26a69a; }  /* shorts liquidados = squeeze (verde) */
+  .mercado-table { width:100%; border-collapse:collapse; }
+  .mercado-table th, .mercado-table td { padding:6px 10px; text-align:left; border-bottom:1px solid rgba(255,255,255,.06); }
+  .stale { color:#ffb84d; }
+</style>
+{% endmacro %}
+
+{% macro cls(m) -%}
+{{ 'positive' if m.value is not none and m.value > 0 else 'negative' if m.value is not none and m.value < 0 else '' }}
+{%- endmacro %}
+
+{% macro met(label, value) %}
+<div class="met"><div class="label">{{ label }}</div><div class="value">{{ value }}</div></div>
+{% endmacro %}
+
+{# Spans montados DENTRO das macros: concatenar '<span>' via ~ com a saida
+   Markup de cls() escapa os literais antes de qualquer |safe ter efeito. #}
+{% macro met_signed(label, m) %}
+<div class="met"><div class="label">{{ label }}</div><div class="value"><span class="{{ cls(m) }}">{{ m.text }}</span></div></div>
+{% endmacro %}
+
+{% macro met_pair(label, m1, m2) %}
+<div class="met"><div class="label">{{ label }}</div><div class="value"><span class="{{ cls(m1) }}">{{ m1.text }}</span> / <span class="{{ cls(m2) }}">{{ m2.text }}</span></div></div>
+{% endmacro %}
+
+{% macro pressure_bar(p) %}
+<div class="liq-bar" title="{{ p.label }}">
+  <div class="longs" style="width:{{ p.longs_pct }}%"></div>
+  <div class="shorts" style="width:{{ p.shorts_pct }}%"></div>
+</div>
+{% endmacro %}
+
+{% macro translation_block(lines) %}
+<section class="card">
+  <h2>🔍 Em palavras</h2>
+  {% if lines %}
+  <ul>{% for ln in lines %}<li>{{ ln }}</li>{% endfor %}</ul>
+  {% else %}
+  <p><i>sem dados suficientes pra traduzir</i></p>
+  {% endif %}
+</section>
+{% endmacro %}
+
+{% macro freshness_block(f) %}
+<section class="card">
+  <h2>🕐 Frescor</h2>
+  <p>
+    {%- for s in f.sources -%}
+      <span class="{{ 'stale' if s.stale else '' }}">{{ s.label }} {{ s.age }}</span>
+      {%- if not loop.last %} · {% endif -%}
+    {%- endfor -%}
+  </p>
+  {% if f.stale_labels %}
+  <p class="stale">⚠️ {{ f.stale_labels|join(', ') }} atrasado(s) — coletor pode ter caído, leia com cautela.</p>
+  {% endif %}
+</section>
+{% endmacro %}

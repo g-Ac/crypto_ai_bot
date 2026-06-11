@@ -12,6 +12,10 @@ const TFS = ["4h", "1d"];
 const TF_SEC = { "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
 const MARGIN_S = 2 * 86400;       // margem antes do 1º trade
 const FALLBACK_DAYS = 30;         // janela quando a moeda não tem trades
+// Deep-link ?symbol= (ETH ou ETHUSDT): pré-seleciona se suportado; senão mantém BTC.
+const QS_RAW = (new URLSearchParams(location.search).get("symbol") || "").trim().toUpperCase();
+const QS_SYM = QS_RAW && !QS_RAW.endsWith("USDT") ? QS_RAW + "USDT" : QS_RAW;
+if (SYMBOLS.includes(QS_SYM)) MP.symbol = QS_SYM;
 const q = (s) => document.querySelector(s);  // "q" e nao "$": base.html ja declara const $ no escopo global
 
 function initChart() {
