@@ -65,6 +65,16 @@ sinal de entrada (EXP-013), trend following diário (EXP-014), LSR vanilla (H3).
 Reabertura exige mecanismo novo, dado forward novo ou hipótese diferente — sempre
 com pré-registro formal.
 
+### Cláusula de reabertura
+
+Experimentos mortos não são reabertos por performance histórica, tuning ou melhoria
+retrospectiva de métricas. Só reabrem se uma autópsia, dado novo out-of-sample ou
+mudança estrutural de mercado identificar hipótese mecânica nova, não testada, com
+plausibilidade quantificada de sobreviver a custo. Para estratégias com ciclo de
+execução comparável ao caso pairs/stat-arb, a régua mínima é edge bruto a priori
+≥ 2× o custo total de ciclo. Toda reabertura exige pré-registro e validação
+forward-only.
+
 **Pausados com condição (não são mortos):**
 - EXP-005 universe expansion — pausado, não morto.
 - Funding BTC (EXP-011) — NO-GO de margem (46.1 vs 50 bps); watchlist, 1º da fila
