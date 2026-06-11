@@ -63,7 +63,7 @@ function initChart() {
   q("#rx-filter-symbol").onchange = (e) => { RX.filters.symbol = e.target.value; renderFeed(); };
   q("#rx-filter-result").onchange = (e) => { RX.filters.result = e.target.value; renderFeed(); };
   q("#copy-context-btn").onclick = copyContext;
-  initPaper();
+  // initPaper();  // ticket desativado 2026-06-11 (modulo raiox_paper nao commitado)
 }
 
 function clearLines() {

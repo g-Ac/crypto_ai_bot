@@ -66,7 +66,6 @@ from runtime_config import (
     runtime_path,
 )
 
-RAIOX_PAPER_FILE = runtime_path("raiox_manual_paper.json")
 
 APP_ROOT = str(APP_DIR)
 app = Flask(__name__, template_folder=os.path.join(APP_ROOT, "templates"),
