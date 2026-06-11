@@ -73,7 +73,7 @@ def test_api_raiox_trade_detail_404(client):
 
 
 def test_candles_rejects_bad_symbol(client):
-    r = client.get("/api/raiox/candles?symbol=DOGEUSDT&interval=15m&start=1&end=2")
+    r = client.get("/api/raiox/candles?symbol=FOOUSDT&interval=15m&start=1&end=2")
     assert r.status_code == 400
     assert r.get_json()["error"] == "symbol_invalido"
 
