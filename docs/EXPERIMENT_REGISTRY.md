@@ -512,6 +512,40 @@ Mesma anatomia que ja matou:
 
 ---
 
+### EXP-016: Exit-on-trend-exhaustion pós-entrada (v1.1)
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Executor/Saída defensiva do v1.1 (não é estratégia nova, não tuna entrada) |
+| **Estagio** | **OOS FORWARD EM COLETA** — verdict atual: DADO INSUFICIENTE (2 trades OOS) |
+| **Hipotese** | `trend_exhaustion` pós-entrada como saída defensiva reduz perdas sem destruir winners. H1: sair no 1º exhaustion se regime de entrada = WEAK_TREND. H2: sair no 1º exhaustion se ele aparece em ≤2 candles 15m pós-entrada |
+| **Origem** | Autópsias descritivas 10–11/06 (`trade_visual_autopsy`, `near_tp_and_exhaustion_autopsy`) sobre trades id≤156 (discovery/in-sample, não decide) |
+| **Criteria congelado** | `reports/exp_exit_on_trend_exhaustion_criteria_2026-06-11.md`, hash `b686760bab2c350012c59593d5fd7774a662cbce54014312b8b155b276a50eae` |
+| **Julga quando** | OOS (id>156) ≥30 trades fechados E ≥10 alterados por hipótese. GO exige delta ≥ +2.0pp, improved ≥ worsened, sem dano ≤ −1.25%, caps de concentração |
+| **Data de criacao** | 2026-06-11 |
+
+**Tensão registrada:** 4ª tentativa de ajuste no executor v1.1 pós-decisão "v1 no ótimo local" (BE50, PB25, hourly sizing — todas NO-GO). Diferenciais desta: saída por sinal de estado (não por nível de preço), nascida de autópsia e não de grid, custo de coleta zero (shadow sobre trades fechados). Limite estrutural conhecido: v1.1 perde por fee drag + atraso (EXP-013); saída defensiva reduz sangramento, não cria edge. GO não autoriza implementação direta — só mini-spec separada.
+
+---
+
+### EXP-017: Breakout compression regime-gated (shadow)
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Price-action condicionado (BreakoutEngine5m existente + gate de regime) |
+| **Estagio** | **OOS FORWARD EM COLETA** — verdict atual: DADO INSUFICIENTE (0/30 fills OOS) |
+| **Hipotese** | Breakout de compressão 5m só tem edge quando o regime maior já é direcional. Elegível apenas TRENDING/WEAK_TREND (regime de `momentum_decisions` ±45min); RANGING/VOLATILE/UNKNOWN bloqueados. Sem tocar em thresholds do engine |
+| **Timeframe / Ativos** | 5m / BTCUSDT, ETHUSDT |
+| **Discovery (30d, não decide)** | Cru: NO-GO (PF 0.79, false breakout 67.7%). Gated: n=20, net +1.63%, PF 1.20, WR 45%, FB 55%. SHORT carrega (PF 1.40 vs LONG 0.88); lucro concentrado em timeouts (n=6, PF 18.31), TP2 raro (5%); fees ≈55% do gross |
+| **Criteria congelado** | `reports/exp_breakout_regime_gated_criteria_2026-06-12.md`, hash `e5d942591a7f86cdb3d58e66a0e669a87f66fafe8450a47576318b7a34edbcbc` |
+| **Julga quando** | OOS ≥30 fills (≥10/símbolo, não concentrado em 1 dia). GO: net>0, PF≥1.20, WR≥40%, FB≤60%, sem dano ≤−1.25%, caps de concentração. Ritmo do discovery (20 fills/30d) projeta ~45 dias para 30 fills OOS |
+| **Coleta forward** | Cron Hermes 12h (job `3b63e5000255`) roda runner + alerta Telegram. Mensagem obrigatória enquanto OOS<30: "DADO INSUFICIENTE — não alterar bot" |
+| **Data de criacao** | 2026-06-12 |
+
+**Relação com pré-compromissos (registro honesto):** é price-action em majors após EXP-014 ter selado a linha como "exaurida, sem #5". Não satisfaz formalmente a régua de reentrada de EXP-015 (gate de regime deriva de preço via EMAs — não é componente estrutural funding/OI/liq/basis). A anatomia fee/R, porém, é distinta da que matou EXP-015: stop ~0.9% (fee ~11% do R, não ~20%), alvo é deriva longa via timeout, não 1R rápido. O EXP auto-mata pelo critério congelado e custa ~zero para manter (shadow + cron, bot intocado). **Continuidade da linha = decisão de rumo em aberto (discussão 12/06).** Linha vermelha até OOS≥30: não ativar breakout, não mudar engine/thresholds, não fazer BTC-only/SHORT-only, não adicionar invalidação rápida, não mexer no Momentum Pullback por causa deste EXP.
+
+---
+
 ## Medicao de execucao — Maker-Fill v1.1 (2026-06-10)
 
 Pre-registro selado a priori: `docs/pre_registros/PREREG_maker_fill_v11.md` (Fase R kill-only; Fase F julga com GO = fill>=50% + PF executados >=1.15 + dPnL>taker + captura >=5/10 top winners + convergencia mecanica BTC/ETH). **Medicao de politica de execucao, nao experimento de edge — sem promocao operacional em nenhum desfecho.**
@@ -542,6 +576,8 @@ Artefatos: `momentum/maker_shadow.py` (18 testes TDD), `scripts/replay_maker_sha
 | EXP-013 | Sinal de entrada v1.1 (diagnostico) | Validacao | NO-GO | — | Timing nao-significante, direcao ≈ acaso; perdedor com custo (IC PF [0.36,0.87]) |
 | EXP-014 | Trend-following diario BTC/ETH/SOL | Trend-following | NO-GO (inconclusivo) | 2.16* | Ultima candidata; IC cruza 1.0 nos 3; ETH seduz mas nao robusto. LINHA FECHADA |
 | EXP-015 | Varredura de liquidez + retracao (LINK) | Price-action (sweep) | DEAD (no HYPOTHESIS) | — | Rejeitada a priori: stop apertado => fee vira fracao do R; herda morte de EXP-004/013 |
+| EXP-016 | Exit-on-trend-exhaustion (v1.1) | Executor/Saída defensiva | OOS EM COLETA | — | DADO INSUFICIENTE (2 trades OOS); julga com ≥30 fechados + ≥10 alterados |
+| EXP-017 | Breakout compression regime-gated | Price-action condicionado | OOS EM COLETA | 1.20* | DADO INSUFICIENTE (0/30 fills OOS); discovery não decide; linha vermelha ativa; rumo em discussão |
 
 ---
 
