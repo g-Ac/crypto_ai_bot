@@ -35,6 +35,9 @@ import market
 import raiox_data
 import mercado_data
 import paper_data
+import rotulagem_data
+import rotulagem_levels
+import rotulagem_candles
 from compare_instances import build_snapshot, compare_snapshots
 from database import (
     get_all_time_stats,
@@ -1690,6 +1693,83 @@ def paper_fechar(trade_id):
     finally:
         conn.close()
     return redirect("/raiox/paper")
+
+
+# ── Rotulagem cega (experimento do olho) ─────────────────────────────
+# Mede se o olho do trader separa trade bom de ruido SEM ver o resultado.
+# Indirecao p/ monkeypatch da Binance REST nos testes.
+_rotulagem_candles_fn = rotulagem_candles.blind_candles
+
+
+@app.route("/rotulagem")
+def rotulagem_page():
+    return render_template("rotulagem.html", active_page="rotulagem")
+
+
+@app.route("/api/rotulagem/next")
+def api_rotulagem_next():
+    """Proximo trade nao rotulado + candles CEGOS (cortados no entry) + niveis.
+    NUNCA inclui exit/pnl/sl/tp — o resultado nao pode vazar pro olho."""
+    conn = db._get_conn()
+    try:
+        all_ids = [r[0] for r in conn.execute(
+            "SELECT id FROM momentum_trades ORDER BY timestamp ASC")]
+        labeled = rotulagem_data.labeled_trade_ids(conn)
+        pending = [i for i in all_ids if i not in labeled]
+        progress = {"done": len(labeled), "total": len(all_ids)}
+        if not pending:
+            return jsonify({"ok": True, "done": True, "progress": progress})
+        trade_id = pending[0]
+        detail = raiox_data.trade_detail(conn, trade_id)
+    finally:
+        conn.close()
+    if detail is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    try:
+        candles = _rotulagem_candles_fn(detail["symbol"], detail["entry_time_s"], "15m", 80)
+    except Exception:
+        return jsonify({"ok": False, "error": "binance_unavailable",
+                        "message": "nao consegui carregar os candles agora"}), 502
+    swings = rotulagem_levels.swing_points(candles, k=3)
+    supports = [lv for lv in rotulagem_levels.support_levels(candles, k=3, tol=0.0015)
+                if lv["touches"] >= 2]
+    return jsonify({
+        "ok": True, "done": False, "progress": progress,
+        "trade_id": trade_id,
+        "symbol": detail["symbol"],
+        "direction": detail["direction"],
+        "entry_time_s": detail["entry_time_s"],
+        "candles": candles,
+        "swings": swings,
+        "supports": supports,
+    })
+
+
+@app.route("/api/rotulagem/label", methods=["POST"])
+@require_post_auth
+def api_rotulagem_label():
+    """Grava o veredito do olho (gostei/nao + 4 pistas + palpite de saida)."""
+    body = request.get_json(silent=True) or {}
+    try:
+        trade_id = int(body.get("trade_id"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "errors": ["trade_id invalido"]}), 400
+    guess = body.get("exit_price_guess")
+    payload = {
+        "trade_id": trade_id,
+        "verdict": body.get("verdict"),
+        "cues": body.get("cues") or {},
+        "exit_price_guess": float(guess) if guess not in (None, "") else None,
+        "now_s": int(time.time()),
+    }
+    conn = db._get_conn()
+    try:
+        res = rotulagem_data.save_label(conn, payload)
+        if res.get("ok"):
+            conn.commit()
+    finally:
+        conn.close()
+    return jsonify(res), (200 if res.get("ok") else 400)
 
 
 @app.route("/legacy")
