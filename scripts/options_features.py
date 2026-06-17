@@ -65,3 +65,97 @@ def bs_delta(S: float, K: float, sigma: float, T: float, kind: str) -> float:
     if d1 is None:
         return 0.0
     return norm_cdf(d1) if kind == "call" else norm_cdf(d1) - 1.0
+
+
+def _nearest_expiry(chain, now_ts, min_days):
+    """Menor expiry com >= min_days; fallback pra a mais próxima existente."""
+    exps = sorted({c["expiry_ts"] for c in chain})
+    floor = now_ts + min_days * 86400
+    for e in exps:
+        if e >= floor:
+            return e
+    return exps[-1] if exps else None
+
+
+def compute_gex(chain, spot, now_ts):
+    gex_signed = 0.0
+    gex_abs = 0.0
+    for c in chain:
+        T = years_to_expiry(c["expiry_ts"], now_ts)
+        g = bs_gamma(spot, c["strike"], c["iv"], T) * (c["oi"] or 0.0)
+        sign = -1.0 if c["kind"] == "call" else 1.0   # CONGELADO: short calls / long puts
+        gex_signed += g * sign
+        gex_abs += g
+    return gex_signed, gex_abs
+
+
+def compute_gamma_flip(chain, spot, now_ts):
+    """Spot onde GEX(spot) cruza zero. Grid ±15% em passos de 0.5%; None se não cruza."""
+    if not chain:
+        return None
+    grid = [spot * (0.85 + 0.005 * i) for i in range(61)]   # 0.85..1.15
+    prev_s = prev_g = None
+    for s in grid:
+        g = compute_gex(chain, s, now_ts)[0]
+        if prev_g is not None and (prev_g <= 0 < g or prev_g >= 0 > g):
+            # interpolação linear do cruzamento
+            return prev_s + (s - prev_s) * (-prev_g) / (g - prev_g)
+        prev_s, prev_g = s, g
+    return None
+
+
+def compute_iv_atm(chain, spot, now_ts, min_days=7):
+    exp = _nearest_expiry(chain, now_ts, min_days)
+    if exp is None:
+        return None
+    near = [c for c in chain if c["expiry_ts"] == exp and c["iv"] and c["iv"] > 0]
+    if not near:
+        return None
+    best = min(near, key=lambda c: abs(c["strike"] - spot))
+    return best["iv"]
+
+
+def _iv_at_target_delta(legs, spot, now_ts, target_delta, kind):
+    """IV interpolada no |delta|=target dentro de uma perna (call ou put)."""
+    pts = []
+    for c in legs:
+        T = years_to_expiry(c["expiry_ts"], now_ts)
+        d = bs_delta(spot, c["strike"], c["iv"], T, kind)
+        pts.append((abs(d), c["iv"]))
+    if len(pts) < 2:
+        return None
+    pts.sort()
+    lo, hi = None, None
+    for ad, iv in pts:
+        if ad <= target_delta:
+            lo = (ad, iv)
+        if ad >= target_delta and hi is None:
+            hi = (ad, iv)
+    if lo and hi and hi[0] != lo[0]:
+        w = (target_delta - lo[0]) / (hi[0] - lo[0])
+        return lo[1] + w * (hi[1] - lo[1])
+    return (lo or hi)[1] if (lo or hi) else None
+
+
+def compute_skew_25d(chain, spot, now_ts, min_days=7):
+    exp = _nearest_expiry(chain, now_ts, min_days)
+    if exp is None:
+        return None
+    calls = [c for c in chain if c["expiry_ts"] == exp and c["kind"] == "call" and c["iv"]]
+    puts = [c for c in chain if c["expiry_ts"] == exp and c["kind"] == "put" and c["iv"]]
+    iv_call = _iv_at_target_delta(calls, spot, now_ts, 0.25, "call")
+    iv_put = _iv_at_target_delta(puts, spot, now_ts, 0.25, "put")
+    if iv_call is None or iv_put is None:
+        return None
+    return iv_put - iv_call   # CONGELADO: put - call (medo positivo)
+
+
+def compute_term_slope(chain, spot, now_ts):
+    exps = sorted({c["expiry_ts"] for c in chain})
+    if len(exps) < 2:
+        return None
+    near = compute_iv_atm([c for c in chain if c["expiry_ts"] == exps[0]], spot, now_ts, min_days=0)
+    far = compute_iv_atm([c for c in chain if c["expiry_ts"] == exps[-1]], spot, now_ts, min_days=0)
+    if near is None or far is None:
+        return None
+    return near - far

@@ -41,3 +41,55 @@ def test_bs_gamma_delta_reference():
 def test_bs_gamma_degenerate_returns_zero():
     assert of.bs_gamma(100.0, 100.0, 0.5, 0.0) == 0.0   # expirado
     assert of.bs_gamma(100.0, 100.0, 0.0, 1.0) == 0.0   # vol zero
+
+
+def _chain(spot, now, items):
+    """items: list of (kind, strike, iv, oi, days_to_exp)."""
+    out = []
+    for kind, strike, iv, oi, days in items:
+        out.append({"kind": kind, "strike": strike, "iv": iv, "oi": oi,
+                    "expiry_ts": now + int(days * 86400)})
+    return out, spot, now
+
+
+def test_compute_gex_sign_convention():
+    chain, spot, now = _chain(100.0, 1_700_000_000, [
+        ("call", 100.0, 0.5, 10.0, 30),   # dealer short call -> negativo
+        ("put",  100.0, 0.5, 10.0, 30),    # dealer long put  -> positivo
+    ])
+    gex_signed, gex_abs = of.compute_gex(chain, spot, now)
+    assert abs(gex_signed) < 1e-9          # call e put de mesmo strike/oi se cancelam
+    assert gex_abs > 0                       # magnitude soma
+
+
+def test_compute_gex_put_heavy_positive():
+    chain, spot, now = _chain(100.0, 1_700_000_000, [
+        ("put", 100.0, 0.5, 50.0, 30),
+        ("call", 100.0, 0.5, 10.0, 30),
+    ])
+    gex_signed, _ = of.compute_gex(chain, spot, now)
+    assert gex_signed > 0                    # puts dominam -> dealer long gamma
+
+
+def test_compute_iv_atm_picks_nearest_strike():
+    chain, spot, now = _chain(100.0, 1_700_000_000, [
+        ("call", 95.0, 0.40, 5, 30), ("call", 100.0, 0.55, 5, 30),
+        ("put", 105.0, 0.60, 5, 30),
+    ])
+    assert of.compute_iv_atm(chain, spot, now) == pytest.approx(0.55, abs=1e-9)
+
+
+def test_compute_skew_25d_sign():
+    # puts mais caras que calls -> skew positivo (medo)
+    chain, spot, now = _chain(100.0, 1_700_000_000, [
+        ("call", 90, 0.40, 5, 30), ("call", 100, 0.45, 5, 30), ("call", 130, 0.50, 5, 30),
+        ("put", 70, 0.80, 5, 30), ("put", 100, 0.55, 5, 30), ("put", 110, 0.50, 5, 30),
+    ])
+    skew = of.compute_skew_25d(chain, spot, now)
+    assert skew is not None and skew > 0
+
+
+def test_features_empty_chain_return_none():
+    assert of.compute_iv_atm([], 100.0, 1) is None
+    assert of.compute_skew_25d([], 100.0, 1) is None
+    assert of.compute_gamma_flip([], 100.0, 1) is None
