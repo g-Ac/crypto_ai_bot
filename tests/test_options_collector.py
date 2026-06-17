@@ -57,3 +57,28 @@ def test_parse_book_summary_skips_zero_iv():
     rows = [{"instrument_name": "BTC-26MAR27-105000-C", "mark_iv": 0.0,
              "open_interest": 1.0, "underlying_price": 1.0}]
     assert oc.parse_book_summary(rows, "BTC") == []
+
+
+def test_aggregate_snapshot_buckets():
+    now = 1_700_000_000
+    chain = [
+        {"kind": "call", "strike": 100.0, "iv": 0.5, "oi": 10.0, "expiry_ts": now + 10*86400},
+        {"kind": "put",  "strike": 80.0,  "iv": 0.7, "oi": 5.0,  "expiry_ts": now + 10*86400},
+    ]
+    rows = oc.aggregate_snapshot(chain, 100.0, "BTC", now)
+    assert all(r["symbol"] == "BTC" and r["bucket_ts"] == now for r in rows)
+    atm = [r for r in rows if r["strike_bucket"] == "atm"][0]
+    assert atm["oi"] == 10.0 and atm["n"] == 1
+
+
+def test_build_feature_row_keys():
+    now = 1_700_000_000
+    chain = [
+        {"kind": "call", "strike": 100.0, "iv": 0.5, "oi": 10.0, "expiry_ts": now + 30*86400},
+        {"kind": "put",  "strike": 100.0, "iv": 0.5, "oi": 10.0, "expiry_ts": now + 30*86400},
+    ]
+    c = _conn()
+    row = oc.build_feature_row(c, "BTC", chain, 100.0, (now, 37.0, -0.5), now)
+    for k in ["symbol","bucket_ts","spot","gex","gex_abs","dvol","skew_25d","iv_atm","oi_total"]:
+        assert k in row
+    assert row["symbol"] == "BTC" and row["spot"] == 100.0 and row["dvol"] == 37.0

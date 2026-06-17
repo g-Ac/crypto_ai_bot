@@ -178,3 +178,142 @@ def fetch_dvol(currency: str):
     prev = float(data[-2][4]) if len(data) > 1 else None
     chg = (close - prev) if prev is not None else None
     return ts, close, chg
+
+
+def _expiry_bucket(expiry_ts, now_ts_val):
+    d = (expiry_ts - now_ts_val) / 86400.0
+    if d < 7: return "0-7d"
+    if d < 30: return "7-30d"
+    if d < 90: return "30-90d"
+    return "90d+"
+
+
+def _strike_bucket(strike, spot):
+    m = strike / spot if spot else 1.0
+    if m < 0.85: return "deep_put"
+    if m < 0.97: return "otm_put"
+    if m <= 1.03: return "atm"
+    if m <= 1.15: return "otm_call"
+    return "deep_call"
+
+
+def aggregate_snapshot(chain, spot, symbol, bucket_ts):
+    agg: dict = {}
+    for c in chain:
+        key = (_expiry_bucket(c["expiry_ts"], bucket_ts), _strike_bucket(c["strike"], spot))
+        a = agg.setdefault(key, {"oi": 0.0, "iv_sum": 0.0, "n": 0})
+        a["oi"] += c["oi"] or 0.0
+        a["iv_sum"] += c["iv"]; a["n"] += 1
+    return [{"symbol": symbol, "bucket_ts": bucket_ts, "expiry_bucket": eb,
+             "strike_bucket": sb, "oi": v["oi"],
+             "iv_mean": v["iv_sum"] / v["n"] if v["n"] else None, "n": v["n"]}
+            for (eb, sb), v in agg.items()]
+
+
+def read_recent_closes(conn, symbol, hours=48):
+    cutoff = now_ts() - hours * 3600
+    try:
+        rows = conn.execute(
+            "SELECT close_price FROM k_prices WHERE symbol=? AND bucket_ts>=? ORDER BY bucket_ts",
+            (f"{symbol}USDT", cutoff),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [r[0] for r in rows]
+
+
+def build_feature_row(conn, currency, chain, spot, dvol_tuple, bucket_ts):
+    gex, gex_abs = of.compute_gex(chain, spot, bucket_ts)
+    iv_atm = of.compute_iv_atm(chain, spot, bucket_ts)
+    rv = of.realized_vol(read_recent_closes(conn, currency, 48))
+    _, dvol, dvol_chg = dvol_tuple
+    return {
+        "symbol": currency, "bucket_ts": bucket_ts, "spot": spot,
+        "gex": gex, "gex_abs": gex_abs,
+        "gamma_flip": of.compute_gamma_flip(chain, spot, bucket_ts),
+        "dvol": dvol, "dvol_chg": dvol_chg,
+        "skew_25d": of.compute_skew_25d(chain, spot, bucket_ts),
+        "iv_atm": iv_atm, "rv_48h": rv, "vrp": of.compute_vrp(iv_atm, rv),
+        "term_slope": of.compute_term_slope(chain, spot, bucket_ts),
+        "n_strikes": len(chain), "oi_total": sum((c["oi"] or 0.0) for c in chain),
+    }
+
+
+def fetch_for_symbol(currency):
+    raw = http_get_json("/public/get_book_summary_by_currency",
+                        {"currency": currency, "kind": "option"})
+    chain = parse_book_summary(raw, currency)
+    spot = fetch_index(currency)
+    dvol_tuple = fetch_dvol(currency)
+    # ts da Deribit (DVOL) truncado pra hora; fallback p/ now truncado
+    src_ts = dvol_tuple[0] or now_ts()
+    bucket_ts = src_ts - src_ts % 3600
+    return chain, spot, dvol_tuple, bucket_ts
+
+
+def run(conn, dry_run):
+    started = now_ts()
+    run_id = -1
+    if not dry_run:
+        run_id = conn.execute(
+            "INSERT INTO k_options_collector_runs (started_at, status) VALUES (?, 'running')",
+            (started,)).lastrowid
+        conn.commit()
+    rows_total = sym_ok = sym_fail = 0
+    notes = []
+    collected_at = now_ts()
+    for cur_sym in SYMBOLS:
+        try:
+            chain, spot, dvol_tuple, bucket_ts = fetch_for_symbol(cur_sym)
+            if not chain:
+                notes.append(f"{cur_sym}: cadeia vazia"); sym_fail += 1; continue
+            frow = build_feature_row(conn, cur_sym, chain, spot, dvol_tuple, bucket_ts)
+            agg = aggregate_snapshot(chain, spot, cur_sym, bucket_ts)
+            if dry_run:
+                print(f"[dry-run] {cur_sym} bucket={bucket_ts} gex={frow['gex']:.4g} "
+                      f"skew={frow['skew_25d']} iv_atm={frow['iv_atm']} dvol={frow['dvol']} "
+                      f"strikes={frow['n_strikes']} agg_rows={len(agg)}")
+                sym_ok += 1; continue
+            conn.execute("BEGIN")
+            rows_total += upsert_features(conn, frow, collected_at)
+            rows_total += upsert_agg(conn, agg, collected_at)
+            conn.execute("COMMIT")
+            sym_ok += 1
+        except Exception as e:  # noqa: BLE001 - boundary
+            try: conn.execute("ROLLBACK")
+            except sqlite3.Error: pass
+            notes.append(f"{cur_sym}: {type(e).__name__}: {e}"); sym_fail += 1
+    status = "ok" if sym_fail == 0 else ("partial" if sym_ok else "fail")
+    if not dry_run:
+        conn.execute("UPDATE k_options_collector_runs SET finished_at=?, status=?, "
+                     "symbols_ok=?, symbols_fail=?, rows_inserted=?, notes=? WHERE run_id=?",
+                     (now_ts(), status, sym_ok, sym_fail, rows_total,
+                      "; ".join(notes)[:500], run_id))
+        conn.commit()
+    return status, sym_ok, sym_fail, rows_total, notes
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Deribit options collector (EXP-019)")
+    parser.add_argument("--dry-run", action="store_true", help="não escreve no banco")
+    args = parser.parse_args()
+    ok, msg = check_clock_sanity()
+    if not ok:
+        print(f"ABORT: {msg}", file=sys.stderr); return 2
+    if not DB_PATH.parent.exists():
+        print(f"ERRO: diretorio nao existe: {DB_PATH.parent}", file=sys.stderr); return 1
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        init_db(conn)
+        status, sym_ok, sym_fail, rows_total, notes = run(conn, args.dry_run)
+        prefix = "[dry-run] " if args.dry_run else ""
+        msg = f"{prefix}options_collector status={status} ok={sym_ok} fail={sym_fail} rows={rows_total}"
+        if notes: msg += f" notes={'; '.join(notes[:5])}"
+        print(msg)
+        return 0 if status != "fail" else 1
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
