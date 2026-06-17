@@ -93,3 +93,24 @@ def test_features_empty_chain_return_none():
     assert of.compute_iv_atm([], 100.0, 1) is None
     assert of.compute_skew_25d([], 100.0, 1) is None
     assert of.compute_gamma_flip([], 100.0, 1) is None
+
+
+def test_realized_vol_constant_returns_zero():
+    assert of.realized_vol([100.0, 100.0, 100.0]) == pytest.approx(0.0, abs=1e-12)
+
+
+def test_realized_vol_positive_and_annualized():
+    closes = [100.0, 101.0, 100.0, 101.0, 100.0, 101.0]
+    rv = of.realized_vol(closes)
+    assert rv is not None and rv > 0
+
+
+def test_realized_vol_insufficient():
+    assert of.realized_vol([100.0]) is None
+    assert of.realized_vol([]) is None
+
+
+def test_compute_vrp():
+    assert of.compute_vrp(0.60, 0.45) == pytest.approx(0.15, abs=1e-9)
+    assert of.compute_vrp(None, 0.45) is None
+    assert of.compute_vrp(0.60, None) is None

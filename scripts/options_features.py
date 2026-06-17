@@ -159,3 +159,24 @@ def compute_term_slope(chain, spot, now_ts):
     if near is None or far is None:
         return None
     return near - far
+
+
+def realized_vol(closes, periods_per_year: float = 8766.0):
+    if not closes or len(closes) < 2:
+        return None
+    rets = []
+    for a, b in zip(closes[:-1], closes[1:]):
+        if a > 0 and b > 0:
+            rets.append(math.log(b / a))
+    if len(rets) < 1:
+        return None
+    n = len(rets)
+    mean = sum(rets) / n
+    var = sum((r - mean) ** 2 for r in rets) / n
+    return math.sqrt(var) * math.sqrt(periods_per_year)
+
+
+def compute_vrp(iv_atm, rv):
+    if iv_atm is None or rv is None:
+        return None
+    return iv_atm - rv
