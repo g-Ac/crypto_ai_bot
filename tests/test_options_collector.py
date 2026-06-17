@@ -35,3 +35,25 @@ def test_upsert_agg_idempotent():
 def test_clock_sanity_ok():
     ok, _ = oc.check_clock_sanity()
     assert ok is True
+
+
+def test_parse_book_summary_filters_and_enriches():
+    rows = [
+        {"instrument_name": "BTC-26MAR27-105000-C", "mark_iv": 42.34,
+         "open_interest": 135.6, "underlying_price": 67865.0},
+        {"instrument_name": "BTC-PERPETUAL", "mark_iv": 0, "open_interest": 5},  # não-opção
+        {"instrument_name": "BTC-26MAR27-90000-P", "mark_iv": 50.0,
+         "open_interest": 10.0, "underlying_price": 67865.0},
+    ]
+    parsed = oc.parse_book_summary(rows, "BTC")
+    assert len(parsed) == 2
+    p = parsed[0]
+    assert p["kind"] == "call" and p["strike"] == 105000.0
+    assert p["iv"] == 0.4234       # % -> fração
+    assert p["oi"] == 135.6
+
+
+def test_parse_book_summary_skips_zero_iv():
+    rows = [{"instrument_name": "BTC-26MAR27-105000-C", "mark_iv": 0.0,
+             "open_interest": 1.0, "underlying_price": 1.0}]
+    assert oc.parse_book_summary(rows, "BTC") == []

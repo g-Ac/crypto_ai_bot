@@ -108,3 +108,73 @@ def check_clock_sanity() -> tuple[bool, str]:
     if now.year < MIN_YEAR_SANITY:
         return False, f"relogio do Pi parece errado: ano={now.year} < {MIN_YEAR_SANITY}. Aborta."
     return True, f"clock ok: {now.isoformat()}"
+
+
+class FetchError(Exception):
+    pass
+
+
+def http_get_json(path: str, params: dict):
+    url = f"{BASE_URL}{path}?{urlencode(params)}"
+    last_err = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            req = Request(url, headers={"User-Agent": USER_AGENT})
+            with urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+                if resp.status == 200:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    return payload.get("result", payload)
+                raise FetchError(f"HTTP {resp.status}")
+        except HTTPError as e:
+            if e.code in (429, 503):
+                last_err = e
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(BACKOFF_SECONDS[attempt]); continue
+                raise FetchError(f"rate limit after {MAX_RETRIES}") from e
+            raise FetchError(f"HTTP {e.code}: {e.reason}") from e
+        except URLError as e:
+            last_err = e
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(BACKOFF_SECONDS[attempt]); continue
+            raise FetchError(f"URL error: {e}") from e
+    raise FetchError(f"max retries exhausted: {last_err}")
+
+
+def parse_book_summary(rows: list, currency: str) -> list[dict]:
+    out = []
+    for r in rows:
+        meta = of.parse_instrument_name(r.get("instrument_name", ""))
+        if meta is None:
+            continue
+        try:
+            iv = round(float(r.get("mark_iv") or 0.0) / 100.0, 6)
+            oi = float(r.get("open_interest") or 0.0)
+            under = float(r.get("underlying_price") or 0.0)
+        except (ValueError, TypeError):
+            continue
+        if iv <= 0:
+            continue
+        out.append({"kind": meta["kind"], "strike": meta["strike"],
+                    "expiry_ts": meta["expiry_ts"], "iv": iv, "oi": oi,
+                    "underlying": under})
+    return out
+
+
+def fetch_index(currency: str) -> float:
+    res = http_get_json("/public/get_index_price", {"index_name": INDEX_NAME[currency]})
+    return float(res["index_price"])
+
+
+def fetch_dvol(currency: str):
+    end = now_ts() * 1000
+    start = end - 6 * 3600 * 1000
+    res = http_get_json("/public/get_volatility_index_data",
+                        {"currency": currency, "start_timestamp": start,
+                         "end_timestamp": end, "resolution": "3600"})
+    data = res.get("data", []) if isinstance(res, dict) else []
+    if not data:
+        return None, None, None
+    last = data[-1]; ts = int(last[0]) // 1000; close = float(last[4])
+    prev = float(data[-2][4]) if len(data) > 1 else None
+    chg = (close - prev) if prev is not None else None
+    return ts, close, chg
