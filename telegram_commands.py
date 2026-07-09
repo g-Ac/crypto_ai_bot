@@ -290,7 +290,14 @@ def _cmd_ajuda():
         "/retomar - retoma operacao normal\n"
         "/relatorio - relatorio diario completo\n"
         "/mercado [SIMBOLO] - leitura de mercado (regime + pressao); com simbolo = zoom\n"
-        "/ajuda - esta mensagem"
+        "/ajuda - esta mensagem\n\n"
+        "\U0001f9ed <b>Copiloto de Disciplina</b> <i>(nao preve, so vigia)</i>\n"
+        "/clima - termometro do mercado (BTC, funding, liquidacao, medo/ganancia)\n"
+        "/vigiar SIMBOLO [compra|venda] - guarda de entrada (avisa quando a faca parar)\n"
+        "/entrei SIMBOLO ENTRADA stop STOP - vigia de saida (avisa pra realizar)\n"
+        "/vigiando - o que estou vigiando (entrada + saida)\n"
+        "/cancelar SIMBOLO - tira da watchlist de entrada\n"
+        "/fechei SIMBOLO - fecha a vigia de saida"
     )
 
 
@@ -316,7 +323,8 @@ def _cmd_mercado(arg: str = ""):
         conn.close()
 
 
-import copiloto  # noqa: E402  (Copiloto de Disciplina — Modulo B, Vigia de Saida)
+import copiloto  # noqa: E402  (Copiloto de Disciplina — Modulos A/B)
+import contexto  # noqa: E402  (Copiloto — Contexto: termometro do mercado)
 
 _HANDLERS = {
     "/status": _cmd_status,
@@ -336,6 +344,7 @@ _HANDLERS = {
     "/fechei": copiloto.cmd_fechei,
     "/vigiar": copiloto.cmd_vigiar,       # Modulo A: guarda de entrada (anti-entrar-cedo)
     "/cancelar": copiloto.cmd_cancelar,
+    "/clima": contexto.cmd_clima,         # Contexto: termometro do mercado (leitura, nao previsao)
 }
 
 
