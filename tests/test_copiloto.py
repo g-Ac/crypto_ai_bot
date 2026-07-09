@@ -111,3 +111,82 @@ def test_cmd_fechei_e_vigiando_vazio(tmp_path):
     assert "Encerrei" in copiloto.cmd_fechei("solusdt", _db=db)
     assert "Não achei" in copiloto.cmd_fechei("XRPUSDT", _db=db)
     assert "Nada sendo vigiado" in copiloto.cmd_vigiando(_db=db)
+
+
+# ═════════════════════ MODULO A — Guarda de Entrada ═════════════════════
+import numpy as np      # noqa: E402
+import pandas as pd     # noqa: E402
+
+_PA = dict(copiloto.PARAMS_A, lookback=5)   # janela curta p/ testes compactos
+
+
+def test_entrada_compra_confirma_quando_faca_parou_e_rsi_sobe():
+    lows = [100, 101, 100, 102, 100]        # fundo = 100
+    closes = [100, 101, 100, 102, 103]      # +3% do fundo (dentro de 2-6%)
+    highs = [105, 106, 104, 108, 110]       # resistencia = 110
+    rsis = [30, 35, 32, 40, 45]             # RSI virando pra cima (45 > 40)
+    r = copiloto.avalia_entrada(highs, lows, closes, rsis, "compra", _PA)
+    assert r["confirmado"] and r["stop"] == 100 and r["alvo"] == 110 and r["rr"] > 2
+
+
+def test_entrada_nao_confirma_faca_ainda_caindo():
+    r = copiloto.avalia_entrada([105]*5, [100]*5, [100, 100, 100, 100, 100.5],
+                                [30, 35, 32, 40, 45], "compra", _PA)
+    assert not r["confirmado"]              # so +0.5% do fundo -> ainda e a faca
+
+
+def test_entrada_nao_confirma_se_ja_correu():
+    r = copiloto.avalia_entrada([120]*5, [100]*5, [100, 100, 100, 100, 110],
+                                [30, 35, 32, 40, 45], "compra", _PA)
+    assert not r["confirmado"]              # +10% -> a entrada ja passou (> bounce_max)
+
+
+def test_entrada_nao_confirma_rsi_caindo():
+    r = copiloto.avalia_entrada([110]*5, [100]*5, [100, 100, 100, 102, 103],
+                                [45, 40, 38, 36, 34], "compra", _PA)
+    assert not r["confirmado"]              # bounce ok, mas RSI ainda caindo
+
+
+def test_entrada_venda_confirma():
+    highs = [100, 99, 100, 98, 97]          # topo = 100
+    closes = [100, 99, 100, 98, 97]         # -3% do topo
+    lows = [95, 94, 96, 92, 90]             # alvo = 90
+    rsis = [70, 65, 68, 60, 55]             # RSI virando pra baixo (55 < 60)
+    r = copiloto.avalia_entrada(highs, lows, closes, rsis, "venda", _PA)
+    assert r["confirmado"] and r["stop"] == 100 and r["alvo"] == 90
+
+
+def test_watchlist_crud_e_dedup(tmp_path):
+    db = str(tmp_path / "wl.db")
+    assert copiloto.adicionar_vigia("LINKUSDT", "compra", db_path=db)["novo"] is True
+    assert copiloto.adicionar_vigia("LINKUSDT", "compra", db_path=db)["novo"] is False  # dedup
+    assert len(copiloto.listar_vigias(db)) == 1
+    assert copiloto.remover_vigia("linkusdt", db_path=db) == 1
+    assert copiloto.listar_vigias(db) == []
+
+
+def _df_bounce_compra(n=40):
+    """Cai de 130 a ~100 e faz bounce pra 103 (faca parou); RSI sobe no fim."""
+    closes = list(np.linspace(130, 100, n - 4)) + [100.5, 101.5, 102.5, 103.0]
+    c = np.array(closes, float)
+    return pd.DataFrame({"high": c * 1.003, "low": c * 0.997, "close": c})
+
+
+def test_checar_entradas_confirma_uma_vez_e_dedup(tmp_path):
+    db = str(tmp_path / "ce.db")
+    copiloto.adicionar_vigia("BTCUSDT", "compra", db_path=db)
+    fired = []
+    d1 = copiloto.checar_entradas(lambda s: _df_bounce_compra(),
+                                  notifier=lambda t, m: fired.append(m), db_path=db)
+    assert len(d1) == 1 and "CONFIRMOU" in d1[0]["msg"]
+    # status virou 'confirmado' -> proxima passada nao re-dispara (dedup)
+    d2 = copiloto.checar_entradas(lambda s: _df_bounce_compra(), db_path=db)
+    assert d2 == []
+
+
+def test_cmd_vigiar_e_cancelar(tmp_path):
+    db = str(tmp_path / "cv.db")
+    assert "Vigiando" in copiloto.cmd_vigiar("LINKUSDT compra", _db=db)
+    assert "Já tô vigiando" in copiloto.cmd_vigiar("LINKUSDT", _db=db)   # default compra, dedup
+    assert "compra" in copiloto.cmd_vigiando(_db=db).lower()             # aparece na lista
+    assert "Parei de vigiar" in copiloto.cmd_cancelar("LINKUSDT", _db=db)

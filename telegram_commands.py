@@ -330,10 +330,12 @@ _HANDLERS = {
     "/ajuda": _cmd_ajuda,
     "/help": _cmd_ajuda,
     "/mercado": _cmd_mercado,
-    # Copiloto de Disciplina — Vigia de Saida (nao preve, so vigia; a decisao e sua)
-    "/entrei": copiloto.cmd_entrei,
-    "/vigiando": copiloto.cmd_vigiando,
+    # Copiloto de Disciplina — nao preve, so vigia; a decisao e sempre sua
+    "/entrei": copiloto.cmd_entrei,       # Modulo B: vigia de saida (anti-sair-tarde)
+    "/vigiando": copiloto.cmd_vigiando,   # lista entrada + saida
     "/fechei": copiloto.cmd_fechei,
+    "/vigiar": copiloto.cmd_vigiar,       # Modulo A: guarda de entrada (anti-entrar-cedo)
+    "/cancelar": copiloto.cmd_cancelar,
 }
 
 
