@@ -190,8 +190,9 @@ python scripts/backtest_breakout_5m.py  # breakout 5m
 
 ### Banco de dados (queries uteis)
 ```bash
-# Performance momentum (sistema ativo)
-sqlite3 runtime/baseline/bot.db "SELECT COUNT(*), ROUND(AVG(pnl_pct),4), ROUND(SUM(pnl_pct),4) FROM momentum_trades;"
+# Performance momentum (sistema ativo) — SEMPRE olhar o LIQUIDO (net); pnl_pct e GROSS (engana)
+sqlite3 runtime/baseline/bot.db "SELECT COUNT(*), ROUND(SUM(net_pnl_pct),3) AS net_liquido, ROUND(SUM(pnl_pct),3) AS gross FROM momentum_trades;"
+# (ate 2026-07: gross +10.4% mas LIQUIDO -10.4% — fee = 2x o edge; pnl_pct/capital_after nao descontam fee)
 
 # Funil de decisoes momentum
 sqlite3 runtime/baseline/bot.db "SELECT blocked_by, COUNT(*) FROM momentum_decisions GROUP BY blocked_by ORDER BY COUNT(*) DESC;"
