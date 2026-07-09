@@ -75,6 +75,16 @@ src/
 O motor (`engine/`) é puro e sem dependência de React Native, então é
 simulável/testável fora do app (foi validado por ~300 partidas headless).
 
+## Testes
+
+```bash
+npm test          # roda a suíte Jest (jest-expo) sobre o engine/
+```
+
+Cobertura em `src/engine/__tests__/`: combate, ações (mover/comprar/recrutar/atacar/renda),
+IA, seletores e checagem de vitória. RNG determinístico (mulberry32) pra combates
+reprodutíveis.
+
 ## O que ficou pro próximo loop
 
 Ver o final da conversa / `game-design-doc.md`. Destaques: recrutamento de
