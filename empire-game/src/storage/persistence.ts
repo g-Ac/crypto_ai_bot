@@ -23,6 +23,9 @@ export async function carregarJogo(): Promise<GameState | null> {
     const parsed = JSON.parse(raw) as GameState;
     // Sanidade mínima: precisa ter cidade e facções.
     if (!parsed?.cidade || !Array.isArray(parsed.faccoes)) return null;
+    // Backfill de campos adicionados em versões novas (saves antigos).
+    if (!Array.isArray(parsed.intel)) parsed.intel = [];
+    if (typeof parsed.recrutaSeq !== 'number') parsed.recrutaSeq = 0;
     return parsed;
   } catch (e) {
     console.warn('Falha ao carregar partida:', e);

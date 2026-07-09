@@ -142,6 +142,7 @@ export function criarPartida(): GameState {
     ],
     logSeq: 1,
     recrutaSeq: 0,
+    intel: [],
   };
 }
 
@@ -163,3 +164,24 @@ export const NOMES_RECRUTA = [
   'Nariz', 'Metralha', 'Dente', 'Faísca', 'Mão Branca', 'Corvo', 'Passarinho',
   'Zóio', 'Cebola', 'Trovão', 'Meia-Noite', 'Chumbo',
 ] as const;
+
+// --- Espionagem / Heat / Polícia / Advogados ---
+
+/** Custo em caixa pra espionar um bairro. */
+export const CUSTO_ESPIONAGEM = 150;
+/** Calor ganho ao espionar (operação arriscada). */
+export const ESPIONAGEM_CALOR = 3;
+/** Turnos que o intel permanece válido além do turno atual. */
+export const INTEL_DURACAO = 1;
+/** Multiplicador de ataque quando há intel ativo sobre o alvo. */
+export const INTEL_BONUS_ATAQUE = 1.25;
+
+/** Custo pra contratar advogado (esfria o calor / despista a polícia). */
+export const CUSTO_ADVOGADO = 300;
+/** Quanto de calor o advogado remove. */
+export const ADVOGADO_REDUZ_CALOR = 25;
+
+/** Calor a partir do qual a facção corre risco de batida policial. */
+export const CALOR_LIMIAR_BATIDA = 50;
+/** Calor removido quando uma batida acontece. */
+export const BATIDA_ESFRIA_CALOR = 20;

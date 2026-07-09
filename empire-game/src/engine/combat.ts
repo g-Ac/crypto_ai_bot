@@ -109,6 +109,8 @@ export function resolverCombate(
   bairro: Bairro,
   armas: Map<string, Arma>,
   rng: Rng = Math.random,
+  /** Bônus extra multiplicativo no ataque (ex.: intel de espionagem). */
+  bonusAtaque = 1,
 ): ResultadoCombate {
   const poder = (s: Soldado) => poderEfetivo(s, s.armaId ? armas.get(s.armaId) : undefined);
 
@@ -117,7 +119,7 @@ export function resolverCombate(
 
   const garrison = defensores.length === 0 ? garrisonNeutro(bairro.risco) : 0;
 
-  const forcaAtaque = somaAtaque * INICIATIVA_ATAQUE * entre(rng, 0.85, 1.15);
+  const forcaAtaque = somaAtaque * INICIATIVA_ATAQUE * bonusAtaque * entre(rng, 0.85, 1.15);
   const forcaDefesa = (somaDefesa * VANTAGEM_CASA + garrison) * entre(rng, 0.85, 1.15);
 
   const vencedor: ResultadoCombate['vencedor'] =

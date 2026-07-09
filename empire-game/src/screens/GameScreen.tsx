@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cores, espaco, fontes } from '../theme/tokens';
-import { CUSTO_RECRUTA } from '../data/seed';
+import {
+  CALOR_LIMIAR_BATIDA,
+  CUSTO_ADVOGADO,
+  CUSTO_ESPIONAGEM,
+  CUSTO_RECRUTA,
+} from '../data/seed';
 import { useGameStore } from '../store/gameStore';
 import {
   alvosPossiveis,
@@ -14,6 +19,7 @@ import {
   faccaoDe,
   jogador as jogadorSel,
   soldadosNoBairro,
+  temIntel,
 } from '../engine/selectors';
 import { BairroCard } from '../components/BairroCard';
 import { Botao } from '../components/Botao';
@@ -37,6 +43,8 @@ export function GameScreen({ navigation }: GameProps) {
   const moverSoldado = useGameStore((s) => s.moverSoldado);
   const comprarArma = useGameStore((s) => s.comprarArma);
   const recrutarSoldado = useGameStore((s) => s.recrutarSoldado);
+  const espionarBairro = useGameStore((s) => s.espionarBairro);
+  const contratarAdvogado = useGameStore((s) => s.contratarAdvogado);
   const atacarBairro = useGameStore((s) => s.atacarBairro);
   const passarTurno = useGameStore((s) => s.passarTurno);
   const novoJogo = useGameStore((s) => s.novoJogo);
@@ -120,8 +128,30 @@ export function GameScreen({ navigation }: GameProps) {
         <View style={styles.stats}>
           <StatPill label="Caixa" valor={`$${jog.caixa}`} cor={cores.moneyLight} />
           <StatPill label="Respeito" valor={jog.respeito} cor={cores.gold1} />
-          <StatPill label="Calor" valor={jog.calor} cor={cores.bloodLight} />
+          <StatPill
+            label="Calor"
+            valor={jog.calor}
+            cor={jog.calor >= CALOR_LIMIAR_BATIDA ? cores.danger : cores.bloodLight}
+          />
         </View>
+
+        {/* Advogado — esfria o calor (aparece com risco de batida) */}
+        {jog.calor > 0 ? (
+          <View style={styles.advogadoRow}>
+            {jog.calor >= CALOR_LIMIAR_BATIDA ? (
+              <Text style={styles.alerta}>⚠ Calor alto — risco de batida policial!</Text>
+            ) : (
+              <Text style={styles.advogadoDica}>Calor atrai a polícia.</Text>
+            )}
+            <Botao
+              titulo={`Advogado ($${CUSTO_ADVOGADO})`}
+              variante="neutro"
+              disabled={jog.caixa < CUSTO_ADVOGADO}
+              onPress={contratarAdvogado}
+              style={styles.advogadoBtn}
+            />
+          </View>
+        ) : null}
 
         {/* Mapa */}
         <Text style={styles.secao}>TERRITÓRIOS</Text>
@@ -164,18 +194,31 @@ export function GameScreen({ navigation }: GameProps) {
               />
             ) : null}
 
-            {/* Ataque */}
+            {/* Ataque + espionagem */}
             {bairroAtacavel && preview ? (
               <View style={styles.ataqueBox}>
                 <Text style={styles.previewTxt}>
                   Seu ataque <Text style={styles.previewNum}>{preview.ataque}</Text> vs defesa{' '}
                   <Text style={styles.previewNum}>{preview.defesa}</Text>
                 </Text>
+                {temIntel(game, game.jogadorId, selBairro.id) ? (
+                  <Text style={styles.intelTag}>🎯 Intel ativo — ataque reforçado</Text>
+                ) : null}
                 <Botao
                   titulo={`⚔ Atacar ${selBairro.nome}`}
                   variante="ataque"
                   disabled={game.turno.acoesRestantes <= 0 || preview.ataque <= 0}
                   onPress={() => atacarBairro(selBairro.id)}
+                />
+                <Botao
+                  titulo={`🔍 Espionar ($${CUSTO_ESPIONAGEM})`}
+                  variante="neutro"
+                  disabled={
+                    game.turno.acoesRestantes <= 0 ||
+                    jog.caixa < CUSTO_ESPIONAGEM ||
+                    temIntel(game, game.jogadorId, selBairro.id)
+                  }
+                  onPress={() => espionarBairro(selBairro.id)}
                 />
               </View>
             ) : null}
@@ -300,6 +343,17 @@ const styles = StyleSheet.create({
   cidadeTxt: { fontFamily: fontes.corpo, fontSize: 15, color: cores.muted, marginTop: 2 },
 
   stats: { flexDirection: 'row', gap: espaco.sm },
+
+  advogadoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: espaco.sm,
+  },
+  alerta: { flex: 1, fontFamily: fontes.corpo, fontSize: 15, color: cores.danger },
+  advogadoDica: { flex: 1, fontFamily: fontes.corpo, fontSize: 14, color: cores.muted },
+  advogadoBtn: { minWidth: 130 },
+  intelTag: { fontFamily: fontes.corpo, fontSize: 14, color: cores.gold1, textAlign: 'center' },
 
   secao: {
     fontFamily: fontes.titulo,

@@ -18,7 +18,10 @@ Sim de império criminoso por turnos (paper/protótipo). Este repositório cont�
   arma / atacar) → resolução de combate → fase da IA → checagem de vitória/derrota.
 - **Combate** com força dos soldados + dano da arma vs defesa, fator aleatório,
   traços de personalidade, e baixas (ferido / morto / preso por batida policial).
-- **Economia** por turno (renda dos territórios) pra financiar o arsenal.
+- **Economia** por turno (renda dos territórios) pra financiar arsenal e recrutas.
+- **Recrutamento** de soldados (compra por caixa em bairro próprio) — snowball via território.
+- **Espionagem**: gasta caixa + sobe calor pra ganhar intel (bônus no próximo assalto).
+- **Heat / polícia**: calor alto arrisca batida (soldado preso). **Advogado** esfria o calor.
 - **Save/load** automático via AsyncStorage (a partida persiste ao fechar o app).
 - **Vitória**: dominar os 3 bairros. **Derrota**: perder território e tropas.
 
@@ -87,7 +90,7 @@ reprodutíveis.
 
 ## O que ficou pro próximo loop
 
-Ver o final da conversa / `game-design-doc.md`. Destaques: recrutamento de
-soldados (economia in-match), espionagem, advogados/heat, produção própria
-(laboratórios), mais bairros e IA com 3 arquétipos, meta-progressão entre partidas,
-e testes automatizados (Jest) sobre o `engine/`.
+Ver `game-design-doc.md`. Destaques: produção própria (laboratórios/pontos de
+venda que rendem por turno), mais bairros e as 3 personalidades de IA de verdade
+(paciente/oportunista jogando distinto), lealdade com decisões automáticas dos
+soldados, meta-progressão entre partidas (cidades, contatos), e arte/áudio.

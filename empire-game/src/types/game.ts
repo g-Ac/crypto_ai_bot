@@ -98,6 +98,16 @@ export interface Turno {
 }
 
 /**
+ * Marcador de inteligência: uma facção espionou um bairro e ganha bônus de
+ * ataque contra ele até `expiraTurno` (inclusive).
+ */
+export interface IntelMarker {
+  faccaoId: string;
+  bairroId: string;
+  expiraTurno: number;
+}
+
+/**
  * Estado completo de uma partida. As "rivais" do doc (Cidade.rivais) e o
  * jogador vivem juntos em `faccoes`; a cidade guarda só os bairros.
  */
@@ -115,4 +125,6 @@ export interface GameState {
   logSeq: number;
   /** Contador monotônico pra gerar ids de soldados recrutados. */
   recrutaSeq: number;
+  /** Marcadores de espionagem ativos. */
+  intel: IntelMarker[];
 }

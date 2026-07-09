@@ -4,9 +4,23 @@
  * (via store) e pela IA.
  */
 
-import { CUSTO_RECRUTA, FATOR_RENDA, NOMES_RECRUTA, TRACOS } from '../data/seed';
-import { resolverCombate, type Baixa, type Rng } from './combat';
 import {
+  ADVOGADO_REDUZ_CALOR,
+  BATIDA_ESFRIA_CALOR,
+  CALOR_LIMIAR_BATIDA,
+  CUSTO_ADVOGADO,
+  CUSTO_ESPIONAGEM,
+  CUSTO_RECRUTA,
+  ESPIONAGEM_CALOR,
+  FATOR_RENDA,
+  INTEL_BONUS_ATAQUE,
+  INTEL_DURACAO,
+  NOMES_RECRUTA,
+  TRACOS,
+} from '../data/seed';
+import { participaDeCombate, resolverCombate, type Baixa, type Rng } from './combat';
+import {
+  alvosPossiveis,
   armaDe,
   armasMap,
   bairroDe,
@@ -15,6 +29,7 @@ import {
   destinosDeMovimento,
   faccaoDe,
   forcaDeAtaque,
+  temIntel,
 } from './selectors';
 import type { GameState, LogTipo, Soldado } from '../types/game';
 
@@ -173,17 +188,23 @@ export function atacarBairro(
   }
   const defensores = defensoresDoBairro(novo, alvoId);
 
-  const resultado = resolverCombate(atacantes, defensores, alvo, armasMap(novo), rng);
+  // Intel de espionagem dá bônus de ataque e é consumido no assalto.
+  const comIntel = temIntel(novo, faccaoId, alvoId);
+  const bonus = comIntel ? INTEL_BONUS_ATAQUE : 1;
+  novo.intel = novo.intel.filter((m) => !(m.faccaoId === faccaoId && m.bairroId === alvoId));
+
+  const resultado = resolverCombate(atacantes, defensores, alvo, armasMap(novo), rng, bonus);
   aplicarBaixas(novo, resultado.baixasAtacante);
   aplicarBaixas(novo, resultado.baixasDefensor);
 
   const donoAntigo = alvo.dono ? faccaoDe(novo, alvo.dono) : undefined;
   const nBaixas = resultado.baixasAtacante.length + resultado.baixasDefensor.length;
+  const tagIntel = comIntel ? ' [intel]' : '';
 
   addLog(
     novo,
     'combate',
-    `${fac.nome} atacou ${alvo.nome} — ataque ${resultado.forcaAtaque} vs defesa ${resultado.forcaDefesa}.`,
+    `${fac.nome} atacou ${alvo.nome}${tagIntel} — ataque ${resultado.forcaAtaque} vs defesa ${resultado.forcaDefesa}.`,
   );
 
   if (resultado.vencedor === 'atacante') {
@@ -202,6 +223,86 @@ export function atacarBairro(
   fac.calor = Math.min(100, fac.calor + 4);
   addLog(novo, 'combate', `${fac.nome} foi repelido em ${alvo.nome}. ${nBaixas} baixa(s).`);
   return { state: novo, ok: true, mensagem: `Ataque a ${alvo.nome} repelido.` };
+}
+
+/**
+ * Espiona um bairro adjacente ao território: paga caixa, sobe o calor e ganha
+ * intel (bônus no próximo ataque a esse bairro). Gasta uma ação.
+ */
+export function espionarBairro(
+  state: GameState,
+  faccaoId: string,
+  alvoId: string,
+): ResultadoAcao {
+  const novo = clonar(state);
+  const fac = faccaoDe(novo, faccaoId);
+  const alvo = bairroDe(novo, alvoId);
+  if (!fac || !alvo) return { state, ok: false, mensagem: 'Alvo inválido.' };
+  if (alvo.dono === faccaoId) {
+    return { state, ok: false, mensagem: 'Não faz sentido espionar bairro seu.' };
+  }
+  const podeAlcancar = alvosPossiveis(novo, faccaoId).some((b) => b.id === alvoId);
+  if (!podeAlcancar) {
+    return { state, ok: false, mensagem: 'Só dá pra espionar bairro na sua fronteira.' };
+  }
+  if (fac.caixa < CUSTO_ESPIONAGEM) {
+    return { state, ok: false, mensagem: `Caixa insuficiente pra espionar ($${CUSTO_ESPIONAGEM}).` };
+  }
+
+  fac.caixa -= CUSTO_ESPIONAGEM;
+  fac.calor = Math.min(100, fac.calor + ESPIONAGEM_CALOR);
+  // Renova/adiciona o marcador de intel.
+  novo.intel = novo.intel.filter((m) => !(m.faccaoId === faccaoId && m.bairroId === alvoId));
+  novo.intel.push({ faccaoId, bairroId: alvoId, expiraTurno: novo.turno.numero + INTEL_DURACAO });
+  addLog(novo, 'info', `${fac.nome} espionou ${alvo.nome}. Intel obtido (+ataque no próximo assalto).`);
+  return { state: novo, ok: true, mensagem: `Intel sobre ${alvo.nome} obtido.` };
+}
+
+/** Contrata advogado: paga caixa e reduz o calor (despista a polícia). Não gasta ação. */
+export function contratarAdvogado(state: GameState, faccaoId: string): ResultadoAcao {
+  const novo = clonar(state);
+  const fac = faccaoDe(novo, faccaoId);
+  if (!fac) return { state, ok: false, mensagem: 'Facção inválida.' };
+  if (fac.calor <= 0) {
+    return { state, ok: false, mensagem: 'Calor já está zerado.' };
+  }
+  if (fac.caixa < CUSTO_ADVOGADO) {
+    return { state, ok: false, mensagem: `Caixa insuficiente pro advogado ($${CUSTO_ADVOGADO}).` };
+  }
+  fac.caixa -= CUSTO_ADVOGADO;
+  const antes = fac.calor;
+  fac.calor = Math.max(0, fac.calor - ADVOGADO_REDUZ_CALOR);
+  addLog(novo, 'info', `${fac.nome} pagou advogado: calor ${antes} → ${fac.calor} (-$${CUSTO_ADVOGADO}).`);
+  return { state: novo, ok: true, mensagem: `Advogado esfriou o calor pra ${fac.calor}.` };
+}
+
+/**
+ * Batida policial: facções com calor alto arriscam ter um soldado preso. Muta o
+ * estado (usar em clone, na resolução do turno). Quanto maior o calor, maior a chance.
+ */
+export function aplicarBatidaPolicial(state: GameState, rng: Rng = Math.random): void {
+  for (const fac of state.faccoes) {
+    if (fac.calor < CALOR_LIMIAR_BATIDA) continue;
+    const chance = (fac.calor - CALOR_LIMIAR_BATIDA) / 100 + 0.1; // 0.1..0.6
+    if (rng() >= chance) continue;
+
+    const dePe = fac.soldados.filter(participaDeCombate);
+    if (dePe.length > 0) {
+      const alvo = dePe[Math.floor(rng() * dePe.length)];
+      alvo.status = 'preso';
+      addLog(state, 'combate', `BATIDA POLICIAL: ${alvo.nome} (${fac.nome}) foi preso.`);
+    } else {
+      const multa = Math.min(fac.caixa, 300);
+      fac.caixa -= multa;
+      addLog(state, 'combate', `BATIDA POLICIAL: ${fac.nome} perdeu $${multa} em apreensão.`);
+    }
+    fac.calor = Math.max(0, fac.calor - BATIDA_ESFRIA_CALOR);
+  }
+}
+
+/** Remove marcadores de intel expirados. Muta o estado (usar em clone). */
+export function limparIntelExpirado(state: GameState): void {
+  state.intel = state.intel.filter((m) => m.expiraTurno >= state.turno.numero);
 }
 
 /** Renda por turno + leve decaimento de calor. Muta o estado passado (usar em clone). */

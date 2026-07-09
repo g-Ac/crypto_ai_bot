@@ -7,11 +7,15 @@
 import { create } from 'zustand';
 import { ACOES_POR_TURNO, criarPartida } from '../data/seed';
 import {
+  aplicarBatidaPolicial,
   aplicarRenda,
   addLog,
   atacarBairro as atacarBairroEngine,
   clonar,
   comprarArma as comprarArmaEngine,
+  contratarAdvogado as contratarAdvogadoEngine,
+  espionarBairro as espionarBairroEngine,
+  limparIntelExpirado,
   moverSoldado as moverSoldadoEngine,
   recrutarSoldado as recrutarSoldadoEngine,
   type ResultadoAcao,
@@ -37,6 +41,8 @@ interface GameStore {
   moverSoldado: (soldadoId: string, destinoId: string) => void;
   comprarArma: (armaId: string, soldadoId: string) => void;
   recrutarSoldado: (bairroId: string) => void;
+  espionarBairro: (alvoId: string) => void;
+  contratarAdvogado: () => void;
   atacarBairro: (alvoId: string) => void;
   passarTurno: () => void;
 }
@@ -115,6 +121,23 @@ export const useGameStore = create<GameStore>((set, get) => {
       aplicar(recrutarSoldadoEngine(game, game.jogadorId, bairroId), false);
     },
 
+    espionarBairro(alvoId) {
+      const game = get().game;
+      if (!game || game.status !== 'em_andamento') return;
+      if (game.turno.acoesRestantes <= 0) {
+        set({ feedback: 'Sem ações neste turno. Passe o turno.' });
+        return;
+      }
+      aplicar(espionarBairroEngine(game, game.jogadorId, alvoId), true);
+    },
+
+    contratarAdvogado() {
+      const game = get().game;
+      if (!game || game.status !== 'em_andamento') return;
+      // Advogado é econômico (não gasta ação).
+      aplicar(contratarAdvogadoEngine(game, game.jogadorId), false);
+    },
+
     atacarBairro(alvoId) {
       const game = get().game;
       if (!game || game.status !== 'em_andamento') return;
@@ -137,11 +160,13 @@ export const useGameStore = create<GameStore>((set, get) => {
         s = executarTurnoIA(s, ia.id);
       }
 
-      // Renda + decaimento de calor, depois virada de turno.
+      // Polícia age sobre quem está com calor alto; renda + decaimento de calor.
+      aplicarBatidaPolicial(s);
       aplicarRenda(s);
       s.turno.numero += 1;
       s.turno.acoesRestantes = ACOES_POR_TURNO;
       s.turno.fase = 'decisao';
+      limparIntelExpirado(s);
 
       s.status = avaliarStatus(s);
       if (s.status === 'vitoria') {

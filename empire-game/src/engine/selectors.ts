@@ -3,6 +3,7 @@
  * Compartilhados entre UI, IA e resolução de ações.
  */
 
+import { INTEL_BONUS_ATAQUE } from '../data/seed';
 import {
   garrisonNeutro,
   INICIATIVA_ATAQUE,
@@ -86,9 +87,20 @@ export function forcaDeAtaque(state: GameState, faccaoId: string, alvoId: string
   return { atacantes, poder };
 }
 
-/** Ataque estimado (com bônus de iniciativa) pra exibir no preview de combate. */
+/** Há intel de espionagem ativo de `faccaoId` sobre `alvoId` neste turno? */
+export function temIntel(state: GameState, faccaoId: string, alvoId: string): boolean {
+  return state.intel.some(
+    (m) =>
+      m.faccaoId === faccaoId &&
+      m.bairroId === alvoId &&
+      m.expiraTurno >= state.turno.numero,
+  );
+}
+
+/** Ataque estimado (iniciativa + intel, se houver) pra exibir no preview de combate. */
 export function ataqueEstimado(state: GameState, faccaoId: string, alvoId: string): number {
-  return Math.round(forcaDeAtaque(state, faccaoId, alvoId).poder * INICIATIVA_ATAQUE);
+  const bonusIntel = temIntel(state, faccaoId, alvoId) ? INTEL_BONUS_ATAQUE : 1;
+  return Math.round(forcaDeAtaque(state, faccaoId, alvoId).poder * INICIATIVA_ATAQUE * bonusIntel);
 }
 
 /** Defesa estimada de um bairro (soma do poder dos defensores + guarnição neutra). */

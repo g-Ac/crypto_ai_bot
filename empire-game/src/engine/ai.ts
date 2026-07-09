@@ -4,10 +4,17 @@
  * as mesmas regras.
  */
 
-import { CUSTO_RECRUTA } from '../data/seed';
+import {
+  CALOR_LIMIAR_BATIDA,
+  CUSTO_ADVOGADO,
+  CUSTO_ESPIONAGEM,
+  CUSTO_RECRUTA,
+} from '../data/seed';
 import {
   atacarBairro,
   comprarArma,
+  contratarAdvogado,
+  espionarBairro,
   moverSoldado,
   recrutarSoldado,
   type ResultadoAcao,
@@ -98,6 +105,17 @@ function recrutarSePossivel(
   return atual;
 }
 
+/** Contrata advogado quando o calor está no vermelho e sobra caixa acima da reserva. */
+function advogadoSePossivel(state: GameState, faccaoId: string, cfg: ConfigArquetipo): GameState {
+  const fac = faccaoDe(state, faccaoId);
+  if (!fac) return state;
+  if (fac.calor >= CALOR_LIMIAR_BATIDA && fac.caixa - cfg.reservaCaixa >= CUSTO_ADVOGADO) {
+    const r = contratarAdvogado(state, faccaoId);
+    if (r.ok) return r.state;
+  }
+  return state;
+}
+
 /** Reforça a fronteira: junta soldados ociosos no bairro que faz frente ao melhor alvo. */
 function reforcar(state: GameState, faccaoId: string): GameState {
   const alvos = alvosPossiveis(state, faccaoId);
@@ -133,9 +151,10 @@ export function executarTurnoIA(state: GameState, faccaoId: string, rng: Rng = M
   if (!fac || fac.tipo !== 'ia') return state;
   const cfg = CONFIG[fac.arquetipo ?? 'agressivo'];
 
-  // 1. Economia: arma o esquadrão e recruta reforços.
+  // 1. Economia: arma o esquadrão, recruta reforços e esfria o calor se preciso.
   let atual = comprarSePossivel(state, faccaoId, cfg);
   atual = recrutarSePossivel(atual, faccaoId, cfg, rng);
+  atual = advogadoSePossivel(atual, faccaoId, cfg);
 
   // 2. Escolhe o melhor alvo (maior razão ponderada de vitória).
   const alvos = alvosPossiveis(atual, faccaoId);
@@ -151,6 +170,16 @@ export function executarTurnoIA(state: GameState, faccaoId: string, rng: Rng = M
 
   // 3. Ataca se a razão bate o limiar; senão reforça a fronteira.
   if (melhorAlvo && melhorAlvo.razao >= cfg.razaoAtaque) {
+    // Briga apertada + caixa sobrando: espiona antes pra ganhar bônus.
+    const facAtual = faccaoDe(atual, faccaoId);
+    if (
+      facAtual &&
+      melhorAlvo.razao < 1.15 &&
+      facAtual.caixa - cfg.reservaCaixa >= CUSTO_ESPIONAGEM
+    ) {
+      const rEsp = espionarBairro(atual, faccaoId, melhorAlvo.id);
+      if (rEsp.ok) atual = rEsp.state;
+    }
     const r = atacarBairro(atual, faccaoId, melhorAlvo.id, rng);
     if (r.ok) atual = r.state;
   } else {
