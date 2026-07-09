@@ -27,12 +27,15 @@ proposta (aqui)  ──►  Etapa 0: validação de dados  ──►  revisão h
 | `journal_eligible: false` | proibido ir pro `journal.jsonl` neste estado |
 | `blocked_by: <gate>` | o que precisa ser resolvido antes de avançar (ex.: `side_semantics_validation`) |
 
-## Gate ativo
+## Gates
 
-**`side_semantics_validation`** — o coletor grava o campo `side` de `k_liquidations` **cru**, sem
-normalizar. A convenção (lado da ordem vs lado da posição) muda o sinal de toda tese de liquidação.
-Precisa ser validado empiricamente antes de qualquer desenho definitivo. Ver
-[`ETAPA_0_side_semantics.md`](ETAPA_0_side_semantics.md).
+**`side_semantics_validation`** — ✅ **RESOLVIDO 2026-07-01** ([`ETAPA_0_side_semantics.md`](ETAPA_0_side_semantics.md)):
+o `side` da Bybit (`allLiquidation`) é o lado da **POSIÇÃO** — `BUY`=long liquidado (venda forçada),
+`SELL`=short liquidado. INVERSO da convenção Binance. Comentários do feed e do store corrigidos.
+
+**Nota de interpretação pré-veredito:** [`NOTA_INTERPRETACAO_B-20260701.md`](NOTA_INTERPRETACAO_B-20260701.md)
+— compromisso de leitura do veredito de 01/08 (n do sweep colado no n_min; caveat de outage), registrado
+ANTES de qualquer dado forward ser olhado.
 
 ## Propostas atuais — batch `B-liquidacao-01` (2026-07-01)
 

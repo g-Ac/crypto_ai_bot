@@ -11,7 +11,7 @@ batch: B-liquidacao-01
 primitiva: sig_liquidacao_discriminante
 mecanismo_familia: discriminante_fluxo_forcado_vs_repricing
 fronteira: liquidacao_tick_level
-marco_alvo: 2026-07-13
+marco_alvo: 2026-08-01  # corrigido 02/07 (era 13/07 no rascunho; o congelado no journal é 01/08)
 scores: {mecanismo: 3, anti_beta: 2, novidade: 3, causalidade: 3, fee_r: 2, diversidade: 3, total: 16}
 ---
 

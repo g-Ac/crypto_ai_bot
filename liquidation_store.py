@@ -4,9 +4,13 @@ Persistencia de liquidacoes reais (evento-cru) na tabela k_liquidations.
 Isolado de proposito: recebe a conexao SQLite de fora, nao acopla a v1.1,
 ao executor nem ao k_collector. Usado por scripts/liquidation_collector.py.
 
-side: gravado como o lado da ORDEM de liquidacao reportado pela venue
-      (BUY/SELL maiusculo). A interpretacao long/short fica na analise,
-      pois a convencao varia entre exchanges. source identifica a venue.
+side: gravado CRU como a venue reporta (BUY/SELL maiusculo). Para source='bybit'
+      (topico allLiquidation), o campo e o lado da POSICAO liquidada — validado
+      empiricamente na Etapa 0 (2026-07-01, n=87k):
+        BUY  = LONG liquidado  (venda forcada; ocorre em quedas)
+        SELL = SHORT liquidado (compra forcada; ocorre em altas)
+      ATENCAO: e o INVERSO da convencao Binance/fstream (lado da ordem). A convencao
+      varia entre exchanges — conferir por source antes de interpretar.
 """
 from __future__ import annotations
 
@@ -18,7 +22,7 @@ CREATE TABLE IF NOT EXISTS k_liquidations (
     source       TEXT    NOT NULL,   -- venue: 'bybit', 'binance', ...
     symbol       TEXT    NOT NULL,
     event_ts     INTEGER NOT NULL,   -- epoch ms do evento
-    side         TEXT    NOT NULL,   -- lado da ordem de liquidacao (BUY/SELL)
+    side         TEXT    NOT NULL,   -- bybit: lado da POSICAO (BUY=long liq, SELL=short liq); ver docstring
     qty          REAL    NOT NULL,
     price        REAL    NOT NULL,
     notional     REAL    NOT NULL,   -- qty * price (USDT)

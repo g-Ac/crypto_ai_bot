@@ -107,6 +107,8 @@ Todas são causais e carregam um mecanismo.
 | `reacao_nivel` | win∈{12,24,48} | testa e rejeita máx/mín da janela → reversão local (≠ breakout) |
 | `funding_flip` | — | funding cruza zero → virada de crowding prossegue |
 | `oi_preco_div` | win∈{4,8}, z∈{1.0,1.5} | divergência OI×preço → acúmulo de shorts (→short) ou cobertura (→long) |
+| `liquidacao_sweep_estrutural` | pivot_side∈{3}, lookback∈{12,18,24}, p_pct∈{90,95}, p_window∈{30}, reject_within∈{2} | pico de venda forçada (long liq=`side=BUY`) varre fundo 4h válido + rejeição → reversão (long). **JÁ CONGELADA no caso-base (PR-20260701-001)** — variações contam multiplicidade |
+| `liquidacao_discriminante` | ret_pct∈{10,20}, liq_pct∈{75,90}, p_window∈{30} | queda 4h COM venda forçada alta = overshoot inelástico → reverte (long); sem liquidação = repricing (continua). **JÁ CONGELADA no caso-base (PR-20260701-002)** |
 
 **Filtros:** `nenhum` · `hora_sessao`(sessao∈{asia,europa,us}) · `vol_regime`(regime∈{alta,baixa})
 **Saída:** `horizonte`(bars∈{4,8,24}) · **Universos:** `todos` · `memes` · `large_cap`
@@ -231,7 +233,9 @@ outras · e pode ser refutada de forma limpa no forward.**
 ## 9. Marcos ativos (o calendário forward)
 
 - **13/07/2026** — liquidação tick-level ("liquidando a galera")
-- **01/08/2026** — Juiz Forward (146 células EXP-100/101/102) + Gerador batch B-20260618
+- **01/08/2026** — Juiz Forward (146 células EXP-100/101/102) + Gerador batches **B-20260618** (5)
+  e **B-20260701** (2 primitivas de liquidação; ver nota de interpretação pré-registrada em
+  `propostas/NOTA_INTERPRETACAO_B-20260701.md`)
 - **≥01/09/2026** — opções/VRP (≥10 semanas de coleta)
 
 > Fecho: o lab não fracassou 12 vezes. Ele **riscou 12 regiões do mapa com rigor**. Sobraram

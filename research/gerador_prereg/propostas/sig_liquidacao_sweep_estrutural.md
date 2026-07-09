@@ -11,7 +11,7 @@ batch: B-liquidacao-01
 primitiva: sig_liquidacao_sweep_estrutural
 mecanismo_familia: exaustao_forcados + ancora_estrutural
 fronteira: liquidacao_tick_level
-marco_alvo: 2026-07-13
+marco_alvo: 2026-08-01  # corrigido 02/07 (era 13/07 no rascunho; o congelado no journal é 01/08)
 scores: {mecanismo: 3, anti_beta: 2, novidade: 3, causalidade: 3, fee_r: 3, diversidade: 3, total: 17}
 ---
 
@@ -27,14 +27,14 @@ scores: {mecanismo: 3, anti_beta: 2, novidade: 3, causalidade: 3, fee_r: 3, dive
 |---|---|
 | timeframe | **4h** (reamostrar panels horários → 4h; o exit conta barras de 4h) |
 | fundo válido | pivô **3 candles/lado** |
-| gatilho | notional de venda forçada (`side=BUY`) na perfuração ≥ **P90 causal** |
+| gatilho | notional de venda forçada (`side=BUY`) na perfuração ≥ **P90 rolling(30) causal** (shift 1) |
 | rejeição | close volta pra dentro em **≤ 2 candles** de 4h |
 | direção · entrada · stop | long · close da rejeição · abaixo da mínima da varredura |
-| **saída** | **por tempo, H = 8 barras de 4h (~32h)** — substitui o alvo estrutural no caso-base |
+| **saída** | **por tempo, `bars=24` = 24 HORAS (6 candles de 4h)** — o que está congelado no journal. *(O rascunho desta tabela dizia "8 barras de 4h ~32h"; o valor final aprovado na spec técnica foi 24h, dentro do param_space da engine. Corrigido 02/07 — o journal sempre foi 24h.)* |
 | escopo | **só o caso-base** (P95/TFs/alvo estrutural → 2º batch se sobreviver) |
 | custo · densidade | 12 bps · ≥ 30 eventos independentes |
 
-> Nota: com saída por tempo o perfil vira "retorno médio em ~32h" (não "erra muito/acerta grande");
+> Nota: com saída por tempo o perfil vira "retorno médio em 24h" (não "erra muito/acerta grande");
 > o perfil de alvo grande volta com o alvo estrutural no 2º batch.
 
 ## Mecanismo (por que deveria pagar)

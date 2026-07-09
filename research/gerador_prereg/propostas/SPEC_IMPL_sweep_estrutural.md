@@ -1,6 +1,12 @@
 # Spec técnica de implementação — `sig_liquidacao_sweep_estrutural`
 
 **Data:** 2026-07-01 · **Status:** rascunho para discussão (antes de codar)
+
+> **DECISÕES FINAIS (aprovadas 2026-07-01, o que foi de fato implementado/congelado):**
+> saída **24h** (`bars=24`, horas — não 32h) · gatilho **P90 rolling(30)** com `shift(1)`
+> (decisão D final: rolling, NÃO o expanding do rascunho abaixo) · pivô confirmado 3/lado ·
+> lookback 18 candles 4h. O texto abaixo é o rascunho histórico da discussão; onde divergir,
+> vale este bloco (e, acima de tudo, o `journal.jsonl`).
 **Regra de ouro:** a engine de medição (`exp100_screening/backtest.py`) fica **intocada**. Toda a
 lógica nova é causal e testada. Nada vai pro journal até os testes de causalidade passarem.
 
