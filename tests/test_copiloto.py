@@ -190,3 +190,44 @@ def test_cmd_vigiar_e_cancelar(tmp_path):
     assert "Já tô vigiando" in copiloto.cmd_vigiar("LINKUSDT", _db=db)   # default compra, dedup
     assert "compra" in copiloto.cmd_vigiando(_db=db).lower()             # aparece na lista
     assert "Parei de vigiar" in copiloto.cmd_cancelar("LINKUSDT", _db=db)
+
+
+# ═════════════════════ Módulo B — força-morrendo por RSI ═════════════════════
+def test_forca_compra_dispara_quando_rsi_estica_e_vira():
+    rsis = [50, 55, 62, 65, 63]     # esticou (65 >= 60) e agora cai (63 < 65)
+    f = copiloto.avalia_forca(rsis, pnl_pct=3.0, peak_pct=4.0, direction="compra")
+    assert f["forca"] and "morrendo" in f["motivo"]
+
+
+def test_forca_nao_dispara_fora_do_lucro():
+    f = copiloto.avalia_forca([50, 55, 62, 65, 63], pnl_pct=0.5, peak_pct=0.5, direction="compra")
+    assert not f["forca"]           # pico +0.5% < min_profit
+
+
+def test_forca_nao_dispara_sem_esticar_nem_sem_virar():
+    assert not copiloto.avalia_forca([45, 48, 50, 52, 51], 3, 4, "compra")["forca"]  # nao esticou
+    assert not copiloto.avalia_forca([50, 55, 62, 64, 66], 3, 4, "compra")["forca"]  # esticou mas sobe
+
+
+def test_forca_venda_espelho():
+    rsis = [50, 45, 38, 35, 37]     # esticou p/ baixo (35 <= 40) e agora sobe (37 > 35)
+    assert copiloto.avalia_forca(rsis, 3, 4, "venda")["forca"]
+
+
+def _df_forca_compra():
+    closes = list(np.linspace(90, 106, 29)) + [105.4]   # sobe forte, da uma virada no fim
+    c = np.array(closes, float)
+    return pd.DataFrame({"high": c * 1.001, "low": c * 0.999, "close": c})
+
+
+def test_checar_trades_forca_dispara_realiza_antes_do_trailing(tmp_path):
+    db = str(tmp_path / "fr.db")
+    copiloto.abrir_trade("BTCUSDT", 100, 97, db_path=db)   # compra, stop 97
+    fired = []
+    # preco 104 = +4% (peak 4; trailing NAO dispara: 4 > 2.8). Candles: RSI esticou+virou -> forca
+    d = copiloto.checar_trades(lambda s: 104.0, notifier=lambda t, m: fired.append(m),
+                               db_path=db, candles_fn=lambda s: _df_forca_compra())
+    assert len(d) == 1 and "força" in d[0]["msg"] and d[0]["alerta"] == "realiza"
+    # dedup no mesmo pico -> nao re-dispara
+    d2 = copiloto.checar_trades(lambda s: 104.0, db_path=db, candles_fn=lambda s: _df_forca_compra())
+    assert d2 == []

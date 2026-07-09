@@ -22,9 +22,14 @@ DB_DEFAULT = "/home/pi/crypto_ai_bot/runtime/baseline/bot.db"
 # defaults LOGICOS (o Gabriel calibra no olho — NAO otimizar por resultado)
 PARAMS = {
     "giveback": 0.30,        # recuo do pico que dispara o "realiza" (30%)
-    "min_profit_pct": 1.0,   # so incomoda com trailing se o pico passou de +1% (nao chora por ruido)
-    "rearm_pct": 0.5,        # re-arma o trailing se um novo pico superar o alertado por +0.5%
+    "min_profit_pct": 1.0,   # so incomoda se o pico passou de +1% (nao chora por ruido)
+    "rearm_pct": 0.5,        # re-arma o "realiza" se um novo pico superar o alertado por +0.5%
     "stop_near_pct": 0.3,    # avisa quando o preco chega a 0.3% do stop (ameaca), nao so no cruzamento
+    # forca-morrendo por RSI (aviso ANTECIPADO ao trailing)
+    "rsi_window": 14,
+    "rsi_alto": 60.0,        # RSI que conta como "esticado" p/ cima (compra sobrecomprada)
+    "rsi_baixo": 40.0,       # esticado p/ baixo (venda sobrevendida)
+    "forca_lookback": 6,     # janela p/ ver se o RSI esticou recentemente
 }
 
 
@@ -51,6 +56,27 @@ def avalia_saida(entry, stop, direction, price, peak_pct, params=PARAMS) -> dict
                   f"Ta virando imagem — realiza.")
     return {"pnl_pct": round(pnl, 3), "peak_pct": round(novo_peak, 3),
             "alerta": alerta, "motivo": motivo}
+
+
+def avalia_forca(rsis, pnl_pct, peak_pct, direction, params=PARAMS) -> dict:
+    """Forca morrendo (aviso ANTECIPADO ao trailing): estando em lucro, o RSI ESTICOU (chegou a
+    sobrecomprado/sobrevendido) e agora VIROU contra o trade — o momentum morreu antes do recuo de
+    30%. Puro. rsis: janela de RSI. Retorna {forca: bool, motivo}. So vale se em lucro decente."""
+    if peak_pct < params["min_profit_pct"] or pnl_pct <= 0 or len(rsis) < 3:
+        return {"forca": False, "motivo": None}
+    lb = params["forca_lookback"]
+    recent = rsis[-lb:] if len(rsis) >= lb else rsis
+    r_now, r_prev = rsis[-1], rsis[-2]
+    if direction == "compra":
+        esticou = max(recent) >= params["rsi_alto"]       # chegou a sobrecomprado
+        virou = r_now < r_prev                             # e o RSI agora cai
+    else:  # venda
+        esticou = min(recent) <= params["rsi_baixo"]       # chegou a sobrevendido
+        virou = r_now > r_prev                             # e o RSI agora sobe
+    forca = bool(esticou and virou)
+    motivo = (f"a força tá morrendo (RSI {r_now:.0f} virou após esticar), lucro em {pnl_pct:+.1f}%. "
+              f"Tá começando a virar imagem — realiza.") if forca else None
+    return {"forca": forca, "motivo": motivo}
 
 
 # ───────────────────────── estado (SQLite) ─────────────────────────
@@ -141,10 +167,11 @@ def _persist_check(conn, tid, peak_pct, alert_state, alert_peak):
 
 
 # ───────────────────────── vigia (loop de checagem, com dedup) ─────────────────────────
-def checar_trades(price_fn, notifier=None, db_path=DB_DEFAULT, params=PARAMS):
-    """Para cada trade aberto: busca preco (price_fn(symbol)->float|None), avalia, atualiza o
-    pico e dispara alerta com DEDUP. Retorna a lista de alertas disparados nesta passada.
-    price_fn injetavel (rede fora dos testes); notifier(titulo, msg) opcional."""
+def checar_trades(price_fn, notifier=None, db_path=DB_DEFAULT, params=PARAMS, candles_fn=None):
+    """Para cada trade aberto: busca preco (price_fn(symbol)->float|None), avalia trailing/stop e —
+    se candles_fn fornecido — tambem a FORCA (RSI morrendo, aviso antecipado). Atualiza o pico e
+    dispara com DEDUP: trailing e forca compartilham o slot 'realiza' (nao duplica); stop e separado.
+    Retorna a lista de alertas disparados. price_fn/candles_fn injetaveis (rede fora dos testes)."""
     conn = _conn(db_path)
     disparados = []
     try:
@@ -157,18 +184,26 @@ def checar_trades(price_fn, notifier=None, db_path=DB_DEFAULT, params=PARAMS):
                 continue                                   # falha de preco: pula, nao quebra
             r = avalia_saida(t["entry_price"], t["stop_price"], t["direction"],
                              float(price), t["peak_pct"], params)
+            forca = {"forca": False, "motivo": None}
+            if candles_fn is not None:
+                df = candles_fn(t["symbol"])
+                if df is not None and len(df) >= params["rsi_window"] + 3:
+                    rsis = _rsi([float(x) for x in df["close"]], params["rsi_window"])
+                    forca = avalia_forca(rsis, r["pnl_pct"], r["peak_pct"], t["direction"], params)
             alert_state, alert_peak = t["alert_state"], t["alert_peak"]
-            fire = False
+            fire, motivo = False, None
             if r["alerta"] == "stop" and alert_state != "stop":
-                fire, alert_state = True, "stop"
-            elif r["alerta"] == "trailing" and (
-                    alert_state != "trailing"
-                    or r["peak_pct"] > alert_peak + params["rearm_pct"]):
-                fire, alert_state, alert_peak = True, "trailing", r["peak_pct"]
+                fire, alert_state, motivo = True, "stop", r["motivo"]
+            else:
+                realiza = (r["alerta"] == "trailing") or forca["forca"]
+                if realiza and (alert_state != "realiza"
+                                or r["peak_pct"] > alert_peak + params["rearm_pct"]):
+                    fire, alert_state, alert_peak = True, "realiza", r["peak_pct"]
+                    motivo = forca["motivo"] if forca["forca"] else r["motivo"]
             _persist_check(conn, t["id"], r["peak_pct"], alert_state, alert_peak)
             if fire:
-                msg = f"{t['symbol']} ({t['direction']}) @ {price:g} — {r['motivo']}"
-                disparados.append({"symbol": t["symbol"], "alerta": r["alerta"], "msg": msg})
+                msg = f"{t['symbol']} ({t['direction']}) @ {price:g} — {motivo}"
+                disparados.append({"symbol": t["symbol"], "alerta": alert_state, "msg": msg})
                 if notifier:
                     try:
                         notifier("Copiloto — Vigia de Saida", msg)
@@ -271,7 +306,7 @@ def run_vigia_cycle():
     dado real + Telegram. Chamada pelo loop do bot. Retorna a lista de alertas disparados."""
     from telegram_notifier import send_system_alert
     notif = lambda titulo, msg: send_system_alert(titulo, msg, critical=False)  # noqa: E731
-    saidas = checar_trades(preco_atual, notifier=notif)
+    saidas = checar_trades(preco_atual, notifier=notif, candles_fn=_candles_para)
     entradas = checar_entradas(_candles_para, notifier=notif)
     return saidas + entradas
 
