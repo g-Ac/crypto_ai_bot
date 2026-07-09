@@ -4,8 +4,15 @@
  * as mesmas regras.
  */
 
-import { atacarBairro, comprarArma, moverSoldado, type ResultadoAcao } from './actions';
-import type { Rng } from './combat';
+import { CUSTO_RECRUTA } from '../data/seed';
+import {
+  atacarBairro,
+  comprarArma,
+  moverSoldado,
+  recrutarSoldado,
+  type ResultadoAcao,
+} from './actions';
+import { participaDeCombate, type Rng } from './combat';
 import {
   alvosPossiveis,
   armaDe,
@@ -25,12 +32,14 @@ interface ConfigArquetipo {
   pesoJogador: number;
   /** Peso extra ao mirar bairros neutros. */
   pesoNeutro: number;
+  /** Tamanho de exército (soldados de pé) a partir do qual a IA para de recrutar. */
+  tetoExercito: number;
 }
 
 const CONFIG: Record<Arquetipo, ConfigArquetipo> = {
-  agressivo: { razaoAtaque: 0.9, reservaCaixa: 0, pesoJogador: 1.4, pesoNeutro: 1.0 },
-  paciente: { razaoAtaque: 1.4, reservaCaixa: 400, pesoJogador: 0.8, pesoNeutro: 1.3 },
-  oportunista: { razaoAtaque: 1.15, reservaCaixa: 150, pesoJogador: 0.7, pesoNeutro: 1.5 },
+  agressivo: { razaoAtaque: 0.9, reservaCaixa: 0, pesoJogador: 1.4, pesoNeutro: 1.0, tetoExercito: 7 },
+  paciente: { razaoAtaque: 1.4, reservaCaixa: 400, pesoJogador: 0.8, pesoNeutro: 1.3, tetoExercito: 6 },
+  oportunista: { razaoAtaque: 1.15, reservaCaixa: 150, pesoJogador: 0.7, pesoNeutro: 1.5, tetoExercito: 6 },
 };
 
 /** Tenta uma compra de arma pro soldado mais fraco. Devolve estado (mutado ou não). */
@@ -58,6 +67,35 @@ function comprarSePossivel(state: GameState, faccaoId: string, cfg: ConfigArquet
 
   const r: ResultadoAcao = comprarArma(state, faccaoId, melhor.id, alvo.s.id);
   return r.ok ? r.state : state;
+}
+
+/**
+ * Recruta reforços enquanto o exército está abaixo do teto e sobra caixa acima
+ * da reserva. Recruta no bairro próprio de maior valor (retaguarda produtiva).
+ */
+function recrutarSePossivel(
+  state: GameState,
+  faccaoId: string,
+  cfg: ConfigArquetipo,
+  rng: Rng,
+): GameState {
+  let atual = state;
+  let guard = 0;
+  while (guard++ < 3) {
+    const fac = faccaoDe(atual, faccaoId);
+    if (!fac) break;
+    const vivos = fac.soldados.filter(participaDeCombate).length;
+    if (vivos >= cfg.tetoExercito) break;
+    if (fac.caixa - cfg.reservaCaixa < CUSTO_RECRUTA) break;
+
+    const base = bairrosDaFaccao(atual, faccaoId).sort((a, b) => b.valorBase - a.valorBase)[0];
+    if (!base) break;
+
+    const r = recrutarSoldado(atual, faccaoId, base.id, rng);
+    if (!r.ok) break;
+    atual = r.state;
+  }
+  return atual;
 }
 
 /** Reforça a fronteira: junta soldados ociosos no bairro que faz frente ao melhor alvo. */
@@ -95,8 +133,9 @@ export function executarTurnoIA(state: GameState, faccaoId: string, rng: Rng = M
   if (!fac || fac.tipo !== 'ia') return state;
   const cfg = CONFIG[fac.arquetipo ?? 'agressivo'];
 
-  // 1. Economia: arma o esquadrão.
+  // 1. Economia: arma o esquadrão e recruta reforços.
   let atual = comprarSePossivel(state, faccaoId, cfg);
+  atual = recrutarSePossivel(atual, faccaoId, cfg, rng);
 
   // 2. Escolhe o melhor alvo (maior razão ponderada de vitória).
   const alvos = alvosPossiveis(atual, faccaoId);

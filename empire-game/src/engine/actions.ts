@@ -4,7 +4,7 @@
  * (via store) e pela IA.
  */
 
-import { FATOR_RENDA } from '../data/seed';
+import { CUSTO_RECRUTA, FATOR_RENDA, NOMES_RECRUTA, TRACOS } from '../data/seed';
 import { resolverCombate, type Baixa, type Rng } from './combat';
 import {
   armaDe,
@@ -106,6 +106,50 @@ export function comprarArma(
   s.armaId = armaId;
   addLog(novo, 'info', `${fac.nome} armou ${s.nome} com ${arma.nome} (-$${arma.custo}).`);
   return { state: novo, ok: true, mensagem: `${s.nome} equipou ${arma.nome}.` };
+}
+
+/**
+ * Recruta um soldado novo num bairro próprio (economia in-match). Não gasta ação,
+ * só caixa — é o motor de snowball que resolve o empate estrutural: quem controla
+ * mais território arrecada mais e forma exército maior.
+ */
+export function recrutarSoldado(
+  state: GameState,
+  faccaoId: string,
+  bairroId: string,
+  rng: Rng = Math.random,
+): ResultadoAcao {
+  const novo = clonar(state);
+  const fac = faccaoDe(novo, faccaoId);
+  const bairro = bairroDe(novo, bairroId);
+  if (!fac) return { state, ok: false, mensagem: 'Facção inválida.' };
+  if (!bairro || bairro.dono !== faccaoId) {
+    return { state, ok: false, mensagem: 'Só dá pra recrutar em bairro seu.' };
+  }
+  if (fac.caixa < CUSTO_RECRUTA) {
+    return { state, ok: false, mensagem: `Caixa insuficiente pra recrutar ($${CUSTO_RECRUTA}).` };
+  }
+
+  const seq = novo.recrutaSeq;
+  novo.recrutaSeq += 1;
+  const nome = NOMES_RECRUTA[Math.floor(rng() * NOMES_RECRUTA.length)] ?? `Recruta ${seq}`;
+  const traco = TRACOS[Math.floor(rng() * TRACOS.length)] ?? 'ganancioso';
+  const forca = 7 + Math.floor(rng() * 5); // 7-11
+
+  fac.caixa -= CUSTO_RECRUTA;
+  fac.soldados.push({
+    id: `${faccaoId}-r${seq}`,
+    nome,
+    lealdade: 60,
+    traco,
+    forca,
+    armaId: 'faca',
+    status: 'ativo',
+    faccaoId,
+    bairroId,
+  });
+  addLog(novo, 'info', `${fac.nome} recrutou ${nome} (fç ${forca}, ${traco}) em ${bairro.nome} (-$${CUSTO_RECRUTA}).`);
+  return { state: novo, ok: true, mensagem: `Recrutou ${nome} em ${bairro.nome}.` };
 }
 
 /** Ataca um bairro adjacente ao território da facção. */

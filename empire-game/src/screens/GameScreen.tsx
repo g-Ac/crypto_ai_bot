@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cores, espaco, fontes } from '../theme/tokens';
+import { CUSTO_RECRUTA } from '../data/seed';
 import { useGameStore } from '../store/gameStore';
 import {
   alvosPossiveis,
@@ -35,6 +36,7 @@ export function GameScreen({ navigation }: GameProps) {
   const limparFeedback = useGameStore((s) => s.limparFeedback);
   const moverSoldado = useGameStore((s) => s.moverSoldado);
   const comprarArma = useGameStore((s) => s.comprarArma);
+  const recrutarSoldado = useGameStore((s) => s.recrutarSoldado);
   const atacarBairro = useGameStore((s) => s.atacarBairro);
   const passarTurno = useGameStore((s) => s.passarTurno);
   const novoJogo = useGameStore((s) => s.novoJogo);
@@ -151,6 +153,16 @@ export function GameScreen({ navigation }: GameProps) {
                 {selBairro.dono ? faccaoDe(game, selBairro.dono)?.nome : 'Neutro'}
               </Text>
             </View>
+
+            {/* Recrutamento (só em bairro seu) */}
+            {bairroEhDoJogador ? (
+              <Botao
+                titulo={`+ Recrutar soldado ($${CUSTO_RECRUTA})`}
+                variante="primario"
+                disabled={jog.caixa < CUSTO_RECRUTA}
+                onPress={() => recrutarSoldado(selBairro.id)}
+              />
+            ) : null}
 
             {/* Ataque */}
             {bairroAtacavel && preview ? (

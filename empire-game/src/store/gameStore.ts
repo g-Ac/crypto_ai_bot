@@ -13,6 +13,7 @@ import {
   clonar,
   comprarArma as comprarArmaEngine,
   moverSoldado as moverSoldadoEngine,
+  recrutarSoldado as recrutarSoldadoEngine,
   type ResultadoAcao,
 } from '../engine/actions';
 import { executarTurnoIA } from '../engine/ai';
@@ -35,6 +36,7 @@ interface GameStore {
 
   moverSoldado: (soldadoId: string, destinoId: string) => void;
   comprarArma: (armaId: string, soldadoId: string) => void;
+  recrutarSoldado: (bairroId: string) => void;
   atacarBairro: (alvoId: string) => void;
   passarTurno: () => void;
 }
@@ -104,6 +106,13 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (!game || game.status !== 'em_andamento') return;
       // Compra é econômica (não gasta ação), só depende de caixa.
       aplicar(comprarArmaEngine(game, game.jogadorId, armaId, soldadoId), false);
+    },
+
+    recrutarSoldado(bairroId) {
+      const game = get().game;
+      if (!game || game.status !== 'em_andamento') return;
+      // Recrutar é econômico (não gasta ação), só depende de caixa.
+      aplicar(recrutarSoldadoEngine(game, game.jogadorId, bairroId), false);
     },
 
     atacarBairro(alvoId) {

@@ -113,4 +113,6 @@ export interface GameState {
   log: LogEntry[];
   /** Contador monotônico pra gerar ids de log estáveis. */
   logSeq: number;
+  /** Contador monotônico pra gerar ids de soldados recrutados. */
+  recrutaSeq: number;
 }
