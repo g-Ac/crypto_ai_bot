@@ -316,6 +316,8 @@ def _cmd_mercado(arg: str = ""):
         conn.close()
 
 
+import copiloto  # noqa: E402  (Copiloto de Disciplina — Modulo B, Vigia de Saida)
+
 _HANDLERS = {
     "/status": _cmd_status,
     "/posicoes": _cmd_posicoes,
@@ -328,6 +330,10 @@ _HANDLERS = {
     "/ajuda": _cmd_ajuda,
     "/help": _cmd_ajuda,
     "/mercado": _cmd_mercado,
+    # Copiloto de Disciplina — Vigia de Saida (nao preve, so vigia; a decisao e sua)
+    "/entrei": copiloto.cmd_entrei,
+    "/vigiando": copiloto.cmd_vigiando,
+    "/fechei": copiloto.cmd_fechei,
 }
 
 

@@ -289,6 +289,16 @@ if __name__ == "__main__":
                     _cycle_lock.release()
             else:
                 print("\n[AVISO] Ciclo anterior ainda em execucao, pulando...\n")
+            # Copiloto — Vigia de Saida (nao preve, so alerta na hora de realizar; try/except
+            # proprio p/ nunca derrubar o loop principal). Roda no mesmo ciclo de 5 min.
+            if ENABLE_TELEGRAM_COMMANDS:
+                try:
+                    import copiloto
+                    alertas = copiloto.run_vigia_cycle()
+                    if alertas:
+                        print(f"[copiloto] {len(alertas)} alerta(s) de saida disparado(s)")
+                except Exception as e:
+                    print(f"[copiloto] erro na vigia (ignorado): {e}")
             print("\nAguardando 300 segundos para a próxima análise...\n")
             time.sleep(300)
         except Exception as e:
