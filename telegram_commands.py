@@ -293,6 +293,8 @@ def _cmd_ajuda():
         "/ajuda - esta mensagem\n\n"
         "\U0001f9ed <b>Copiloto de Disciplina</b> <i>(nao preve, so vigia)</i>\n"
         "/clima - termometro do mercado (BTC, funding, liquidacao, medo/ganancia)\n"
+        "/risco SIMBOLO ENTRADA STOP [ALVO] - quanto arriscar e se paga o pedagio do fee\n"
+        "/banca VALOR - teu capital real pro sizing (ex: /banca 2000)\n"
         "/vigiar SIMBOLO [compra|venda] - guarda de entrada (avisa quando a faca parar)\n"
         "/entrei SIMBOLO ENTRADA stop STOP - vigia de saida (avisa pra realizar)\n"
         "/vigiando - o que estou vigiando (entrada + saida)\n"
@@ -345,6 +347,8 @@ _HANDLERS = {
     "/vigiar": copiloto.cmd_vigiar,       # Modulo A: guarda de entrada (anti-entrar-cedo)
     "/cancelar": copiloto.cmd_cancelar,
     "/clima": contexto.cmd_clima,         # Contexto: termometro do mercado (leitura, nao previsao)
+    "/risco": copiloto.cmd_risco,         # Fatia Risco: quanto arriscar + R:R liquido de fee
+    "/banca": copiloto.cmd_banca,         # capital REAL pro sizing (persistido)
 }
 
 
