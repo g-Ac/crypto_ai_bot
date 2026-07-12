@@ -198,4 +198,4 @@ export const MAX_BOCA_NIVEL = 3;
 /** Renda por turno gerada por nível de boca. */
 export const RENDA_POR_BOCA = 160;
 /** Calor por turno gerado por nível de boca (tráfico atrai a polícia). */
-export const CALOR_POR_BOCA = 2;
+export const CALOR_POR_BOCA = 3;

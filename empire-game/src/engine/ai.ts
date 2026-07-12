@@ -115,6 +115,8 @@ function recrutarSePossivel(
 function construirBocaSePossivel(state: GameState, faccaoId: string, cfg: ConfigArquetipo): GameState {
   const fac = faccaoDe(state, faccaoId);
   if (!fac) return state;
+  // Não sobe o calor montando boca quando já está no vermelho.
+  if (fac.calor >= CALOR_LIMIAR_BATIDA) return state;
   // Colchão de segurança: só investe em boca se sobra bem acima da reserva.
   if (fac.caixa - cfg.reservaCaixa < CUSTO_BOCA + 200) return state;
 
@@ -173,11 +175,11 @@ export function executarTurnoIA(state: GameState, faccaoId: string, rng: Rng = M
   if (!fac || fac.tipo !== 'ia') return state;
   const cfg = CONFIG[fac.arquetipo ?? 'agressivo'];
 
-  // 1. Economia: arma o esquadrão, recruta reforços, investe em bocas e esfria o calor.
-  let atual = comprarSePossivel(state, faccaoId, cfg);
+  // 1. Economia: esfria o calor primeiro (sobrevivência), depois arma, recruta e expande produção.
+  let atual = advogadoSePossivel(state, faccaoId, cfg);
+  atual = comprarSePossivel(atual, faccaoId, cfg);
   atual = recrutarSePossivel(atual, faccaoId, cfg, rng);
   atual = construirBocaSePossivel(atual, faccaoId, cfg);
-  atual = advogadoSePossivel(atual, faccaoId, cfg);
 
   // 2. Escolhe o melhor alvo (maior razão ponderada de vitória).
   const alvos = alvosPossiveis(atual, faccaoId);

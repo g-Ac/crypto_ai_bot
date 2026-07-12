@@ -148,9 +148,9 @@ export function GameScreen({ navigation }: GameProps) {
               <Text style={styles.advogadoDica}>Calor atrai a polícia.</Text>
             )}
             <Botao
-              titulo={`Advogado ($${CUSTO_ADVOGADO})`}
+              titulo={`Advogado ($${CUSTO_ADVOGADO} · 1 ação)`}
               variante="neutro"
-              disabled={jog.caixa < CUSTO_ADVOGADO}
+              disabled={jog.caixa < CUSTO_ADVOGADO || game.turno.acoesRestantes <= 0}
               onPress={contratarAdvogado}
               style={styles.advogadoBtn}
             />

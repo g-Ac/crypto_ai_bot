@@ -143,8 +143,12 @@ export const useGameStore = create<GameStore>((set, get) => {
     contratarAdvogado() {
       const game = get().game;
       if (!game || game.status !== 'em_andamento') return;
-      // Advogado é econômico (não gasta ação).
-      aplicar(contratarAdvogadoEngine(game, game.jogadorId), false);
+      // Advogado custa uma ação — gerir o calor compete com mover/atacar (sem spam grátis).
+      if (game.turno.acoesRestantes <= 0) {
+        set({ feedback: 'Sem ações neste turno. Passe o turno.' });
+        return;
+      }
+      aplicar(contratarAdvogadoEngine(game, game.jogadorId), true);
     },
 
     atacarBairro(alvoId) {

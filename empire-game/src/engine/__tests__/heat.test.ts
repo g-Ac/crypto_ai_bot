@@ -4,7 +4,7 @@ import {
   espionarBairro,
   limparIntelExpirado,
 } from '../actions';
-import { ataqueEstimado, faccaoDe, temIntel } from '../selectors';
+import { ataqueEstimado, bairrosDaFaccao, faccaoDe, temIntel } from '../selectors';
 import { participaDeCombate } from '../combat';
 import {
   B_BECO,
@@ -69,13 +69,24 @@ describe('aplicarBatidaPolicial', () => {
     expect(JSON.stringify(g)).toBe(antes);
   });
 
-  it('prende um soldado e esfria o calor quando o calor é alto', () => {
+  it('prende um soldado e esfria o calor quando não há boca pra estourar', () => {
     const g = criarPartida();
+    for (const b of bairrosDaFaccao(g, JOGADOR_ID)) b.producao = 0;
     faccaoDe(g, JOGADOR_ID)!.calor = 100;
     aplicarBatidaPolicial(g, rngFixo(0)); // roll 0 < chance => acontece
     const fac = faccaoDe(g, JOGADOR_ID)!;
     expect(fac.soldados.some((s) => s.status === 'preso')).toBe(true);
     expect(fac.calor).toBeLessThan(100);
+  });
+
+  it('estoura uma boca quando a facção tem produção', () => {
+    const g = criarPartida();
+    const beco = bairrosDaFaccao(g, JOGADOR_ID)[0];
+    beco.producao = 2;
+    faccaoDe(g, JOGADOR_ID)!.calor = 100;
+    aplicarBatidaPolicial(g, rngFixo(0)); // roll 0 => batida + <0.6 => estoura boca
+    expect(beco.producao).toBe(1);
+    expect(faccaoDe(g, JOGADOR_ID)!.soldados.every((s) => s.status !== 'preso')).toBe(true);
   });
 
   it('não prende ninguém quando o roll passa da chance', () => {

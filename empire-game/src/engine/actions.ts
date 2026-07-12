@@ -281,8 +281,10 @@ export function contratarAdvogado(state: GameState, faccaoId: string): Resultado
 }
 
 /**
- * Batida policial: facções com calor alto arriscam ter um soldado preso. Muta o
- * estado (usar em clone, na resolução do turno). Quanto maior o calor, maior a chance.
+ * Batida policial: facções com calor alto sofrem consequências. A batida ataca a
+ * fonte do problema — costuma estourar uma boca (produção), senão prende um soldado
+ * ou apreende caixa. É isso que dá dente ao trade-off risco × renda da produção.
+ * Muta o estado (usar em clone, na resolução do turno). Quanto maior o calor, maior a chance.
  */
 export function aplicarBatidaPolicial(state: GameState, rng: Rng = Math.random): void {
   for (const fac of state.faccoes) {
@@ -290,8 +292,15 @@ export function aplicarBatidaPolicial(state: GameState, rng: Rng = Math.random):
     const chance = (fac.calor - CALOR_LIMIAR_BATIDA) / 100 + 0.1; // 0.1..0.6
     if (rng() >= chance) continue;
 
+    const bocas = bairrosDaFaccao(state, fac.id).filter((b) => b.producao > 0);
     const dePe = fac.soldados.filter(participaDeCombate);
-    if (dePe.length > 0) {
+
+    // Prioriza estourar uma boca (60%) quando há; senão prende soldado; senão multa.
+    if (bocas.length > 0 && (dePe.length === 0 || rng() < 0.6)) {
+      const b = bocas[Math.floor(rng() * bocas.length)];
+      b.producao -= 1;
+      addLog(state, 'combate', `BATIDA POLICIAL: estouraram a boca em ${b.nome} (${fac.nome}) — nível ${b.producao}.`);
+    } else if (dePe.length > 0) {
       const alvo = dePe[Math.floor(rng() * dePe.length)];
       alvo.status = 'preso';
       addLog(state, 'combate', `BATIDA POLICIAL: ${alvo.nome} (${fac.nome}) foi preso.`);
