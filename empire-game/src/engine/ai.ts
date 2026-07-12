@@ -7,12 +7,15 @@
 import {
   CALOR_LIMIAR_BATIDA,
   CUSTO_ADVOGADO,
+  CUSTO_BOCA,
   CUSTO_ESPIONAGEM,
   CUSTO_RECRUTA,
+  MAX_BOCA_NIVEL,
 } from '../data/seed';
 import {
   atacarBairro,
   comprarArma,
+  construirBoca,
   contratarAdvogado,
   espionarBairro,
   moverSoldado,
@@ -105,6 +108,25 @@ function recrutarSePossivel(
   return atual;
 }
 
+/**
+ * Investe em bocas quando há caixa folgada (acima da reserva + um colchão),
+ * priorizando o bairro de maior valor ainda abaixo do teto de produção.
+ */
+function construirBocaSePossivel(state: GameState, faccaoId: string, cfg: ConfigArquetipo): GameState {
+  const fac = faccaoDe(state, faccaoId);
+  if (!fac) return state;
+  // Colchão de segurança: só investe em boca se sobra bem acima da reserva.
+  if (fac.caixa - cfg.reservaCaixa < CUSTO_BOCA + 200) return state;
+
+  const alvo = bairrosDaFaccao(state, faccaoId)
+    .filter((b) => b.producao < MAX_BOCA_NIVEL)
+    .sort((a, b) => b.valorBase - a.valorBase)[0];
+  if (!alvo) return state;
+
+  const r = construirBoca(state, faccaoId, alvo.id);
+  return r.ok ? r.state : state;
+}
+
 /** Contrata advogado quando o calor está no vermelho e sobra caixa acima da reserva. */
 function advogadoSePossivel(state: GameState, faccaoId: string, cfg: ConfigArquetipo): GameState {
   const fac = faccaoDe(state, faccaoId);
@@ -151,9 +173,10 @@ export function executarTurnoIA(state: GameState, faccaoId: string, rng: Rng = M
   if (!fac || fac.tipo !== 'ia') return state;
   const cfg = CONFIG[fac.arquetipo ?? 'agressivo'];
 
-  // 1. Economia: arma o esquadrão, recruta reforços e esfria o calor se preciso.
+  // 1. Economia: arma o esquadrão, recruta reforços, investe em bocas e esfria o calor.
   let atual = comprarSePossivel(state, faccaoId, cfg);
   atual = recrutarSePossivel(atual, faccaoId, cfg, rng);
+  atual = construirBocaSePossivel(atual, faccaoId, cfg);
   atual = advogadoSePossivel(atual, faccaoId, cfg);
 
   // 2. Escolhe o melhor alvo (maior razão ponderada de vitória).

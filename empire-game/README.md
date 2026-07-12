@@ -20,6 +20,8 @@ Sim de império criminoso por turnos (paper/protótipo). Este repositório cont�
   traços de personalidade, e baixas (ferido / morto / preso por batida policial).
 - **Economia** por turno (renda dos territórios) pra financiar arsenal e recrutas.
 - **Recrutamento** de soldados (compra por caixa em bairro próprio) — snowball via território.
+- **Produção**: bocas/pontos de venda (níveis 1-3) rendem por turno, são tomadas junto
+  com o bairro e atraem polícia (sobem o calor). Trade-off risco × renda.
 - **Espionagem**: gasta caixa + sobe calor pra ganhar intel (bônus no próximo assalto).
 - **Heat / polícia**: calor alto arrisca batida (soldado preso). **Advogado** esfria o calor.
 - **Save/load** automático via AsyncStorage (a partida persiste ao fechar o app).
@@ -90,7 +92,6 @@ reprodutíveis.
 
 ## O que ficou pro próximo loop
 
-Ver `game-design-doc.md`. Destaques: produção própria (laboratórios/pontos de
-venda que rendem por turno), mais bairros e as 3 personalidades de IA de verdade
-(paciente/oportunista jogando distinto), lealdade com decisões automáticas dos
-soldados, meta-progressão entre partidas (cidades, contatos), e arte/áudio.
+Ver `game-design-doc.md`. Destaques: mais bairros e as 3 personalidades de IA de
+verdade (paciente/oportunista jogando distinto), lealdade com decisões automáticas
+dos soldados, meta-progressão entre partidas (cidades, contatos), e arte/áudio.

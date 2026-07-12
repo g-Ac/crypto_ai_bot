@@ -56,6 +56,8 @@ export interface Bairro {
   risco: number;
   /** ids dos bairros adjacentes. */
   conexoes: string[];
+  /** Nível da boca/ponto de venda instalado (0 = nenhum). Rende por turno e atrai polícia. */
+  producao: number;
 }
 
 export interface Faccao {

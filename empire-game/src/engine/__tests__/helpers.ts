@@ -42,6 +42,7 @@ export function bairro(over: Partial<Bairro> = {}): Bairro {
     valorBase: 1000,
     risco: 30,
     conexoes: [],
+    producao: 0,
     ...over,
   };
 }

@@ -34,6 +34,7 @@ function bairros(): Bairro[] {
       valorBase: 1200,
       risco: 20,
       conexoes: [B_VILA],
+      producao: 1,
     },
     {
       id: B_VILA,
@@ -42,6 +43,7 @@ function bairros(): Bairro[] {
       valorBase: 2000,
       risco: 45,
       conexoes: [B_BECO, B_MORRO],
+      producao: 0,
     },
     {
       id: B_MORRO,
@@ -50,6 +52,7 @@ function bairros(): Bairro[] {
       valorBase: 1500,
       risco: 30,
       conexoes: [B_VILA],
+      producao: 1,
     },
   ];
 }
@@ -185,3 +188,14 @@ export const ADVOGADO_REDUZ_CALOR = 25;
 export const CALOR_LIMIAR_BATIDA = 50;
 /** Calor removido quando uma batida acontece. */
 export const BATIDA_ESFRIA_CALOR = 20;
+
+// --- Produção (bocas / pontos de venda) ---
+
+/** Custo pra instalar/subir um nível de boca num bairro próprio. */
+export const CUSTO_BOCA = 600;
+/** Nível máximo de boca por bairro. */
+export const MAX_BOCA_NIVEL = 3;
+/** Renda por turno gerada por nível de boca. */
+export const RENDA_POR_BOCA = 160;
+/** Calor por turno gerado por nível de boca (tráfico atrai a polícia). */
+export const CALOR_POR_BOCA = 2;

@@ -43,6 +43,7 @@ export function BairroCard({
       </View>
       <View style={styles.rodape}>
         <Text style={styles.tropas}>♦ {numSoldados}</Text>
+        {bairro.producao > 0 ? <Text style={styles.boca}>▲ {bairro.producao}</Text> : null}
         {atacavel ? <Text style={styles.alvo}>⚔ ALVO</Text> : null}
       </View>
     </Pressable>
@@ -91,6 +92,11 @@ const styles = StyleSheet.create({
     fontFamily: fontes.corpo,
     fontSize: 16,
     color: cores.cream,
+  },
+  boca: {
+    fontFamily: fontes.corpo,
+    fontSize: 15,
+    color: cores.moneyLight,
   },
   alvo: {
     fontFamily: fontes.corpo,

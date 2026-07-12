@@ -119,8 +119,10 @@ describe('atacarBairro', () => {
 });
 
 describe('aplicarRenda', () => {
-  it('aumenta a caixa das facções e decai o calor', () => {
+  it('aumenta a caixa das facções e decai o calor (sem bocas)', () => {
     const g = clonar(criarPartida());
+    // Zera a produção pra isolar o decaimento base de calor.
+    for (const b of bairrosDaFaccao(g, JOGADOR_ID)) b.producao = 0;
     const fac = faccaoDe(g, JOGADOR_ID)!;
     fac.calor = 20;
     const caixaAntes = fac.caixa;

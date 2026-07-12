@@ -13,6 +13,7 @@ import {
   atacarBairro as atacarBairroEngine,
   clonar,
   comprarArma as comprarArmaEngine,
+  construirBoca as construirBocaEngine,
   contratarAdvogado as contratarAdvogadoEngine,
   espionarBairro as espionarBairroEngine,
   limparIntelExpirado,
@@ -41,6 +42,7 @@ interface GameStore {
   moverSoldado: (soldadoId: string, destinoId: string) => void;
   comprarArma: (armaId: string, soldadoId: string) => void;
   recrutarSoldado: (bairroId: string) => void;
+  construirBoca: (bairroId: string) => void;
   espionarBairro: (alvoId: string) => void;
   contratarAdvogado: () => void;
   atacarBairro: (alvoId: string) => void;
@@ -119,6 +121,13 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (!game || game.status !== 'em_andamento') return;
       // Recrutar é econômico (não gasta ação), só depende de caixa.
       aplicar(recrutarSoldadoEngine(game, game.jogadorId, bairroId), false);
+    },
+
+    construirBoca(bairroId) {
+      const game = get().game;
+      if (!game || game.status !== 'em_andamento') return;
+      // Montar boca é econômico (não gasta ação), só depende de caixa.
+      aplicar(construirBocaEngine(game, game.jogadorId, bairroId), false);
     },
 
     espionarBairro(alvoId) {

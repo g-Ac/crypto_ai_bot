@@ -26,6 +26,9 @@ export async function carregarJogo(): Promise<GameState | null> {
     // Backfill de campos adicionados em versões novas (saves antigos).
     if (!Array.isArray(parsed.intel)) parsed.intel = [];
     if (typeof parsed.recrutaSeq !== 'number') parsed.recrutaSeq = 0;
+    for (const b of parsed.cidade.bairros ?? []) {
+      if (typeof b.producao !== 'number') b.producao = 0;
+    }
     return parsed;
   } catch (e) {
     console.warn('Falha ao carregar partida:', e);

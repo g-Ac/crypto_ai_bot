@@ -8,14 +8,18 @@ import {
   ADVOGADO_REDUZ_CALOR,
   BATIDA_ESFRIA_CALOR,
   CALOR_LIMIAR_BATIDA,
+  CALOR_POR_BOCA,
   CUSTO_ADVOGADO,
+  CUSTO_BOCA,
   CUSTO_ESPIONAGEM,
   CUSTO_RECRUTA,
   ESPIONAGEM_CALOR,
   FATOR_RENDA,
   INTEL_BONUS_ATAQUE,
   INTEL_DURACAO,
+  MAX_BOCA_NIVEL,
   NOMES_RECRUTA,
+  RENDA_POR_BOCA,
   TRACOS,
 } from '../data/seed';
 import { participaDeCombate, resolverCombate, type Baixa, type Rng } from './combat';
@@ -305,17 +309,58 @@ export function limparIntelExpirado(state: GameState): void {
   state.intel = state.intel.filter((m) => m.expiraTurno >= state.turno.numero);
 }
 
-/** Renda por turno + leve decaimento de calor. Muta o estado passado (usar em clone). */
+/**
+ * Instala ou sobe de nível uma boca (ponto de venda) num bairro próprio.
+ * Rende por turno e atrai polícia. Não gasta ação — só caixa.
+ */
+export function construirBoca(
+  state: GameState,
+  faccaoId: string,
+  bairroId: string,
+): ResultadoAcao {
+  const novo = clonar(state);
+  const fac = faccaoDe(novo, faccaoId);
+  const bairro = bairroDe(novo, bairroId);
+  if (!fac) return { state, ok: false, mensagem: 'Facção inválida.' };
+  if (!bairro || bairro.dono !== faccaoId) {
+    return { state, ok: false, mensagem: 'Só dá pra montar boca em bairro seu.' };
+  }
+  if (bairro.producao >= MAX_BOCA_NIVEL) {
+    return { state, ok: false, mensagem: `${bairro.nome} já está no nível máximo de boca.` };
+  }
+  if (fac.caixa < CUSTO_BOCA) {
+    return { state, ok: false, mensagem: `Caixa insuficiente pra boca ($${CUSTO_BOCA}).` };
+  }
+  fac.caixa -= CUSTO_BOCA;
+  bairro.producao += 1;
+  addLog(
+    novo,
+    'info',
+    `${fac.nome} montou boca em ${bairro.nome} (nível ${bairro.producao}, +$${RENDA_POR_BOCA}/turno).`,
+  );
+  return { state: novo, ok: true, mensagem: `Boca nível ${bairro.producao} em ${bairro.nome}.` };
+}
+
+/**
+ * Renda por turno (territórios + bocas) + calor das bocas + leve decaimento de calor.
+ * Muta o estado passado (usar em clone).
+ */
 export function aplicarRenda(state: GameState): void {
   for (const fac of state.faccoes) {
-    const total = bairrosDaFaccao(state, fac.id).reduce((acc, b) => acc + b.valorBase, 0);
-    const renda = Math.round(total * FATOR_RENDA);
+    const bairros = bairrosDaFaccao(state, fac.id);
+    const baseRenda = Math.round(bairros.reduce((acc, b) => acc + b.valorBase, 0) * FATOR_RENDA);
+    const bocas = bairros.reduce((acc, b) => acc + b.producao, 0);
+    const rendaBoca = bocas * RENDA_POR_BOCA;
+    const renda = baseRenda + rendaBoca;
     if (renda > 0) {
       fac.caixa += renda;
       if (fac.tipo === 'jogador') {
-        addLog(state, 'renda', `Renda dos territórios: +$${renda}.`);
+        const detalhe = rendaBoca > 0 ? ` (bocas +$${rendaBoca})` : '';
+        addLog(state, 'renda', `Renda dos territórios: +$${renda}${detalhe}.`);
       }
     }
+    // Bocas atraem polícia; depois o calor decai um pouco.
+    fac.calor = Math.min(100, fac.calor + bocas * CALOR_POR_BOCA);
     fac.calor = Math.max(0, fac.calor - 3);
   }
 }

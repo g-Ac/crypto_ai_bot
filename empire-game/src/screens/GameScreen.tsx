@@ -5,8 +5,11 @@ import { cores, espaco, fontes } from '../theme/tokens';
 import {
   CALOR_LIMIAR_BATIDA,
   CUSTO_ADVOGADO,
+  CUSTO_BOCA,
   CUSTO_ESPIONAGEM,
   CUSTO_RECRUTA,
+  MAX_BOCA_NIVEL,
+  RENDA_POR_BOCA,
 } from '../data/seed';
 import { useGameStore } from '../store/gameStore';
 import {
@@ -43,6 +46,7 @@ export function GameScreen({ navigation }: GameProps) {
   const moverSoldado = useGameStore((s) => s.moverSoldado);
   const comprarArma = useGameStore((s) => s.comprarArma);
   const recrutarSoldado = useGameStore((s) => s.recrutarSoldado);
+  const construirBoca = useGameStore((s) => s.construirBoca);
   const espionarBairro = useGameStore((s) => s.espionarBairro);
   const contratarAdvogado = useGameStore((s) => s.contratarAdvogado);
   const atacarBairro = useGameStore((s) => s.atacarBairro);
@@ -184,14 +188,26 @@ export function GameScreen({ navigation }: GameProps) {
               </Text>
             </View>
 
-            {/* Recrutamento (só em bairro seu) */}
+            {/* Recrutamento + boca (só em bairro seu) */}
             {bairroEhDoJogador ? (
-              <Botao
-                titulo={`+ Recrutar soldado ($${CUSTO_RECRUTA})`}
-                variante="primario"
-                disabled={jog.caixa < CUSTO_RECRUTA}
-                onPress={() => recrutarSoldado(selBairro.id)}
-              />
+              <>
+                <Botao
+                  titulo={`+ Recrutar soldado ($${CUSTO_RECRUTA})`}
+                  variante="primario"
+                  disabled={jog.caixa < CUSTO_RECRUTA}
+                  onPress={() => recrutarSoldado(selBairro.id)}
+                />
+                <Botao
+                  titulo={
+                    selBairro.producao >= MAX_BOCA_NIVEL
+                      ? `Boca no máximo (nível ${selBairro.producao})`
+                      : `▲ Montar boca ($${CUSTO_BOCA}, +$${RENDA_POR_BOCA}/turno)`
+                  }
+                  variante="primario"
+                  disabled={jog.caixa < CUSTO_BOCA || selBairro.producao >= MAX_BOCA_NIVEL}
+                  onPress={() => construirBoca(selBairro.id)}
+                />
+              </>
             ) : null}
 
             {/* Ataque + espionagem */}
