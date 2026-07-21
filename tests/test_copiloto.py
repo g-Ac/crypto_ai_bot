@@ -51,7 +51,7 @@ def test_abrir_infere_direction_e_lista(tmp_path):
     assert a["symbol"] == "LINKUSDT"
     abertos = copiloto.listar_abertos(db)
     assert len(abertos) == 2
-    assert copiloto.fechar_trade("LINKUSDT", db_path=db) == 1
+    assert len(copiloto.fechar_trade("LINKUSDT", db_path=db)) == 1   # retorna lista de fechados
     assert len(copiloto.listar_abertos(db)) == 1
 
 
@@ -108,8 +108,8 @@ def test_cmd_entrei_virgula_decimal_e_erro(tmp_path):
 def test_cmd_fechei_e_vigiando_vazio(tmp_path):
     db = str(tmp_path / "g.db")
     copiloto.cmd_entrei("SOLUSDT 150 stop 145", _db=db)
-    assert "Encerrei" in copiloto.cmd_fechei("solusdt", _db=db)
-    assert "Não achei" in copiloto.cmd_fechei("XRPUSDT", _db=db)
+    assert "Encerrei" in copiloto.cmd_fechei("solusdt 152", _db=db)   # preco explicito, sem rede
+    assert "Não achei" in copiloto.cmd_fechei("XRPUSDT 1", _db=db)
     assert "Nada sendo vigiado" in copiloto.cmd_vigiando(_db=db)
 
 

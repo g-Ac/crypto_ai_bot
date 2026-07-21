@@ -128,7 +128,28 @@ def ensure_schema(conn):
             value        TEXT NOT NULL,
             updated_at   TEXT NOT NULL
         )""")
+    # migracao idempotente (upgrade path do cooldown): resultado realizado do trade. ADD COLUMN e
+    # NAO-destrutivo (linhas antigas ficam NULL) e guardado por PRAGMA — seguro em DB ja existente.
+    _ensure_column(conn, "copiloto_trades", "exit_price", "REAL")
+    _ensure_column(conn, "copiloto_trades", "pnl_pct", "REAL")   # NET (fee round-trip descontado)
     conn.commit()
+
+
+def _ensure_column(conn, table, col, decl):
+    """Adiciona uma coluna so se ela ainda nao existe (migracao idempotente e nao-destrutiva).
+    table/col sao literais internos (sem input do usuario) — sem risco de injecao.
+
+    Idempotente INCLUSIVE sob concorrencia: duas threads tocam o mesmo bot.db (o ciclo de 5min via
+    run_vigia_cycle e o polling do Telegram). Na janela do upgrade as duas podem ler o PRAGMA antes
+    de qualquer ALTER, ambas verem a coluna ausente, e a segunda a executar levanta 'duplicate column
+    name'. Engolimos SO esse erro (a outra ja criou a coluna: no-op seguro); qualquer outro sobe."""
+    cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if col not in cols:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
 
 
 def _direction_from_stop(entry, stop) -> str:
@@ -163,17 +184,33 @@ def listar_abertos(db_path=DB_DEFAULT):
         conn.close()
 
 
-def fechar_trade(symbol, db_path=DB_DEFAULT, agora=None):
-    """Fecha o(s) trade(s) aberto(s) do simbolo. Retorna quantos fechou."""
+def fechar_trade(symbol, exit_price=None, db_path=DB_DEFAULT, agora=None, fee_rt_pct=None):
+    """Fecha o(s) trade(s) aberto(s) do simbolo. Com exit_price, grava o resultado NET (pnl_pct,
+    fee round-trip descontado — a licao do Momentum). Sem preco, fecha sem resultado (pnl NULL).
+    Retorna a lista de trades fechados [{symbol, direction, entry, exit, pnl_pct}]."""
     agora = agora or datetime.now(timezone.utc)
+    fee_pct = _FEE_RT_PCT if fee_rt_pct is None else fee_rt_pct
     conn = _conn(db_path)
     try:
         ensure_schema(conn)
-        cur = conn.execute(
-            "UPDATE copiloto_trades SET status='fechado', closed_at=? "
-            "WHERE status='aberto' AND symbol=?", (agora.isoformat(), symbol.upper()))
+        abertos = [dict(r) for r in conn.execute(
+            "SELECT * FROM copiloto_trades WHERE status='aberto' AND symbol=? ORDER BY id",
+            (symbol.upper(),)).fetchall()]
+        fechados = []
+        for t in abertos:
+            pnl = None
+            if exit_price is not None and exit_price > 0:
+                if t["direction"] == "compra":
+                    gross = (exit_price / t["entry_price"] - 1.0) * 100.0
+                else:                                  # venda (short): lucra quando o preco cai
+                    gross = (t["entry_price"] / exit_price - 1.0) * 100.0
+                pnl = round(gross - fee_pct, 3)        # NET: desconta o pedagio dos 2 legs
+            conn.execute("UPDATE copiloto_trades SET status='fechado', closed_at=?, exit_price=?, "
+                         "pnl_pct=? WHERE id=?", (agora.isoformat(), exit_price, pnl, t["id"]))
+            fechados.append({"symbol": t["symbol"], "direction": t["direction"],
+                             "entry": t["entry_price"], "exit": exit_price, "pnl_pct": pnl})
         conn.commit()
-        return cur.rowcount
+        return fechados
     finally:
         conn.close()
 
@@ -286,6 +323,9 @@ def cmd_entrei(arg, _db=None):
             else:
                 msg += (f"\n<i>Tamanho p/ {risk_pct:g}% da banca: ~{r['notional']:g} USDT "
                         f"({r['qty']:g} {base}).</i>")
+    cd = status_cooldown(db)                           # entrou vindo de 2 perdas? lembra do perfil
+    if cd["em_cooldown"]:
+        msg += f"\n\n🧊 <i>{cd['motivo']}</i>"
     return msg
 
 
@@ -319,16 +359,41 @@ def cmd_vigiando(arg="", _db=None):
     return "\n".join(linhas)
 
 
-def cmd_fechei(arg, _db=None):
-    """/fechei SIMBOLO — encerra a vigia daquele símbolo."""
+def cmd_fechei(arg, _db=None, _price_fn=None):
+    """/fechei SIMBOLO [PRECO_SAIDA] — encerra a vigia e, com o preço, calcula o resultado LIQUIDO
+    e conta pro cooldown. Sem o preço, tento o de mercado. _price_fn injetavel p/ teste (sem rede)."""
     db = _db or DB_DEFAULT
-    toks = (arg or "").split()
-    if not toks:
-        return "Uso: <code>/fechei SIMBOLO</code>"
-    sym = toks[0].upper()
-    n = fechar_trade(sym, db_path=db)
-    return f"Encerrei a vigia de <b>{sym}</b> ({n} trade(s))." if n else \
-        f"Não achei vigia aberta pra {sym}."
+    toks = (arg or "").replace(",", ".").split()
+    sym, price = None, None
+    for t in toks:
+        if _is_float(t):
+            price = float(t)
+        elif sym is None:
+            sym = t.upper()
+    if not sym:
+        return "Uso: <code>/fechei SIMBOLO [PREÇO_SAÍDA]</code>"
+    if price is None:                                  # sem preco no comando: tenta o mercado
+        price = (_price_fn or preco_atual)(sym)
+    fechados = fechar_trade(sym, exit_price=price, db_path=db)
+    if not fechados:
+        return f"Não achei vigia aberta pra {sym}."
+    linhas = []
+    for f in fechados:
+        if f["pnl_pct"] is not None:
+            emoji = "🟢" if f["pnl_pct"] >= 0 else "🔴"
+            linhas.append(f"Encerrei <b>{f['symbol']}</b> ({f['direction']}) @ {f['exit']:g} → "
+                          f"{emoji} <b>{f['pnl_pct']:+.2f}%</b> líquido (fee descontado).")
+        else:
+            linhas.append(f"Encerrei <b>{f['symbol']}</b> — sem preço de saída, não calculei o "
+                          f"resultado. Manda <code>/fechei {f['symbol']} PREÇO</code> pra contar pro cooldown.")
+    # estado de disciplina apos o fechamento
+    st = status_cooldown(db)
+    houve_perda = any(f["pnl_pct"] is not None and f["pnl_pct"] < 0 for f in fechados)
+    if st["em_cooldown"]:
+        linhas.append(f"\n🧊 {st['motivo']}")
+    elif houve_perda and st["consecutive_losses"] == 1:
+        linhas.append("\n<i>Uma perda. Mais uma seguida e eu peço pausa (teu perfil).</i>")
+    return "\n".join(linhas)
 
 
 def run_vigia_cycle():
@@ -773,11 +838,70 @@ def cmd_risco(arg, _db=None):
     res = avalia_risco(entry, stop, alvo=alvo, banca=banca, risk_pct=risk_pct)
     if res.get("erro"):
         return f"⚠️ {res['erro']}."
-    # guarda de 1-POSICAO (AVISO, nunca bloqueia — a decisao e dele). Reusa estado que ja existe.
-    prefixo = ""
+    # guardas de disciplina (AVISO, nunca bloqueiam — a decisao e dele). Reusam estado que ja existe.
+    prefixo = _aviso_cooldown(db)                      # cooldown apos 2 perdas seguidas
     abertos = listar_abertos(db)
     if abertos:
         outros = ", ".join(a["symbol"] for a in abertos)
-        prefixo = (f"⚠️ Você já tem posição aberta ({outros}). Teu perfil é 1 por vez — "
-                   f"considere fechar antes.\n\n")
+        prefixo += (f"⚠️ Você já tem posição aberta ({outros}). Teu perfil é 1 por vez — "
+                    f"considere fechar antes.\n\n")
     return prefixo + _fmt_risco(sym, entry, stop, alvo, banca, res)
+
+
+# ═════════════════════════ COOLDOWN — disciplina apos perdas (upgrade path) ═════════════════════════
+# Perfil congelado: cooldown obrigatorio apos 2 perdas SEGUIDAS. Sob sizing fixo 0.5-0.75% + 1 posicao,
+# 2 perdas ~= 1-1.5% = o teto de perda diaria — entao UMA guarda (perdas seguidas) subsome as duas
+# (cooldown E max-daily-loss). Derivado dos trades fechados: zero estado mutavel novo alem do resultado.
+# NAO bloqueia — grita "respira" na proxima /risco e /entrei. A decisao e sempre do Gabriel.
+
+PARAMS_COOLDOWN = {
+    "max_losses": 2,       # 2 perdas seguidas => cooldown (perfil congelado)
+    "janela_horas": 24,    # o cooldown "esfria" depois de 24h (o tilt emocional passou)
+}
+
+
+def avalia_cooldown(closed_trades, agora, params=PARAMS_COOLDOWN) -> dict:
+    """Cerebro PURO. closed_trades: dicts com pnl_pct (NET, pode ser None) e closed_at (ISO). Conta
+    perdas consecutivas do fechamento MAIS RECENTE pra tras (uma vitoria zera a sequencia; trades sem
+    resultado sao ignorados). Cooldown se >= max_losses perdas seguidas E o ultimo fechamento foi
+    dentro da janela (senao o tilt ja esfriou). Retorna {consecutive_losses, em_cooldown, horas, motivo}."""
+    com_pnl = [t for t in closed_trades if t.get("pnl_pct") is not None and t.get("closed_at")]
+    com_pnl.sort(key=lambda t: t["closed_at"], reverse=True)   # mais recente primeiro
+    consec = 0
+    for t in com_pnl:
+        if t["pnl_pct"] < 0:
+            consec += 1
+        else:
+            break                                              # uma vitoria zera a sequencia
+    horas = None
+    if com_pnl:
+        try:
+            horas = (agora - datetime.fromisoformat(com_pnl[0]["closed_at"])).total_seconds() / 3600.0
+        except (ValueError, TypeError):
+            horas = None
+    dentro = horas is not None and horas <= params["janela_horas"]
+    em_cooldown = consec >= params["max_losses"] and dentro
+    motivo = (f"{consec} perdas seguidas nas últimas {params['janela_horas']}h — teu perfil pede uma "
+              f"pausa. Respira antes da próxima; não caça prejuízo.") if em_cooldown else None
+    return {"consecutive_losses": consec, "em_cooldown": em_cooldown,
+            "horas_desde_ultimo": round(horas, 1) if horas is not None else None, "motivo": motivo}
+
+
+def status_cooldown(db_path=DB_DEFAULT, agora=None) -> dict:
+    """Le os ultimos trades fechados com resultado e delega ao cerebro puro avalia_cooldown."""
+    agora = agora or datetime.now(timezone.utc)
+    conn = _conn(db_path)
+    try:
+        ensure_schema(conn)
+        rows = [dict(r) for r in conn.execute(
+            "SELECT pnl_pct, closed_at FROM copiloto_trades WHERE status='fechado' "
+            "AND pnl_pct IS NOT NULL ORDER BY closed_at DESC LIMIT 20").fetchall()]
+    finally:
+        conn.close()
+    return avalia_cooldown(rows, agora)
+
+
+def _aviso_cooldown(db_path=DB_DEFAULT) -> str:
+    """Prefixo de aviso (vazio se nao ha cooldown) pra /risco e /entrei."""
+    st = status_cooldown(db_path)
+    return f"🧊 {st['motivo']}\n\n" if st["em_cooldown"] else ""
