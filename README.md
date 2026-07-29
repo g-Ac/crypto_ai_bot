@@ -27,9 +27,15 @@ O scalping combina três motores de microestrutura — funding rate, cascata de 
 
 ## O que eu aprendi
 
-A parte mais útil do projeto não foi escrever estratégia, foi **desligar estratégia**. Dois dos quatro sistemas que construí deram resultado negativo em operação real simulada e foram desativados — o Agent Trader perdeu 21% em 40 trades, apesar de parecer sólido no papel.
+Comecei achando que o projeto era sobre estratégia. Não era.
 
-Isso me obrigou a levar a sério a parte chata: registrar cada decisão em banco, montar funil de decisão para ver onde os sinais morriam, e construir um dashboard só para conseguir olhar os números sem me enganar. Backtest engana com facilidade; o que não engana é histórico persistido de trade a trade.
+**Desligar custa mais que construir.** Dois dos quatro sistemas que escrevi deram resultado negativo e foram desativados — o Agent Trader perdeu 21% em 40 trades, apesar de parecer sólido no papel. Escrever a estratégia levou dias; admitir que ela não funcionava levou semanas.
+
+**Para desligar, primeiro é preciso medir sem se enganar.** E medir foi a parte mais difícil. Backtest engana com facilidade — mostra o que você quer ver. O que não engana é histórico persistido: cada decisão gravada em banco, um funil que mostra onde os sinais morrem antes de virar trade, um registro de experimentos e um dashboard construído só para eu conseguir olhar os números de frente.
+
+**Manter de pé é o trabalho de verdade.** A parte que mais consumiu tempo não aparece em nenhum gráfico: supervisor gerenciando três processos, systemd para sobreviver a reboot, ~200 testes rodando por hook antes de cada push, health check que aborta o deploy se um import quebrar, circuit breaker para o dia ruim não virar semana ruim. Um bot que roda 24/7 e precisa de babá não roda 24/7.
+
+**A restrição de hardware melhorou as decisões.** Um Raspberry Pi 4 com menos de 4 GB não deixa margem para desperdício. Tentei trocar a chamada de API por um modelo local: compilei llama.cpp no Pi e comparei Qwen2.5-0.5B, TinyLlama e Phi-2 medindo latência, RAM e qualidade de saída, com fallback para a API se o modelo local falhasse. Sem espaço sobrando, cada escolha de arquitetura precisou ser justificada — o que, no fim, deixou o sistema melhor do que se eu tivesse servidor à vontade.
 
 ## Stack
 
