@@ -17,7 +17,7 @@ real pelo Telegram com mensagens HTML formatadas.
 - **Raspberry Pi 4 Model B Rev 1.5** — 4 GB RAM
 - **SSD externo** — 110 GB
 - **Python 3.13** | **Hostname:** `cryptobot.local`
-- **IP local:** `192.168.0.24`
+- **IP local:** definido pela sua rede — referenciado como `<ip-do-pi>` neste guia
 
 ---
 
@@ -26,18 +26,18 @@ real pelo Telegram com mensagens HTML formatadas.
 ### Dashboard Web
 Abra no navegador (celular ou computador na mesma rede Wi-Fi):
 ```
-http://192.168.0.24:5000
-```
-ou
-```
 http://cryptobot.local:5000
+```
+ou, se o hostname mDNS nao resolver na sua rede:
+```
+http://<ip-do-pi>:5000
 ```
 
 ### SSH (terminal remoto)
 ```bash
 ssh pi@cryptobot.local
 # ou
-ssh pi@192.168.0.24
+ssh pi@<ip-do-pi>
 ```
 
 ---
@@ -261,7 +261,7 @@ Para descobrir o `TELEGRAM_CHAT_ID`: envie uma mensagem ao seu bot e acesse
 
 Painel responsivo acessivel pelo navegador. Dark mode. Atualiza automaticamente a cada 30 segundos.
 
-**Acesso:** `http://192.168.0.24:5000` ou `http://cryptobot.local:5000`
+**Acesso:** `http://cryptobot.local:5000` ou `http://cryptobot.local:5000`
 
 ### Secoes do painel
 
@@ -277,11 +277,11 @@ Painel responsivo acessivel pelo navegador. Dark mode. Atualiza automaticamente 
 
 ### API JSON
 ```
-GET http://192.168.0.24:5000/api/status    # Status completo
-GET http://192.168.0.24:5000/api/trades    # Historico de trades
-GET http://192.168.0.24:5000/api/logs      # Logs recentes
-POST http://192.168.0.24:5000/pause        # Pausar bot
-POST http://192.168.0.24:5000/resume       # Retomar bot
+GET http://cryptobot.local:5000/api/status    # Status completo
+GET http://cryptobot.local:5000/api/trades    # Historico de trades
+GET http://cryptobot.local:5000/api/logs      # Logs recentes
+POST http://cryptobot.local:5000/pause        # Pausar bot
+POST http://cryptobot.local:5000/resume       # Retomar bot
 ```
 
 ---
