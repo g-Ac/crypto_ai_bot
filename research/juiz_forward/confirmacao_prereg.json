@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-03T17:39:26.345708+00:00",
+  "confirms": {
+    "origem": "research/juiz_forward/resultado.json",
+    "gerado_em": "2026-08-01T11:05:38.938206+00:00",
+    "veredito_descoberta": "GO-INVESTIGAR",
+    "corte_descoberta_ts": 1781740800
+  },
+  "corte_ts": 1785801600,
+  "marco": "2026-10-03",
+  "regua": {
+    "metric": "expectancy_bps",
+    "threshold": 0.0,
+    "n_min": 30,
+    "fdr_q": 0.1,
+    "p_method": "bootstrap",
+    "seed": 1,
+    "dias_min_valido": 30
+  },
+  "cells": [
+    {
+      "exp": "EXP-100",
+      "label": "momentum_continuacao|funding_extremo|todos|H24",
+      "descoberta": {
+        "n": 123,
+        "expectancy_bps": 81.75713277536714,
+        "p_value": 0.0055
+      },
+      "n_esperado_conf": 166.2
+    },
+    {
+      "exp": "EXP-100",
+      "label": "momentum_continuacao|funding_extremo|memes|H24",
+      "descoberta": {
+        "n": 40,
+        "expectancy_bps": 157.0837173290255,
+        "p_value": 0.005
+      },
+      "n_esperado_conf": 54.1
+    },
+    {
+      "exp": "EXP-100",
+      "label": "mean_reversion_banda|d_oi_extremo|memes|H4",
+      "descoberta": {
+        "n": 220,
+        "expectancy_bps": 41.26465380999398,
+        "p_value": 0.008
+      },
+      "n_esperado_conf": 297.3
+    }
+  ],
+  "code_hashes": {
+    "research/exp100_screening/signals.py": "b67d5a4d37dbd474604a30b3fab131a4799257ab28934c42e5df5ee9cb39a385",
+    "research/exp100_screening/filters.py": "a85a3c467814b60bd6bddf67dc0227eb03e83d675b69f974b1f1d96626638b87",
+    "research/exp100_screening/backtest.py": "a1a1f1ad248bfa586eddf66c65a7515144fffdba162c7108c8aefd008cdf36ab",
+    "research/exp100_screening/data.py": "75c944a9198eefd35a3541e1f709481586af8227bdd23980ff283b7369eb01f3",
+    "research/exp100_screening/stats.py": "6271c8122ac1dc8a8b52459c16b6d459b205b1658c49ebd419fa18d8c02ccdd8",
+    "research/juiz_forward/judge.py": "8273b0164ff77d413484e933ded0f025d5d4d041efb6faf5d21942ad4ae79981"
+  },
+  "integracao_carteira": "pendente — decidir quando (se) algo confirmar no marco"
+}
