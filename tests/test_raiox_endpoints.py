@@ -89,7 +89,12 @@ def test_candles_rejects_start_ge_end(client):
 
 
 def test_candles_ok(client, monkeypatch):
-    now = 1780941600
+    # now dinamico: o endpoint escala o timeframe com base em int(time.time()) real
+    # (janela now_real - start). Um now fixo vira time-bomb — conforme o relogio avanca,
+    # a janela de 15m ultrapassa 1000 barras e o codigo escala para 1h. Mesmo padrao
+    # dos test_candles_margin_* abaixo.
+    import time as _time
+    now = int(_time.time())
     rows = [{"time_s": now - i * 900, "open": 1, "high": 1, "low": 1, "close": 1} for i in range(50)]
     class _DF:
         def to_dict(self, orient):
