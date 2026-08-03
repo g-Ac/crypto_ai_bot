@@ -1,0 +1,289 @@
+{
+  "as_of": "2026-06-12 05:15 UTC",
+  "real": {
+    "n": 159,
+    "n_winners": 96,
+    "n_losers": 63,
+    "separation_by_state": {
+      "funding": {
+        "n_w": 96,
+        "n_l": 63,
+        "median_w": 4e-06,
+        "median_l": 1.3e-05,
+        "z": -0.888,
+        "p": 0.3748
+      },
+      "basis_rate": {
+        "n_w": 60,
+        "n_l": 31,
+        "median_w": -0.0005,
+        "median_l": -0.0005,
+        "z": -0.654,
+        "p": 0.5132
+      },
+      "lsr_top": {
+        "n_w": 96,
+        "n_l": 63,
+        "median_w": 1.1694,
+        "median_l": 1.1418,
+        "z": 0.965,
+        "p": 0.3346
+      },
+      "lsr_glb": {
+        "n_w": 96,
+        "n_l": 63,
+        "median_w": 2.0317,
+        "median_l": 1.4956,
+        "z": 1.696,
+        "p": 0.09
+      },
+      "d1h_lsr_top": {
+        "n_w": 96,
+        "n_l": 63,
+        "median_w": 0.00075,
+        "median_l": -0.0012,
+        "z": 1.548,
+        "p": 0.1217
+      },
+      "d1h_lsr_glb": {
+        "n_w": 96,
+        "n_l": 63,
+        "median_w": 0.00035,
+        "median_l": 0.0,
+        "z": 0.938,
+        "p": 0.348
+      },
+      "d1h_oi_rel": {
+        "n_w": 96,
+        "n_l": 63,
+        "median_w": 2e-05,
+        "median_l": 0.000365,
+        "z": 0.725,
+        "p": 0.4682
+      }
+    },
+    "event_flag_split": {
+      "BASIS+": {
+        "n_with": 32,
+        "n_without": 127,
+        "wr_with": 0.688,
+        "wr_without": 0.583,
+        "mean_pnl_with": 0.3299,
+        "mean_pnl_without": 0.015
+      },
+      "BASIS-": {
+        "n_with": 36,
+        "n_without": 123,
+        "wr_with": 0.694,
+        "wr_without": 0.577,
+        "mean_pnl_with": 0.2301,
+        "mean_pnl_without": 0.0339
+      },
+      "FUND+": {
+        "n_with": 20,
+        "n_without": 139,
+        "wr_with": 0.55,
+        "wr_without": 0.612,
+        "mean_pnl_with": 0.1223,
+        "mean_pnl_without": 0.072
+      },
+      "FUND-": {
+        "n_with": 25,
+        "n_without": 134,
+        "wr_with": 0.6,
+        "wr_without": 0.604,
+        "mean_pnl_with": 0.0053,
+        "mean_pnl_without": 0.092
+      },
+      "LSR-GLB-SQZ": {
+        "n_with": 74,
+        "n_without": 85,
+        "wr_with": 0.689,
+        "wr_without": 0.529,
+        "mean_pnl_with": 0.2733,
+        "mean_pnl_without": -0.0914
+      },
+      "LSR-TOP-SQZ": {
+        "n_with": 76,
+        "n_without": 83,
+        "wr_with": 0.645,
+        "wr_without": 0.566,
+        "mean_pnl_with": 0.1816,
+        "mean_pnl_without": -0.0162
+      },
+      "OI-SHOCK": {
+        "n_with": 88,
+        "n_without": 71,
+        "wr_with": 0.636,
+        "wr_without": 0.563,
+        "mean_pnl_with": 0.1206,
+        "mean_pnl_without": 0.026
+      }
+    },
+    "staleness_min": {
+      "funding": {
+        "p50_min": 233.6,
+        "max_min": 474.2,
+        "coverage": 1.0
+      },
+      "basis_rate": {
+        "p50_min": 24.6,
+        "max_min": 58.9,
+        "coverage": 0.572
+      },
+      "lsr_top": {
+        "p50_min": 24.8,
+        "max_min": 58.9,
+        "coverage": 1.0
+      },
+      "oi": {
+        "p50_min": 24.8,
+        "max_min": 58.9,
+        "coverage": 1.0
+      }
+    }
+  },
+  "shadow": {
+    "n": 708,
+    "n_winners": 410,
+    "n_losers": 298,
+    "separation_by_state": {
+      "funding": {
+        "n_w": 410,
+        "n_l": 298,
+        "median_w": 7e-06,
+        "median_l": -2e-06,
+        "z": 0.686,
+        "p": 0.4928
+      },
+      "basis_rate": {
+        "n_w": 240,
+        "n_l": 105,
+        "median_w": -0.0005,
+        "median_l": -0.0005,
+        "z": -1.28,
+        "p": 0.2006
+      },
+      "lsr_top": {
+        "n_w": 410,
+        "n_l": 298,
+        "median_w": 1.1683,
+        "median_l": 1.0991,
+        "z": 5.789,
+        "p": 0.0
+      },
+      "lsr_glb": {
+        "n_w": 410,
+        "n_l": 298,
+        "median_w": 1.9683,
+        "median_l": 1.2336,
+        "z": 5.444,
+        "p": 0.0
+      },
+      "d1h_lsr_top": {
+        "n_w": 410,
+        "n_l": 298,
+        "median_w": -0.0006,
+        "median_l": -0.0004,
+        "z": 0.198,
+        "p": 0.8427
+      },
+      "d1h_lsr_glb": {
+        "n_w": 410,
+        "n_l": 298,
+        "median_w": 0.0004,
+        "median_l": 0.0013,
+        "z": -0.605,
+        "p": 0.5454
+      },
+      "d1h_oi_rel": {
+        "n_w": 410,
+        "n_l": 298,
+        "median_w": -0.000383,
+        "median_l": 0.000247,
+        "z": -2.147,
+        "p": 0.0318
+      }
+    },
+    "event_flag_split": {
+      "BASIS+": {
+        "n_with": 147,
+        "n_without": 561,
+        "wr_with": 0.721,
+        "wr_without": 0.542,
+        "mean_pnl_with": 0.4035,
+        "mean_pnl_without": -0.0324
+      },
+      "BASIS-": {
+        "n_with": 106,
+        "n_without": 602,
+        "wr_with": 0.642,
+        "wr_without": 0.568,
+        "mean_pnl_with": 0.2508,
+        "mean_pnl_without": 0.0242
+      },
+      "FUND+": {
+        "n_with": 102,
+        "n_without": 606,
+        "wr_with": 0.647,
+        "wr_without": 0.568,
+        "mean_pnl_with": 0.1752,
+        "mean_pnl_without": 0.0384
+      },
+      "FUND-": {
+        "n_with": 137,
+        "n_without": 571,
+        "wr_with": 0.562,
+        "wr_without": 0.583,
+        "mean_pnl_with": -0.0162,
+        "mean_pnl_without": 0.0759
+      },
+      "LSR-GLB-SQZ": {
+        "n_with": 315,
+        "n_without": 393,
+        "wr_with": 0.698,
+        "wr_without": 0.483,
+        "mean_pnl_with": 0.3036,
+        "mean_pnl_without": -0.1387
+      },
+      "LSR-TOP-SQZ": {
+        "n_with": 362,
+        "n_without": 346,
+        "wr_with": 0.633,
+        "wr_without": 0.523,
+        "mean_pnl_with": 0.1562,
+        "mean_pnl_without": -0.0445
+      },
+      "OI-SHOCK": {
+        "n_with": 406,
+        "n_without": 302,
+        "wr_with": 0.613,
+        "wr_without": 0.533,
+        "mean_pnl_with": 0.1059,
+        "mean_pnl_without": -0.0062
+      }
+    },
+    "staleness_min": {
+      "funding": {
+        "p50_min": 210.0,
+        "max_min": 465.0,
+        "coverage": 1.0
+      },
+      "basis_rate": {
+        "p50_min": 30.0,
+        "max_min": 45.0,
+        "coverage": 0.487
+      },
+      "lsr_top": {
+        "p50_min": 30.0,
+        "max_min": 45.0,
+        "coverage": 1.0
+      },
+      "oi": {
+        "p50_min": 30.0,
+        "max_min": 45.0,
+        "coverage": 1.0
+      }
+    }
+  }
+}
