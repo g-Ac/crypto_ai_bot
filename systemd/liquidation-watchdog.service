@@ -1,0 +1,18 @@
+[Unit]
+Description=liquidation_collector watchdog (detecta feed Bybit travado e reinicia)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/crypto_ai_bot
+# Carrega .env do projeto: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+# LIQUIDATION_TELEGRAM_CHAT_ID (override) e LIQUIDATION_STALE_MINUTES
+EnvironmentFile=-/home/pi/crypto_ai_bot/.env
+ExecStart=/home/pi/crypto_ai_bot/.venv/bin/python /home/pi/crypto_ai_bot/scripts/watchdog_liquidation.py
+StandardOutput=append:/home/pi/crypto_ai_bot/logs/watchdog_liquidation.log
+StandardError=append:/home/pi/crypto_ai_bot/logs/watchdog_liquidation.log
+# Watchdog não pode marcar a unit como failed quando detecta stall (rc=1).
+SuccessExitStatus=0 1

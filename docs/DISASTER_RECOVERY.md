@@ -4,7 +4,7 @@
 > Backup local no mesmo SD é cache operacional, não disaster recovery.
 
 Cenário assumido: **o SD card morreu hoje.** Este documento reconstrói o sistema
-sem depender de memória humana. Atualizado em 2026-06-09.
+sem depender de memória humana. Atualizado em 2026-06-15.
 
 ## 1. O que sobrevive / o que morre
 
@@ -43,6 +43,7 @@ docs/EXPERIMENT_REGISTRY.md           (no git)
 | `k-collector-backup.timer` | systemd, 04:00 diário | `scripts/backup_bot_db.sh` (db local, rotação 7d) |
 | `k-collector-report.timer` | systemd, 09:00 diário | relatório k_collector via Telegram |
 | `k-collector-watchdog.timer` | systemd, hourly :35 | detecta staleness do k_collector |
+| `liquidation-watchdog.timer` | systemd, a cada 30min | detecta feed Bybit mudo >90min → reinicia `liquidation-collector` (via regra sudoers) + alerta Telegram |
 | vault sync | cron, */30min | `~/obsidian-vault/sync-pull.sh` |
 | `daily_monitor.py` | cron, 4x/dia | monitor momentum via Telegram |
 | `shadow_simulator.py` | cron, 4x/dia | shadow outcomes |
@@ -95,7 +96,7 @@ bash scripts/restore_runtime_bundle.sh /caminho/runtime_bundle_<ts>.tar.gz
 
 # 6. systemd units (instala TUDO parado — sem enable --now do cryptobot)
 sudo cp systemd/cryptobot.service systemd/liquidation-collector.service /etc/systemd/system/
-sudo bash systemd/install_systemd_units.sh        # 3 timers k-collector
+sudo bash systemd/install_systemd_units.sh        # timers k-collector + liquidation-watchdog + sudoers
 sudo systemctl daemon-reload
 sudo systemctl enable cryptobot liquidation-collector   # enable SEM start
 
@@ -137,7 +138,7 @@ bash scripts/healthcheck.sh    # re-validar com serviços de pé
 - [ ] `.env` restaurado e conferido contra `env_keys.txt`
 - [ ] `bot.db` com tabelas críticas e contagens plausíveis
 - [ ] JSONs de estado presentes; posições órfãs reconciliadas
-- [ ] 2 services + 3 timers instalados e enabled
+- [ ] 2 services + 4 timers instalados e enabled (+ sudoers do liquidation-watchdog)
 - [ ] Crontab aplicado e revisado
 - [ ] Gap de coleta registrado no vault
 - [ ] Serviços iniciados manualmente e `/api/status` respondendo

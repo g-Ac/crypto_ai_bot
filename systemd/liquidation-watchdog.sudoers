@@ -1,0 +1,4 @@
+# Permite ao watchdog (scripts/watchdog_liquidation.py) reiniciar SOMENTE o
+# liquidation-collector, sem senha. Recovery de feed Bybit travado.
+# Instalar em /etc/sudoers.d/liquidation-watchdog com permissao 0440.
+pi ALL=(root) NOPASSWD: /usr/bin/systemctl restart liquidation-collector.service

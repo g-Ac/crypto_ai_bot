@@ -1,0 +1,13 @@
+[Unit]
+Description=Dispara liquidation-watchdog a cada 30min
+Requires=liquidation-watchdog.service
+
+[Timer]
+# A cada 30min (minutos :00 e :30). O liquidation-collector é contínuo (não tem
+# ciclo), então não precisa defasar como o k_collector.
+OnCalendar=*-*-* *:00/30:00
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # uninstall_systemd_units.sh — reverte o install_systemd_units.sh.
-# Para+desabilita+remove os 6 unit files. Não toca em logs ou backups.
+# Para+desabilita+remove os 10 unit files + a regra sudoers. Não toca em logs ou backups.
 
 set -euo pipefail
 
@@ -18,12 +18,18 @@ UNITS=(
   "k-collector-report.timer"
   "k-collector-backup.service"
   "k-collector-backup.timer"
+  "liquidation-watchdog.service"
+  "liquidation-watchdog.timer"
+  "options-watchdog.service"
+  "options-watchdog.timer"
 )
 
 TIMERS=(
   "k-collector-watchdog.timer"
   "k-collector-report.timer"
   "k-collector-backup.timer"
+  "liquidation-watchdog.timer"
+  "options-watchdog.timer"
 )
 
 echo "==> Parando e desabilitando timers"
@@ -40,6 +46,12 @@ for unit in "${UNITS[@]}"; do
     echo "  - removed ${unit}"
   fi
 done
+
+echo "==> Removendo regra sudoers do liquidation-watchdog"
+if [[ -f "/etc/sudoers.d/liquidation-watchdog" ]]; then
+  rm "/etc/sudoers.d/liquidation-watchdog"
+  echo "  - removed /etc/sudoers.d/liquidation-watchdog"
+fi
 
 echo "==> systemctl daemon-reload"
 systemctl daemon-reload

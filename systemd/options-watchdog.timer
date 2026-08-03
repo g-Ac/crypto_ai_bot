@@ -1,0 +1,13 @@
+[Unit]
+Description=Dispara options-watchdog a cada hora
+Requires=options-watchdog.service
+
+[Timer]
+# Collector roda no cron em :10. O watchdog audita em :40, dando 30min
+# para a rodada terminar antes de classificar staleness.
+OnCalendar=*-*-* *:40:00
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
