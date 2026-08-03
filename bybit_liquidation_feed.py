@@ -8,8 +8,12 @@ liquidation_feed (Binance), pra reuso por scripts/liquidation_collector.py.
 Usado porque o WS de futuros da Binance (fstream) e bloqueado neste Pi
 (ver memoria binance_futures_ws_blocked). Zero dependencias externas (stdlib).
 
-side entregue = lado da ORDEM de liquidacao reportado pela Bybit (BUY/SELL,
-maiusculo). A interpretacao long/short fica na analise.
+side entregue = campo `S` do topico allLiquidation = lado da POSICAO liquidada
+(BUY/SELL maiusculo). Validado empiricamente na Etapa 0 (2026-07-01, n=87k):
+  BUY  = LONG liquidado  (venda forcada; ocorre em QUEDAS)
+  SELL = SHORT liquidado (compra forcada; ocorre em ALTAS)
+NAO e o lado da ORDEM — a convencao Binance/fstream e a INVERSA. Ver memoria
+liquidations-side-semantics e research/gerador_prereg/propostas/ETAPA_0_side_semantics.md.
 """
 from __future__ import annotations
 
@@ -235,7 +239,7 @@ def _process_message(data: bytes) -> None:
     for item in msg.get("data", []) or []:
         try:
             symbol = item["s"]
-            side = str(item["S"]).upper()
+            side = str(item["S"]).upper()  # allLiquidation.S = lado da POSICAO: BUY=long liq, SELL=short liq
             qty = float(item["v"])
             price = float(item["p"])
             event_ms = int(item.get("T") or msg.get("ts") or time.time() * 1000)
