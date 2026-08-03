@@ -199,7 +199,11 @@ def http_get_json(path: str, params: dict) -> list:
 
 def parse_ratio_response(rows: list, source: str) -> list[dict]:
     parsed: list[dict] = []
+    if not isinstance(rows, list):
+        return parsed
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         try:
             ts_ms = int(r["timestamp"])
             ratio = float(r["longShortRatio"])
@@ -240,7 +244,11 @@ def parse_klines_response(rows: list, symbol: str) -> list[dict]:
 
 def parse_funding_response(rows: list, symbol: str) -> list[dict]:
     parsed: list[dict] = []
+    if not isinstance(rows, list):
+        return parsed
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         try:
             item = {
                 "symbol": r.get("symbol", symbol),
@@ -258,7 +266,11 @@ def parse_funding_response(rows: list, symbol: str) -> list[dict]:
 
 def parse_open_interest_response(rows: list, symbol: str) -> list[dict]:
     parsed: list[dict] = []
+    if not isinstance(rows, list):
+        return parsed
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         try:
             item = {
                 "symbol": r.get("symbol", symbol),
@@ -276,7 +288,11 @@ def parse_open_interest_response(rows: list, symbol: str) -> list[dict]:
 
 def parse_basis_response(rows: list, symbol: str) -> list[dict]:
     parsed: list[dict] = []
+    if not isinstance(rows, list):
+        return parsed
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         try:
             item = {
                 "symbol": r.get("pair", symbol),
