@@ -13,6 +13,16 @@ from momentum.config import MomentumConfig, MomentumOutcome, MomentumDirection
 from momentum.momentum_trader import MomentumSignal
 
 
+@pytest.fixture(autouse=True)
+def disable_unrelated_maker_shadow(monkeypatch):
+    """Estes testes exercitam o executor, não a sombra maker.
+
+    Sem esta trava, o hook opcional usa o DB runtime real e grava a fixture
+    BTC@85000 em produção. A sombra tem sua própria suíte isolada em tmp_path.
+    """
+    monkeypatch.setattr("momentum.paper_executor.MOMENTUM_MAKER_SHADOW_ENABLED", False)
+
+
 @pytest.fixture
 def state_file(monkeypatch):
     fd, path = tempfile.mkstemp(suffix=".json")
