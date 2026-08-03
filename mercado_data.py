@@ -19,11 +19,18 @@ from datetime import datetime
 
 import market_read as mr
 
-# Copia canonica de scripts/k_collector.SYMBOLS (teste de paridade garante sync)
+# Copia canonica de scripts/k_collector.SYMBOLS (teste de paridade garante sync).
+# Ordem DEVE espelhar k_collector.SYMBOLS exatamente (o teste compara tuple==tuple).
 SUPPORTED_MARKET_SYMBOLS = (
+    # núcleo original (14)
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
     "DOGEUSDT", "ADAUSDT", "HYPEUSDT", "LINKUSDT", "AVAXUSDT",
     "LTCUSDT", "TRXUSDT", "SUIUSDT", "1000PEPEUSDT",
+    # expansão 2026-06-17 — memes (8):
+    "SPXUSDT", "TRUMPUSDT", "WIFUSDT", "FARTCOINUSDT", "PENGUUSDT",
+    "1000SHIBUSDT", "1000BONKUSDT", "1000FLOKIUSDT",
+    # alts alto-beta (6):
+    "WLDUSDT", "NEARUSDT", "ENAUSDT", "AAVEUSDT", "TIAUSDT", "TONUSDT",
 )
 
 # Espelho de SYMBOLS em static/js/mapa.js (o Mapa da Moeda so cobre BTC/ETH)
