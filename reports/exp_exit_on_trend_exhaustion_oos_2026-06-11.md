@@ -6,10 +6,10 @@
 
 ## Amostra
 
-- total trades: 158
+- total trades: 283
 - discovery trades (`id <= 156`): 156
-- OOS trades (`id > 156`): 2
-- OOS with any exhaustion price: 1
+- OOS trades (`id > 156`): 127
+- OOS with any exhaustion price: 42
 
 Discovery é contexto apenas; verdict vem de OOS.
 
@@ -97,42 +97,82 @@ Maiores danos:
 
 ### H1 OOS — WEAK_TREND only
 
-- verdict: DADO INSUFICIENTE
-- reasons: menos de 30 trades OOS, menos de 10 trades OOS alterados
-- OOS trades: 2
-- changed: 1
-- improved: 1
-- worsened: 0
-- actual_net: -0.4133%
-- sim_net: -0.3700%
-- delta: +0.0433%
-- max_damage: +0.0433%
-- max_positive_trade_share: 100.0%
+- verdict: GO
+- reasons: passou todos os critérios
+- OOS trades: 127
+- changed: 26
+- improved: 16
+- worsened: 10
+- actual_net: -19.0795%
+- sim_net: -15.3648%
+- delta: +3.7147%
+- max_damage: -0.4407%
+- max_positive_trade_share: 17.5%
+- max_positive_symbol_direction_share: 41.8%
 
 Maiores melhorias:
-- #157 BTCUSDT LONG sl_hit: actual=-0.600% sim=-0.557% delta=+0.043%
+- #240 ETHUSDT SHORT sl_hit: actual=-1.256% sim=-0.209% delta=+1.047%
+- #239 ETHUSDT LONG sl_hit: actual=-1.220% sim=-0.262% delta=+0.958%
+- #181 BTCUSDT SHORT timeout: actual=-1.437% sim=-0.498% delta=+0.939%
+- #171 BTCUSDT SHORT sl_hit: actual=-0.723% sim=-0.215% delta=+0.507%
+- #262 ETHUSDT SHORT sl_hit: actual=-0.600% sim=-0.137% delta=+0.463%
+- #237 ETHUSDT SHORT sl_hit: actual=-0.815% sim=-0.392% delta=+0.423%
+- #248 ETHUSDT LONG timeout: actual=-0.504% sim=-0.194% delta=+0.310%
+- #280 ETHUSDT SHORT timeout: actual=-0.515% sim=-0.229% delta=+0.286%
+- #165 ETHUSDT LONG timeout: actual=-0.209% sim=+0.049% delta=+0.257%
+- #176 ETHUSDT SHORT sl_hit: actual=-0.713% sim=-0.495% delta=+0.218%
 
 Maiores danos:
-- #157 BTCUSDT LONG sl_hit: actual=-0.600% sim=-0.557% delta=+0.043%
+- #202 ETHUSDT SHORT tp1_hit: actual=+0.163% sim=-0.277% delta=-0.441%
+- #249 ETHUSDT SHORT timeout: actual=-0.001% sim=-0.387% delta=-0.386%
+- #222 ETHUSDT LONG timeout: actual=-0.058% sim=-0.352% delta=-0.293%
+- #270 ETHUSDT SHORT timeout: actual=-0.402% sim=-0.654% delta=-0.253%
+- #230 ETHUSDT LONG timeout: actual=+0.037% sim=-0.186% delta=-0.223%
+- #168 ETHUSDT SHORT tp1_hit: actual=+0.291% sim=+0.098% delta=-0.193%
+- #261 ETHUSDT SHORT tp1_hit: actual=+0.052% sim=-0.104% delta=-0.155%
+- #274 BTCUSDT LONG timeout: actual=-0.131% sim=-0.265% delta=-0.134%
+- #259 ETHUSDT SHORT tp1_hit: actual=+0.064% sim=-0.067% delta=-0.131%
+- #256 ETHUSDT LONG timeout: actual=-0.710% sim=-0.766% delta=-0.056%
 
 ### H2 OOS — age <= 2 candles
 
-- verdict: DADO INSUFICIENTE
-- reasons: menos de 30 trades OOS, menos de 10 trades OOS alterados
-- OOS trades: 2
-- changed: 0
-- improved: 0
-- worsened: 0
-- actual_net: -0.4133%
-- sim_net: -0.4133%
-- delta: +0.0000%
-- max_damage: +0.0000%
+- verdict: NO-GO
+- reasons: delta total OOS < +2.0pp
+- OOS trades: 127
+- changed: 10
+- improved: 5
+- worsened: 5
+- actual_net: -19.0795%
+- sim_net: -17.4494%
+- delta: +1.6301%
+- max_damage: -0.7405%
+- max_positive_trade_share: 36.2%
+- max_positive_symbol_direction_share: 52.2%
 
 Maiores melhorias:
+- #240 ETHUSDT SHORT sl_hit: actual=-1.256% sim=-0.209% delta=+1.047%
+- #181 BTCUSDT SHORT timeout: actual=-1.437% sim=-0.498% delta=+0.939%
+- #262 ETHUSDT SHORT sl_hit: actual=-0.600% sim=-0.137% delta=+0.463%
+- #165 ETHUSDT LONG timeout: actual=-0.209% sim=+0.049% delta=+0.257%
+- #220 BTCUSDT LONG timeout: actual=-0.429% sim=-0.242% delta=+0.187%
+- #197 BTCUSDT LONG timeout: actual=-0.100% sim=-0.222% delta=-0.122%
+- #172 ETHUSDT SHORT sl_hit: actual=-0.600% sim=-0.733% delta=-0.133%
+- #274 BTCUSDT LONG timeout: actual=-0.131% sim=-0.265% delta=-0.134%
+- #272 BTCUSDT SHORT sl_hit: actual=-0.600% sim=-0.735% delta=-0.135%
+- #164 ETHUSDT LONG timeout: actual=-1.112% sim=-1.853% delta=-0.740%
 
 Maiores danos:
+- #164 ETHUSDT LONG timeout: actual=-1.112% sim=-1.853% delta=-0.740%
+- #272 BTCUSDT SHORT sl_hit: actual=-0.600% sim=-0.735% delta=-0.135%
+- #274 BTCUSDT LONG timeout: actual=-0.131% sim=-0.265% delta=-0.134%
+- #172 ETHUSDT SHORT sl_hit: actual=-0.600% sim=-0.733% delta=-0.133%
+- #197 BTCUSDT LONG timeout: actual=-0.100% sim=-0.222% delta=-0.122%
+- #220 BTCUSDT LONG timeout: actual=-0.429% sim=-0.242% delta=+0.187%
+- #165 ETHUSDT LONG timeout: actual=-0.209% sim=+0.049% delta=+0.257%
+- #262 ETHUSDT SHORT sl_hit: actual=-0.600% sim=-0.137% delta=+0.463%
+- #181 BTCUSDT SHORT timeout: actual=-1.437% sim=-0.498% delta=+0.939%
+- #240 ETHUSDT SHORT sl_hit: actual=-1.256% sim=-0.209% delta=+1.047%
 
 ## Leitura fria
 
-OOS ainda é pequeno demais. Pelo critério congelado, verdict obrigatório é DADO INSUFICIENTE.
 Não alterar executor/bot com base neste resultado. Rodar novamente quando houver pelo menos 30 trades OOS e 10 trades alterados por hipótese.

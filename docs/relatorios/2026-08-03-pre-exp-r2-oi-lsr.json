@@ -1,0 +1,57 @@
+{
+  "anti_lookahead": "last full hourly bucket before entry timestamp",
+  "db_path": "/home/pi/crypto_ai_bot/runtime/baseline/bot.db",
+  "frame": "PRE-EXP R2 OI/LSR at Momentum SHORT entries",
+  "label": "AMBIGUO / DADO INSUFICIENTE",
+  "metrics": {
+    "baseline": {
+      "n_bottom": 18,
+      "n_top": 18,
+      "r2": -0.00838422667360228,
+      "spearman": -0.022344558199046984,
+      "spread_bps": -6.841666666666669
+    },
+    "by_symbol_test": {
+      "BTCUSDT": {
+        "baseline_spread_bps": 29.53,
+        "delta_spread_bps": 3.664999999999992,
+        "full_spread_bps": 33.19499999999999,
+        "n": 17
+      },
+      "ETHUSDT": {
+        "baseline_spread_bps": -4.709230769230771,
+        "delta_spread_bps": -8.477692307692303,
+        "full_spread_bps": -13.186923076923074,
+        "n": 38
+      }
+    },
+    "delta": {
+      "perm_p_one_sided_for_delta_spread": 0.184,
+      "r2": -0.20487119901975692,
+      "spearman": -0.04266763778881022,
+      "spread_bps": -3.565555555555555
+    },
+    "full": {
+      "n_bottom": 18,
+      "n_top": 18,
+      "r2": -0.2132554256933592,
+      "spearman": -0.06501219598785721,
+      "spread_bps": -10.407222222222224
+    },
+    "n_test": 55,
+    "n_total": 137,
+    "n_train": 82,
+    "test_end": "2026-08-02T00:30:00+00:00",
+    "test_start": "2026-06-16T06:45:00+00:00",
+    "train_end": "2026-06-16T04:30:00+00:00",
+    "train_start": "2026-04-18T12:45:00+00:00"
+  },
+  "outcome": "pnl_pct_net = momentum_trades.pnl_pct - 0.08",
+  "reasons": [
+    "sample or OOS signal is not decisive under the frozen exploratory rubric",
+    "delta_r2=-0.2049",
+    "delta_spearman=-0.0427",
+    "delta_spread_bps=-3.57",
+    "perm_p=0.1840"
+  ]
+}

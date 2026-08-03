@@ -3,16 +3,16 @@
 - criteria: `/home/pi/crypto_ai_bot/reports/exp_breakout_regime_gated_criteria_2026-06-12.md`
 - pinned criteria hash: `e5d942591a7f86cdb3d58e66a0e669a87f66fafe8450a47576318b7a34edbcbc`
 - csv: `/home/pi/crypto_ai_bot/reports/exp_breakout_regime_gated_shadow_2026-06-12.csv`
-- run_end_utc: 2026-06-12T04:18:59.151132+00:00
+- run_end_utc: 2026-08-03T19:02:13.972358+00:00
 
 ## Signal counts
 
 - discovery_blocked_by_regime: 373
 - discovery_eligible_signal: 392
 - discovery_raw_signal: 765
-- oos_blocked_by_regime: 2
-- oos_eligible_signal: 1
-- oos_raw_signal: 3
+- oos_blocked_by_regime: 862
+- oos_eligible_signal: 592
+- oos_raw_signal: 1454
 
 ## Results
 
@@ -78,18 +78,59 @@ Maiores danos:
 
 - verdict: DADO INSUFICIENTE
 - reasons: menos de 30 trades shadow OOS preenchidos
-- raw rows/signals recorded: 2
-- filled trades: 0
-- blocked_by_regime: 2
-- rejected_by_risk: 0
-- net: +0.0000% | avg: +0.0000% | median: +0.0000%
-- WR: 0.0% | PF: 0.00
-- false_breakout: 0.0% | TP1: 0.0% | TP2: 0.0% | timeout: 0.0%
-- max_damage: +0.0000%
+- raw rows/signals recorded: 1454
+- filled trades: 15
+- blocked_by_regime: 862
+- rejected_by_risk: 577
+- net: -0.2934% | avg: -0.0196% | median: -0.5747%
+- WR: 33.3% | PF: 0.95
+- false_breakout: 66.7% | TP1: 33.3% | TP2: 13.3% | timeout: 20.0%
+- max_damage: -0.8740%
+- max_positive_trade_share: 33.3%
+- max_positive_day_share: 33.3%
+- max_positive_symbol_direction_share: 65.5%
+
+Por symbol:
+- BTCUSDT: n=6 net=-1.7203% avg=-0.2867% PF=0.30
+- ETHUSDT: n=9 net=+1.4269% avg=+0.1585% PF=1.37
+
+Por regime:
+- TRENDING: n=7 net=-1.5765% avg=-0.2252% PF=0.56
+- WEAK_TREND: n=8 net=+1.2831% avg=+0.1604% PF=1.47
+
+Por direction:
+- LONG: n=10 net=+1.1160% avg=+0.1116% PF=1.32
+- SHORT: n=5 net=-1.4094% avg=-0.2819% PF=0.49
+
+Por exit_reason:
+- sl_breakeven: n=1 net=+0.4417% avg=+0.4417% PF=inf
+- sl_hit: n=9 net=-5.8365% avg=-0.6485% PF=0.00
+- timeout: n=3 net=+1.1882% avg=+0.3961% PF=3.74
+- tp2_hit: n=2 net=+3.9132% avg=+1.9566% PF=inf
 
 Maiores ganhos:
+- 2026-06-15 12:40:00 ETHUSDT LONG TRENDING tp2_hit: +1.9909%
+- 2026-06-29 15:55:00 ETHUSDT LONG WEAK_TREND tp2_hit: +1.9223%
+- 2026-07-27 22:50:00 ETHUSDT SHORT WEAK_TREND timeout: +1.3319%
+- 2026-07-01 21:30:00 BTCUSDT LONG WEAK_TREND sl_breakeven: +0.4417%
+- 2026-07-02 09:55:00 BTCUSDT LONG WEAK_TREND timeout: +0.2903%
+- 2026-08-02 02:20:00 ETHUSDT LONG TRENDING timeout: -0.4340%
+- 2026-07-03 15:45:00 BTCUSDT SHORT WEAK_TREND sl_hit: -0.5642%
+- 2026-07-01 03:55:00 ETHUSDT LONG TRENDING sl_hit: -0.5747%
+- 2026-07-15 06:35:00 ETHUSDT LONG TRENDING sl_hit: -0.5998%
+- 2026-06-16 03:00:00 BTCUSDT SHORT WEAK_TREND sl_hit: -0.6162%
 
 Maiores danos:
+- 2026-07-11 23:35:00 ETHUSDT SHORT WEAK_TREND sl_hit: -0.8740%
+- 2026-07-03 14:15:00 ETHUSDT SHORT TRENDING sl_hit: -0.6869%
+- 2026-07-20 11:50:00 BTCUSDT LONG TRENDING sl_hit: -0.6489%
+- 2026-07-16 15:30:00 ETHUSDT LONG WEAK_TREND sl_hit: -0.6488%
+- 2026-07-02 16:50:00 BTCUSDT LONG TRENDING sl_hit: -0.6231%
+- 2026-06-16 03:00:00 BTCUSDT SHORT WEAK_TREND sl_hit: -0.6162%
+- 2026-07-15 06:35:00 ETHUSDT LONG TRENDING sl_hit: -0.5998%
+- 2026-07-01 03:55:00 ETHUSDT LONG TRENDING sl_hit: -0.5747%
+- 2026-07-03 15:45:00 BTCUSDT SHORT WEAK_TREND sl_hit: -0.5642%
+- 2026-08-02 02:20:00 ETHUSDT LONG TRENDING timeout: -0.4340%
 
 ## Leitura fria
 
