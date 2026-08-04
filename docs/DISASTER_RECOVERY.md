@@ -44,6 +44,7 @@ docs/EXPERIMENT_REGISTRY.md           (no git)
 | `k-collector-report.timer` | systemd, 09:00 diário | relatório k_collector via Telegram |
 | `k-collector-watchdog.timer` | systemd, hourly :35 | detecta staleness do k_collector |
 | `liquidation-watchdog.timer` | systemd, a cada 30min | detecta feed Bybit mudo >90min → reinicia `liquidation-collector` (via regra sudoers) + alerta Telegram |
+| `options-watchdog.timer` | systemd, hourly :40 | detecta staleness de `k_options_features` (EXP-019, cadeia Deribit sem backfill) → re-roda `options_collector` + alerta Telegram |
 | vault sync | cron, */30min | `~/obsidian-vault/sync-pull.sh` |
 | `daily_monitor.py` | cron, 4x/dia | monitor momentum via Telegram |
 | `shadow_simulator.py` | cron, 4x/dia | shadow outcomes |
@@ -96,7 +97,7 @@ bash scripts/restore_runtime_bundle.sh /caminho/runtime_bundle_<ts>.tar.gz
 
 # 6. systemd units (instala TUDO parado — sem enable --now do cryptobot)
 sudo cp systemd/cryptobot.service systemd/liquidation-collector.service /etc/systemd/system/
-sudo bash systemd/install_systemd_units.sh        # timers k-collector + liquidation-watchdog + sudoers
+sudo bash systemd/install_systemd_units.sh        # 5 timers: k-collector (3) + liquidation-watchdog + options-watchdog, + sudoers
 sudo systemctl daemon-reload
 sudo systemctl enable cryptobot liquidation-collector   # enable SEM start
 
@@ -138,7 +139,7 @@ bash scripts/healthcheck.sh    # re-validar com serviços de pé
 - [ ] `.env` restaurado e conferido contra `env_keys.txt`
 - [ ] `bot.db` com tabelas críticas e contagens plausíveis
 - [ ] JSONs de estado presentes; posições órfãs reconciliadas
-- [ ] 2 services + 4 timers instalados e enabled (+ sudoers do liquidation-watchdog)
+- [ ] 2 services + 5 timers instalados e enabled (+ sudoers do liquidation-watchdog)
 - [ ] Crontab aplicado e revisado
 - [ ] Gap de coleta registrado no vault
 - [ ] Serviços iniciados manualmente e `/api/status` respondendo

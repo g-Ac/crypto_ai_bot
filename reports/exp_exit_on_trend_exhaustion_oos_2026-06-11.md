@@ -175,4 +175,4 @@ Maiores danos:
 
 ## Leitura fria
 
-Não alterar executor/bot com base neste resultado. Rodar novamente quando houver pelo menos 30 trades OOS e 10 trades alterados por hipótese.
+**Julgado em 2026-08-03** com a régua congelada (127 trades OOS): H1 `GO` — mas somente para mini-spec/shadow separada; não autoriza produção (baseline −19,08% → simulado −15,36%, reduz sangramento sem criar edge). H2 `NO-GO` (delta +1,63 pp < piso +2,0 pp). Não alterar executor/bot com base neste resultado. Veredito final registrado em `docs/EXPERIMENT_REGISTRY.md` (EXP-016); anti-relitígio: não rodar novamente.
