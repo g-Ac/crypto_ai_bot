@@ -110,7 +110,7 @@
       <table style="width:100%">
         <tr class="sys-info-row"><td>Status</td><td class="mono" id="sys-overall">---</td></tr>
         <tr class="sys-info-row"><td>Last cycle</td><td class="mono" id="sys-last-cycle">---</td></tr>
-        <tr class="sys-info-row"><td>Errors today</td><td class="mono" id="sys-errors">---</td></tr>
+        <tr class="sys-info-row"><td>Errors (recent)</td><td class="mono" id="sys-errors">---</td></tr>
         <tr class="sys-info-row"><td>Uptime</td><td class="mono" id="sys-uptime">---</td></tr>
         <tr class="sys-info-row"><td>Instance</td><td class="mono" id="sys-instance">---</td></tr>
         <tr class="sys-info-row"><td>Version</td><td class="mono" id="sys-version">---</td></tr>
@@ -256,7 +256,7 @@
     if (statusDot) statusDot.className = 'status-dot ' + (b.overall || 'offline');
     _set('sys-overall', b.overall || '---');
     _set('sys-last-cycle', b.last_cycle_ago || '---');
-    _set('sys-errors', b.errors_today != null ? b.errors_today : '---');
+    _set('sys-errors', b.errors_recent != null ? b.errors_recent : '---');
     _set('sys-uptime', h.uptime || '---');
     _set('sys-instance', d.instance?.bot_id || '---');
     _set('sys-version', d.instance?.version || '---');
@@ -279,8 +279,7 @@
     if (!grid || !d.capital) return;
 
     const systems = [
-      { key: 'pump', label: 'Pump', icon: '&#9650;' },
-      { key: 'scalping', label: 'Scalping', icon: '&#9733;' },
+      { key: 'momentum', label: 'Momentum', icon: '&#9650;' },
     ];
 
     grid.innerHTML = systems.map(sys => {

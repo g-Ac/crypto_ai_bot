@@ -223,8 +223,8 @@
     if (d.bot_status?.last_cycle_ago) $('#tk-cycle').textContent = d.bot_status.last_cycle_ago;
     if (d.health?.uptime) $('#tk-uptime').textContent = d.health.uptime;
 
-    // Funnel pass rate
-    const funnel = d.scalping_funnel;
+    // Funnel pass rate (momentum — o funil do scalping saiu com o sistema)
+    const funnel = d.funnel;
     if (funnel?.total) {
       const opened = funnel.breakdown?.opened || 0;
       $('#tk-decisions').textContent = funnel.total + ' (' + (opened / funnel.total * 100).toFixed(0) + '% pass)';

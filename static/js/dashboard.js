@@ -93,12 +93,14 @@ function _drawKpiSpark(id, data, color) {
 }
 
 function _todaySpark(d) {
-  // Build intra-day spark from trades
-  const trades = d.trades?.scalping || [];
-  const pumpT = d.trades?.pump || [];
-  const all = [...trades, ...pumpT].sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+  // Spark intra-dia dos trades do momentum, no LIQUIDO (net_pnl_usd).
+  // Este arquivo só é carregado por dashboard.html, cuja única fonte é
+  // /api/status — que serve include_trades=False. Na prática o spark fica vazio
+  // até alguém popular d.trades; mantido para não perder o formato.
+  const all = [...(d.trades?.momentum || [])]
+    .sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
   let acc = 0;
-  return all.map(t => { acc += +(t.pnl_usd || 0); return acc; });
+  return all.map(t => { acc += +(t.net_pnl_usd ?? t.pnl_usd ?? 0); return acc; });
 }
 
 /* ── Positions ──────────────────────────────────────────── */
@@ -155,24 +157,27 @@ function renderSystemCards(d) {
   if (!container) return;
 
   const systems = [
-    { key: 'pump', label: 'Pump', color: '#06b6d4' },
-    { key: 'scalping', label: 'Scalping', color: '#8b5cf6' },
+    { key: 'momentum', label: 'Momentum', color: '#5fb7ff' },
   ];
 
   container.innerHTML = systems.map(sys => {
     const cap = d.capital?.[sys.key] || {};
     const stats = d.stats_today?.[sys.key] || {};
     const met = d.metrics?.per_system?.[sys.key] || {};
-    const retCls = pnlClass(cap.ret);
-    const glowCls = cap.cb ? 'glow-danger' : (cap.ret > 0 ? 'glow-success' : '');
+    // Headline = LIQUIDO. O bruto vai embaixo, marcado, porque a fee do momentum
+    // e ~2x o edge bruto: os mesmos trades dao +3,96% gross e -10,92% net.
+    const netRet = cap.net_ret ?? cap.ret;
+    const retCls = pnlClass(netRet);
+    const glowCls = cap.cb ? 'glow-danger' : (netRet > 0 ? 'glow-success' : '');
 
     return `<div class="sys-card ${glowCls}">
       <div class="flex items-center justify-between mb-2">
         <span class="label">${sys.label}</span>
         ${cap.cb ? '<span class="badge red">CB</span>' : ''}
       </div>
-      <div class="mono ${retCls}" style="font-size:1.1rem;font-weight:300">${fmtUsd(cap.value)}</div>
-      <div class="mono ${retCls} text-sm">${fmtPct(cap.ret)}</div>
+      <div class="mono ${retCls}" style="font-size:1.1rem;font-weight:300">${fmtUsd(cap.net_value ?? cap.value)}</div>
+      <div class="mono ${retCls} text-sm">${fmtPct(netRet)} <span class="text-3 text-xxs">net</span></div>
+      <div class="text-3 text-xxs">${fmtUsd(cap.value)} ${fmtPct(cap.ret)} gross &middot; fee ${fmtUsd(cap.fee_usd)}</div>
       <div class="text-3 text-xxs mt-3">${met.total_trades||0} trades &middot; WR ${met.win_rate!=null?met.win_rate.toFixed(1):'0'}% &middot; Today: ${stats.count||0}</div>
     </div>`;
   }).join('');
@@ -183,9 +188,9 @@ function renderMiniEquity(charts) {
   const container = document.getElementById('equity-mini');
   if (!container || typeof LightweightCharts === 'undefined') return;
 
+  // Momentum-only: charts.total === charts.momentum (as series por sistema
+  // aposentado sairam do payload). Uma serie so, no LIQUIDO.
   const total = charts.total || [];
-  const pump = charts.pump || [];
-  const scalping = charts.scalping || [];
 
   if (!_equityChart) {
     _equityChart = {};
@@ -207,16 +212,6 @@ function renderMiniEquity(charts) {
       lineWidth: 2,
     });
 
-    // Pump
-    _equityChart.pumpSeries = _equityChart.chart.addLineSeries({
-      color: '#06b6d4', lineWidth: 1,
-    });
-
-    // Scalping
-    _equityChart.scalpSeries = _equityChart.chart.addLineSeries({
-      color: '#8b5cf6', lineWidth: 1,
-    });
-
     // Drawdown underlay marker area
     // (We'll overlay via CSS if needed — LW charts doesn't have native underlay)
 
@@ -228,8 +223,6 @@ function renderMiniEquity(charts) {
 
   const toData = arr => (arr || []).map(p => ({ time: p.day, value: p.pnl }));
   _equityChart.totalSeries.setData(toData(total));
-  _equityChart.pumpSeries.setData(toData(pump));
-  _equityChart.scalpSeries.setData(toData(scalping));
 
   // Add trade markers on total series
   const marks = [];
@@ -241,7 +234,7 @@ function renderMiniEquity(charts) {
 /* ── Recent Trades ─────────────────────────────────────── */
 async function loadTrades() {
   try {
-    const r = await fetch('/api/trades?days=7&system=scalping');
+    const r = await fetch('/api/trades?days=7&system=momentum');
     const trades = await r.json();
     const list = Array.isArray(trades) ? trades : (trades.trades || []);
     renderTrades(list);
@@ -271,11 +264,14 @@ function renderTrades(allTrades) {
     const time = (t.timestamp || '').slice(5, 16) || '---';
     const sym = (t.symbol || '---').replace('USDT', '');
     const side = (t.type || t.direction || '---').toUpperCase();
-    const pnl = t.pnl_pct;
+    // LIQUIDO: momentum_trades traz net_pnl_*; mostrar pnl_pct aqui poria numero
+    // bruto embaixo de KPIs liquidos, na mesma tela.
+    const pnl = t.net_pnl_pct ?? t.pnl_pct;
     const pCls = pnlClass(pnl);
-    const system = t.system || t._system || '---';
+    // momentum_trades nao tem coluna `system`; o regime e o que informa.
+    const system = t.system || t.regime || '---';
     const reason = t.exit_reason || t.close_reason || '---';
-    const pnlUsd = t.pnl_usd;
+    const pnlUsd = t.net_pnl_usd ?? t.pnl_usd;
 
     return `<tr>
       <td class="text-3 mono text-xxs">${esc(time)}</td>
