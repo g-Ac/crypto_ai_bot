@@ -19,7 +19,9 @@ Rotas:
   GET  /api/logs    — logs recentes de qualquer subsistema
 """
 import os
+import glob
 import json
+import re
 import shutil
 import sqlite3
 import time
@@ -40,16 +42,14 @@ import rotulagem_levels
 import rotulagem_candles
 from compare_instances import build_snapshot, compare_snapshots
 from database import (
-    get_all_time_stats,
     get_scalping_audit_log,
     get_scalping_funnel_stats,
     get_scalping_outcome_labels,
-    get_stats_by_symbol,
     get_trades_range,
 )
 from telegram_commands import is_paused, _set_paused
 from daily_report import calc_daily_stats, get_capital_status
-from config import PAPER_INITIAL_CAPITAL, AGENT_INITIAL_CAPITAL, PUMP_INITIAL_CAPITAL, SCALPING_INITIAL_CAPITAL, DASHBOARD_USER, DASHBOARD_PASS, BINANCE_SPOT_TICKER_URL
+from config import MOMENTUM_INITIAL_CAPITAL, DASHBOARD_USER, DASHBOARD_PASS, BINANCE_SPOT_TICKER_URL
 from scalping_research import build_scalping_scorer_report, export_outcomes_dataset
 from signal_types import ScalpingConfig
 from runtime_config import (
@@ -60,11 +60,7 @@ from runtime_config import (
     DB_FILE,
     LOG_DIR,
     MOMENTUM_STATE_FILE,
-    PAPER_STATE_FILE,
-    AGENT_STATE_FILE,
-    PUMP_STATE_FILE,
     RUNTIME_BASE_DIR,
-    SCALPING_STATE_FILE,
     runtime_metadata,
     runtime_path,
 )
@@ -113,12 +109,10 @@ def require_post_auth(fn):
 
 
 _PRICE_CACHE = {"fetched_at": 0.0, "prices": {}}
-_RESEARCH_CACHE = {"fetched_at": 0.0, "payload": None}
+# Unico sistema ativo. Paper/Agent/Pump/Scalping foram aposentados (CLAUDE.md);
+# mante-los aqui rendia linhas de leaderboard com capital inicial estatico.
 SYSTEM_META = {
-    "paper": {"label": "Paper Trading", "color": "#5fb7ff"},
-    "agent": {"label": "Multi-Agent", "color": "#35d08f"},
-    "pump": {"label": "Pump Scanner", "color": "#ff9f66"},
-    "scalping": {"label": "Scalping", "color": "#b592ff"},
+    "momentum": {"label": "Momentum Pullback", "color": "#5fb7ff"},
 }
 
 
@@ -174,8 +168,14 @@ def _build_system_leaderboard(capital: dict, stats_today: dict, metrics_per_syst
             "key": key,
             "label": meta["label"],
             "color": meta["color"],
-            "capital_value": round(_safe_float(capital_row.get("value")), 2),
-            "return_pct": round(_safe_float(capital_row.get("ret")), 2),
+            # LIQUIDO quando o sistema reporta fee (momentum); o bruto fica ao
+            # lado, explicito, para nao passar por retorno real.
+            "capital_value": round(_safe_float(
+                capital_row.get("net_value", capital_row.get("value"))), 2),
+            "return_pct": round(_safe_float(
+                capital_row.get("net_ret", capital_row.get("ret"))), 2),
+            "gross_capital_value": round(_safe_float(capital_row.get("value")), 2),
+            "gross_return_pct": round(_safe_float(capital_row.get("ret")), 2),
             "today_pnl_usd": round(_safe_float(day_row.get("pnl_usd")), 2),
             "today_trades": _safe_int(day_row.get("count")),
             "today_wins": _safe_int(day_row.get("wins")),
@@ -198,94 +198,6 @@ def _build_system_leaderboard(capital: dict, stats_today: dict, metrics_per_syst
         reverse=True,
     )
     return rows
-
-
-def _collect_top_setup_candidates(report: dict, limit: int = 6) -> list[dict]:
-    ordered_buckets = (
-        ("promising", report.get("top_promising") or []),
-        ("watch", report.get("watchlist") or []),
-        ("insufficient", report.get("insufficient") or []),
-        ("avoid", report.get("top_avoid") or []),
-    )
-    results = []
-    seen = set()
-
-    for recommendation, rows in ordered_buckets:
-        for row in rows:
-            setup_key = row.get("setup_key") or f"{recommendation}:{len(results)}"
-            if setup_key in seen:
-                continue
-            seen.add(setup_key)
-            results.append({
-                "setup_key": setup_key,
-                "recommendation": recommendation,
-                "scenario_type": row.get("scenario_type") or "unknown",
-                "event_outcome": row.get("event_outcome") or "unknown",
-                "best_signal_source": row.get("best_signal_source") or "unknown",
-                "direction": row.get("direction") or "UNKNOWN",
-                "complete_actionable": _safe_int(row.get("complete_actionable")),
-                "total": _safe_int(row.get("total")),
-                "win_rate": round(_safe_float(row.get("win_rate")), 2),
-                "avg_close_return_60m_pct": round(_safe_float(row.get("avg_close_return_60m_pct")), 4),
-                "profit_gap_60m_vs_5m_pct": round(_safe_float(row.get("profit_gap_60m_vs_5m_pct")), 4),
-                "edge_score": round(_safe_float(row.get("edge_score")), 2),
-                "top_reason": row.get("top_reason") or "",
-            })
-            if len(results) >= limit:
-                return results
-
-    return results
-
-
-def _build_strategy_research_snapshot() -> dict:
-    outcomes_payload = _build_scalping_outcomes_payload(days=7, limit=250)
-    scorer_report = build_scalping_scorer_report(days=30, limit=5000)
-
-    outcomes_summary = outcomes_payload.get("summary") or {}
-    scorer_summary = scorer_report.get("summary") or {}
-
-    return {
-        "generated_at": scorer_report.get("generated_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "outcomes_summary": outcomes_summary,
-        "scorer_summary": scorer_summary,
-        "top_reasons": (outcomes_summary.get("top_reasons") or [])[:6],
-        "top_setups": _collect_top_setup_candidates(scorer_report, limit=6),
-        "recommendation_counts": {
-            "promising": _safe_int(scorer_summary.get("promising_groups")),
-            "watch": _safe_int(scorer_summary.get("watch_groups")),
-            "avoid": _safe_int(scorer_summary.get("avoid_groups")),
-            "insufficient": _safe_int(scorer_summary.get("insufficient_groups")),
-        },
-    }
-
-
-def _get_strategy_research_snapshot(max_age_seconds: int = 180) -> dict:
-    now = time.time()
-    cached_payload = _RESEARCH_CACHE.get("payload")
-    cached_at = _safe_float(_RESEARCH_CACHE.get("fetched_at"))
-    if cached_payload and (now - cached_at) < max_age_seconds:
-        return cached_payload
-
-    try:
-        payload = _build_strategy_research_snapshot()
-    except Exception:
-        return cached_payload or {
-            "generated_at": "",
-            "outcomes_summary": {},
-            "scorer_summary": {},
-            "top_reasons": [],
-            "top_setups": [],
-            "recommendation_counts": {
-                "promising": 0,
-                "watch": 0,
-                "avoid": 0,
-                "insufficient": 0,
-            },
-        }
-
-    _RESEARCH_CACHE["payload"] = payload
-    _RESEARCH_CACHE["fetched_at"] = now
-    return payload
 
 
 def _extract_host_name(host_value: str | None) -> str:
@@ -588,168 +500,6 @@ def _extract_trade_timestamp(trade):
     return trade.get("timestamp") or trade.get("exit_time") or trade.get("entry_time") or ""
 
 
-def _parse_trade_datetime(raw_ts):
-    if not raw_ts:
-        return None
-    try:
-        normalized = str(raw_ts).replace("Z", "+00:00")
-        return datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-
-
-def _normalize_scalping_trade(trade):
-    ts = _extract_trade_timestamp(trade)
-    direction = trade.get("direction") or trade.get("type") or ""
-    pnl_pct = trade.get("pnl_pct")
-    if pnl_pct is None:
-        entry = _safe_float(trade.get("entry_price"))
-        exit_price = _safe_float(trade.get("exit_price"))
-        if entry and exit_price:
-            if str(direction).upper() in ("SHORT", "SELL"):
-                pnl_pct = (entry - exit_price) / entry * 100
-            else:
-                pnl_pct = (exit_price - entry) / entry * 100
-        else:
-            pnl_pct = 0
-
-    return {
-        "timestamp": ts,
-        "entry_time": trade.get("entry_time"),
-        "exit_time": trade.get("exit_time"),
-        "symbol": trade.get("symbol", "--"),
-        "type": direction,
-        "entry_price": _safe_float(trade.get("entry_price")),
-        "exit_price": _safe_float(trade.get("exit_price")),
-        "pnl_pct": round(_safe_float(pnl_pct), 4),
-        "pnl_usd": round(_safe_float(trade.get("pnl_usd")), 2),
-        "exit_reason": trade.get("exit_reason") or trade.get("reason") or "signal",
-        "analyst_confidence": trade.get("analyst_confidence"),
-        "capital_after": trade.get("capital_after"),
-    }
-
-
-def _get_scalping_history(days=None, limit=100):
-    # Primary source: database (authoritative, all trades)
-    from database import get_scalping_trades
-    db_days = days if (days is not None and days > 0) else 30
-    db_rows = get_scalping_trades(days=db_days, limit=limit or 500)
-
-    if db_rows:
-        if days == 0:
-            today_str = date.today().isoformat()
-            db_rows = [r for r in db_rows if (r.get("timestamp") or "")[:10] == today_str]
-        return db_rows
-
-    # Fallback: state.json history (legacy, limited to 20 entries)
-    scalping_state = _read_json(SCALPING_STATE_FILE, {})
-    history = scalping_state.get("history", [])
-    if not history:
-        return []
-
-    cutoff = None
-    today_only = False
-    if days is not None and days > 0:
-        cutoff = datetime.now() - timedelta(days=days)
-    elif days == 0:
-        today_only = True
-
-    rows = []
-    for trade in history:
-        row = _normalize_scalping_trade(trade)
-        row_dt = _parse_trade_datetime(row["timestamp"])
-        if cutoff and row_dt and row_dt < cutoff:
-            continue
-        if today_only and (row.get("timestamp") or "")[:10] != date.today().isoformat():
-            continue
-        row["_sort_dt"] = row_dt or datetime.min
-        rows.append(row)
-
-    rows.sort(key=lambda item: item["_sort_dt"], reverse=True)
-    if limit:
-        rows = rows[:limit]
-
-    for row in rows:
-        row.pop("_sort_dt", None)
-    return rows
-
-
-def _compute_trade_metrics(trades):
-    if not trades:
-        return {
-            "total_trades": 0,
-            "win_rate": 0,
-            "avg_pnl_pct": 0,
-            "largest_win": 0,
-            "largest_loss": 0,
-            "profit_factor": 0,
-            "max_drawdown_pct": 0,
-        }
-
-    wins = [t for t in trades if _safe_float(t.get("pnl_pct")) > 0]
-    losses = [t for t in trades if _safe_float(t.get("pnl_pct")) < 0]
-    pnl_pct_values = [_safe_float(t.get("pnl_pct")) for t in trades]
-    pnl_usd_values = [_safe_float(t.get("pnl_usd")) for t in trades]
-
-    sum_wins = sum(value for value in pnl_usd_values if value > 0)
-    sum_losses = abs(sum(value for value in pnl_usd_values if value < 0))
-    capitals = [
-        _safe_float(t.get("capital_after"))
-        for t in trades
-        if t.get("capital_after") not in (None, "")
-    ]
-
-    max_drawdown_pct = 0
-    if capitals:
-        # Trades arrive newest-first; drawdown needs chronological (oldest-first)
-        capitals = list(reversed(capitals))
-        peak = capitals[0]
-        for capital in capitals:
-            if capital > peak:
-                peak = capital
-            if peak > 0:
-                dd = (peak - capital) / peak * 100
-                if dd > max_drawdown_pct:
-                    max_drawdown_pct = dd
-
-    return {
-        "total_trades": len(trades),
-        "win_rate": round(len(wins) / len(trades) * 100, 1) if trades else 0,
-        "avg_pnl_pct": round(sum(pnl_pct_values) / len(pnl_pct_values), 2) if pnl_pct_values else 0,
-        "largest_win": round(max(pnl_pct_values), 2) if pnl_pct_values else 0,
-        "largest_loss": round(min(pnl_pct_values), 2) if pnl_pct_values else 0,
-        "profit_factor": round(sum_wins / sum_losses, 2) if sum_losses > 0 else (99.0 if sum_wins > 0 else 0),
-        "max_drawdown_pct": round(max_drawdown_pct, 2),
-    }
-
-
-def _merge_cumulative_charts(charts_by_system):
-    all_days = sorted({
-        row["day"]
-        for rows in charts_by_system.values()
-        for row in rows
-    })
-    if not all_days:
-        return []
-
-    series_maps = {
-        key: {row["day"]: _safe_float(row.get("pnl")) for row in rows}
-        for key, rows in charts_by_system.items()
-    }
-    running = {key: 0.0 for key in charts_by_system.keys()}
-    merged = []
-
-    for day in all_days:
-        total = 0.0
-        for key, series_map in series_maps.items():
-            if day in series_map:
-                running[key] = series_map[day]
-            total += running[key]
-        merged.append({"day": day, "pnl": round(total, 2)})
-
-    return merged
-
-
 def _get_market_prices(symbols_needed):
     if not symbols_needed:
         return {}
@@ -790,79 +540,123 @@ def _get_market_prices(symbols_needed):
 
 # ── SYSTEM HEALTH ────────────────────────────────────────────────────────────
 
+def _resolve_active_log(prefix):
+    """Resolve o log ATIVO de um processo pelo mtime — nao pelo nome com a data.
+
+    O supervisor calcula o nome uma unica vez no spawn (`supervisor.get_log_path`)
+    e mantem o file handle aberto enquanto o processo vive: um run que atravessa a
+    meia-noite continua escrevendo no arquivo do dia em que subiu. Montar
+    f"{prefix}_{hoje}.log" cega o leitor a partir do 2o dia — foi o que deixou o
+    dashboard sem ciclo e sem logs desde 2026-07-29 (supervisor de pe desde 28/07).
+    """
+    try:
+        candidates = glob.glob(os.path.join(str(LOG_DIR), f"{prefix}_*.log"))
+        return max(candidates, key=os.path.getmtime) if candidates else None
+    except (OSError, ValueError):
+        return None
+
+
+# O handler de topo do loop do main.py imprime "Erro: {e}" — SEM colchetes
+# (main.py). Contar so "[erro]" deixava passar justamente a falha que mata o
+# ciclo. "(ignorado)" fica de fora de proposito: o proprio codigo declara que
+# seguiu adiante, nao e erro de ciclo.
+_ERROR_MARKERS = re.compile(r"(?:^|\W)(erro|error)\b|traceback \(most recent", re.I)
+_ERROR_IGNORED = re.compile(r"\(ignorado\)", re.I)
+_ERROR_TAIL_BYTES = 512 * 1024
+
+
+def _count_recent_errors(log_path, tail_bytes=_ERROR_TAIL_BYTES):
+    """Conta marcadores de erro na cauda do log ativo.
+
+    Nao da para contar "erros de hoje": as linhas do main.py nao carregam
+    timestamp de escrita (as datas no texto sao do candle, em UTC) e o journal do
+    systemd fica vazio porque o supervisor redireciona stdout para arquivo. O log
+    ativo acumula todos os dias do run atual, entao ler o arquivo inteiro somaria
+    dias antigos e travaria o overall fora de "healthy" para sempre.
+
+    Le por SEEK na cauda, nao com deque sobre o arquivo todo: o dashboard atualiza
+    a cada 15s e o log ja passa de 8 MB (varrer tudo custava ~0,13s por refresh e
+    cresce linearmente com o arquivo).
+    """
+    try:
+        size = os.path.getsize(log_path)
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            if size > tail_bytes:
+                f.seek(size - tail_bytes)
+                f.readline()  # descarta a linha partida pelo seek
+            lines = f.readlines()
+    except OSError:
+        return 0
+    return sum(
+        1 for line in lines
+        if _ERROR_MARKERS.search(line) and not _ERROR_IGNORED.search(line)
+    )
+
+
+CYCLE_STALE_SECONDS = 660  # 2 ciclos de 5min + folga
+
+
+def _get_cycle_age_seconds():
+    """Idade do ultimo ciclo COMPLETO do main.py, em segundos (None se indeterminado).
+
+    NAO usa o mtime do log: o supervisor abre o mesmo arquivo e escreve o banner
+    "Iniciado em ..." a CADA respawn (supervisor.run_bot), e o backoff maximo dele
+    e 300s — abaixo de qualquer limiar razoavel. Um main.py em crash loop manteria
+    o log sempre fresco e o painel diria "healthy" sem um unico ciclo ter rodado:
+    trocariamos o falso negativo antigo por um falso positivo, que e pior.
+
+    `momentum_state.json` e reescrito por `save_state()` no fim de
+    process_momentum_cycle, incondicionalmente — so existe se um ciclo completou.
+    """
+    try:
+        return time.time() - os.path.getmtime(MOMENTUM_STATE_FILE)
+    except OSError:
+        return None
+
+
 def _get_bot_status():
-    """Verifica se o bot esta operacional: processos vivos, ultimo ciclo recente, sem erros."""
+    """Verifica se o bot esta operacional: processo vivo, ciclo recente, sem erros."""
     import subprocess
     status = {
         "main_bot": False,
-        "pump_scanner": False,
         "dashboard": True,  # se estamos aqui, dashboard esta vivo
         "last_cycle_ok": False,
         "last_cycle_ago": "N/A",
-        "errors_today": 0,
+        "errors_recent": 0,
         "overall": "offline",  # offline, degraded, healthy
     }
 
-    # Em modo multi-instancia, os logs do runtime isolado sao a melhor fonte.
-    # pgrep fica apenas como fallback quando os logs nao existem.
-    log_dir = str(LOG_DIR)
-    today = datetime.now().strftime("%Y-%m-%d")
-    main_log = os.path.join(log_dir, f"main_bot_{today}.log")
-    if os.path.isfile(main_log):
-        try:
-            mtime = os.path.getmtime(main_log)
-            age_seconds = (datetime.now() - datetime.fromtimestamp(mtime)).total_seconds()
-            status["last_cycle_ago"] = f"{int(age_seconds)}s"
-            status["last_cycle_ok"] = age_seconds < 600  # less than 10 min = healthy
-            # Also mark main_bot alive if log was updated recently
-            if age_seconds < 600:
-                status["main_bot"] = True
-        except Exception:
-            pass
+    cycle_age = _get_cycle_age_seconds()
+    if cycle_age is not None:
+        status["last_cycle_ago"] = f"{int(cycle_age)}s"
+        status["last_cycle_ok"] = cycle_age < CYCLE_STALE_SECONDS
 
-        # Count errors in today's log
-        try:
-            with open(main_log, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-            status["errors_today"] = content.lower().count("[erro]") + content.lower().count("traceback")
-        except Exception:
-            pass
+    main_log = _resolve_active_log("main_bot")
+    if main_log:
+        status["errors_recent"] = _count_recent_errors(main_log)
 
-    # Also check pump scanner log
-    pump_log = os.path.join(log_dir, f"pump_scanner_{today}.log")
-    if os.path.isfile(pump_log):
-        try:
-            mtime = os.path.getmtime(pump_log)
-            age_seconds = (datetime.now() - datetime.fromtimestamp(mtime)).total_seconds()
-            if age_seconds < 120:  # pump runs every 60s
-                status["pump_scanner"] = True
-        except Exception:
-            pass
+    # O processo em si vem do pgrep, com escopo no caminho absoluto do runtime:
+    # "-f main.py" casaria qualquer cmdline que contenha a string (outro BOT_ID,
+    # um editor, o proprio shell desta checagem).
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", os.path.join(str(APP_DIR), "main.py")],
+            capture_output=True, timeout=3,
+        )
+        status["main_bot"] = result.returncode == 0
+    except Exception:
+        # Sem pgrep, um ciclo recente ainda e prova de vida.
+        status["main_bot"] = bool(status["last_cycle_ok"])
 
-    if not status["main_bot"]:
-        try:
-            result = subprocess.run(
-                ["pgrep", "-f", "main.py"], capture_output=True, timeout=3
-            )
-            status["main_bot"] = result.returncode == 0
-        except Exception:
-            pass
-
-    if not status["pump_scanner"]:
-        try:
-            result = subprocess.run(
-                ["pgrep", "-f", "pump_scanner.py"], capture_output=True, timeout=3
-            )
-            status["pump_scanner"] = result.returncode == 0
-        except Exception:
-            pass
-
-    # Overall status
-    all_up = status["main_bot"] and status["pump_scanner"] and status["dashboard"]
-    if all_up and status["last_cycle_ok"] and status["errors_today"] == 0:
+    # Portao de saude: apenas os processos que o supervisor de fato gerencia
+    # (supervisor.BOTS = main_bot + dashboard). O pump_scanner saiu daqui junto com
+    # a aposentadoria do sistema — exigi-lo travava o overall em "degraded" para
+    # sempre, porque `pgrep pump_scanner.py` nunca mais acha nada.
+    all_up = status["main_bot"] and status["dashboard"]
+    if all_up and status["last_cycle_ok"] and status["errors_recent"] == 0:
         status["overall"] = "healthy"
     elif all_up and status["last_cycle_ok"]:
-        status["overall"] = "degraded"  # running but has errors
+        status["overall"] = "degraded"  # rodando, mas com erros
     elif status["main_bot"]:
         status["overall"] = "degraded"
     else:
@@ -959,25 +753,27 @@ def _get_system_health():
 def _get_recent_logs(source="main", lines=30):
     """Le as ultimas N linhas de um arquivo de log.
 
-    source="main"     → logs/main_bot_YYYY-MM-DD.log
+    source="main"      → logs/main_bot_*.log (o ativo, resolvido por mtime)
     source="scalping"  → logs/scalping.log
-    source="pump"      → logs/pump_scanner_YYYY-MM-DD.log
+    source="pump"      → logs/pump_scanner_*.log (o ativo, resolvido por mtime)
+
+    Resolve por mtime porque o nome carrega a data do SPAWN, nao a de hoje —
+    ver `_resolve_active_log`.
     """
     logs_dir = str(LOG_DIR)
-    today = date.today().isoformat()
 
     if source == "main":
-        log_file = os.path.join(logs_dir, f"main_bot_{today}.log")
+        log_file = _resolve_active_log("main_bot")
     elif source == "scalping":
         log_file = os.path.join(logs_dir, "scalping.log")
     elif source == "pump":
-        log_file = os.path.join(logs_dir, f"pump_scanner_{today}.log")
+        log_file = _resolve_active_log("pump_scanner")
     elif re.match(r'^[a-zA-Z0-9_-]+$', source):
         log_file = os.path.join(logs_dir, f"{source}.log")
     else:
         return []
 
-    if not os.path.isfile(log_file):
+    if not log_file or not os.path.isfile(log_file):
         return []
 
     try:
@@ -991,52 +787,29 @@ def _get_recent_logs(source="main", lines=30):
 # ── LIVE POSITIONS ───────────────────────────────────────────────────────────
 
 def _get_live_positions():
-    """Le posicoes abertas dos arquivos de estado e adiciona P&L ao vivo via Binance."""
-    state_files = [
-        (PAPER_STATE_FILE, "Paper"),
-        (AGENT_STATE_FILE, "Agent"),
-        (PUMP_STATE_FILE, "Pump"),
-    ]
+    """Le posicoes abertas do momentum e adiciona P&L ao vivo via Binance.
 
+    Momentum-only: os states de paper/agent/pump/scalping nao sao mais escritos
+    por ninguem — liam sempre {} e so custavam I/O a cada refresh.
+    """
     raw = []
     symbols_needed = set()
 
-    # --- Paper, Agent, Pump positions ---
-    for path, system in state_files:
-        state = _read_json(path, {})
-        for sym, pos in state.get("positions", {}).items():
-            symbols_needed.add(sym)
-            entry = {
-                "system":      system,
-                "symbol":      sym,
-                "type":        pos.get("type", ""),
-                "entry_price": _safe_float(pos.get("entry_price")),
-                "sl_price":    pos.get("sl_price"),
-                "tp_price":    pos.get("tp_price"),
-                "position_size_usd": _safe_float(pos.get("position_size_usd") or pos.get("allocation")),
-            }
-            if system == "Agent" and "analyst_confidence" in pos:
-                entry["analyst_confidence"] = pos["analyst_confidence"]
-            raw.append(entry)
-
-    # --- Scalping positions (different field names) ---
-    scalping_state = _read_json(SCALPING_STATE_FILE, {})
-    for sym, pos in scalping_state.get("positions", {}).items():
+    momentum_state = _read_json(MOMENTUM_STATE_FILE, {})
+    for sym, pos in (momentum_state.get("positions") or {}).items():
         symbols_needed.add(sym)
         raw.append({
-            "system":           "Scalping",
-            "symbol":           sym,
-            "type":             pos.get("direction", ""),
-            "entry_price":      _safe_float(pos.get("entry_price")),
-            "sl_price":         pos.get("sl_price"),
-            "tp1_price":        pos.get("tp1_price"),
-            "tp2_price":        pos.get("tp2_price"),
-            "tp_price":         pos.get("tp1_price"),
-            "leverage":         pos.get("leverage", 1),
-            "confluence_score": pos.get("confluence_score", 0),
-            "tp1_hit":          pos.get("tp1_hit", False),
+            "system":            "Momentum",
+            "symbol":            sym,
+            "type":              pos.get("direction", ""),
+            "entry_price":       _safe_float(pos.get("entry_price")),
+            "sl_price":          pos.get("sl_price"),
+            "tp1_price":         pos.get("tp1_price"),
+            "tp2_price":         pos.get("tp2_price"),
+            "tp_price":          pos.get("tp1_price"),
             "position_size_usd": _safe_float(pos.get("position_size_usd")),
-            "source":           pos.get("source", ""),
+            "regime":            pos.get("regime", ""),
+            "open_time":         pos.get("open_time", ""),
         })
 
     if not raw:
@@ -1198,203 +971,284 @@ def _build_ai_brain_payload() -> dict:
     }
 
 
+# ── MOMENTUM (unico sistema ativo) ───────────────────────────────────────────
+#
+# Helpers proprios porque os genericos de database.py (get_all_time_stats,
+# get_cumulative_pnl, get_stats_by_symbol) somam pnl_pct/pnl_usd/capital_after —
+# todos BRUTOS. No momentum a fee e ~2x o edge bruto: os mesmos 283 trades dao
+# +3,96% no gross e -24,67% no liquido. Tudo abaixo le net_pnl_*, caindo para o
+# gross so quando a fee nao foi medida (linhas antigas com net NULL).
+
+def _net_pnl_pct(trade):
+    value = trade.get("net_pnl_pct")
+    return _safe_float(trade.get("pnl_pct")) if value in (None, "") else _safe_float(value)
+
+
+def _net_pnl_usd(trade):
+    value = trade.get("net_pnl_usd")
+    return _safe_float(trade.get("pnl_usd")) if value in (None, "") else _safe_float(value)
+
+
+def _compute_momentum_metrics(trades, initial_capital):
+    """Metricas do momentum pelo LIQUIDO. Espelha _compute_trade_metrics."""
+    if not trades:
+        return {
+            "total_trades": 0, "win_rate": 0, "avg_pnl_pct": 0,
+            "largest_win": 0, "largest_loss": 0, "profit_factor": 0,
+            "max_drawdown_pct": 0, "is_net": True,  # vazio: nada bruto entrou
+        }
+
+    pct_values = [_net_pnl_pct(t) for t in trades]
+    usd_values = [_net_pnl_usd(t) for t in trades]
+    wins = [v for v in pct_values if v > 0]
+    sum_wins = sum(v for v in usd_values if v > 0)
+    sum_losses = abs(sum(v for v in usd_values if v < 0))
+
+    # capital_after e bruto: reconstroi a curva liquida do inicio para o drawdown.
+    # get_* devolve o mais recente primeiro, entao inverte para ficar cronologico.
+    equity, running = [], _safe_float(initial_capital)
+    for value in reversed(usd_values):
+        running += value
+        equity.append(running)
+    peak, max_drawdown_pct = equity[0] if equity else 0, 0
+    for capital in equity:
+        peak = max(peak, capital)
+        if peak > 0:
+            max_drawdown_pct = max(max_drawdown_pct, (peak - capital) / peak * 100)
+
+    return {
+        "total_trades": len(trades),
+        "win_rate": round(len(wins) / len(trades) * 100, 1),
+        "avg_pnl_pct": round(sum(pct_values) / len(pct_values), 2),
+        "largest_win": round(max(pct_values), 2),
+        "largest_loss": round(min(pct_values), 2),
+        "profit_factor": round(sum_wins / sum_losses, 2) if sum_losses > 0 else 0,
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
+        # False quando algum trade caiu no fallback gross (fee nao medida) —
+        # o painel nao deve afirmar "liquido" sobre um agregado misto.
+        "is_net": all(t.get("net_pnl_usd") not in (None, "") for t in trades),
+    }
+
+
+def _momentum_equity_chart(trades):
+    """PnL LIQUIDO acumulado por dia (mesma forma dos charts antigos)."""
+    daily = {}
+    for trade in trades:
+        day = (trade.get("timestamp") or "")[:10]
+        if day:
+            daily[day] = daily.get(day, 0.0) + _net_pnl_usd(trade)
+    chart, acc = [], 0.0
+    for day in sorted(daily):
+        acc += daily[day]
+        chart.append({"day": day, "pnl": round(acc, 2)})
+    return chart
+
+
+def _momentum_by_symbol(trades):
+    """Performance por simbolo, no liquido."""
+    by_symbol = {}
+    for trade in trades:
+        sym = trade.get("symbol") or "--"
+        row = by_symbol.setdefault(
+            sym, {"symbol": sym, "trades": 0, "wins": 0, "losses": 0,
+                  "total_pnl": 0.0, "_pct_sum": 0.0}
+        )
+        row["trades"] += 1
+        pct = _net_pnl_pct(trade)
+        row["_pct_sum"] += pct
+        if pct > 0:
+            row["wins"] += 1
+        elif pct < 0:
+            row["losses"] += 1
+        row["total_pnl"] += _net_pnl_usd(trade)
+    rows = sorted(by_symbol.values(), key=lambda r: r["total_pnl"], reverse=True)
+    for row in rows:
+        row["total_pnl"] = round(row["total_pnl"], 2)
+        # media dos PERCENTUAIS. O codigo antigo dividia o total em USD pelo
+        # numero de trades e gravava nesse campo — o frontend renderiza com "%".
+        row["avg_pnl_pct"] = round(row["_pct_sum"] / row["trades"], 2) if row["trades"] else 0
+        row["avg_pnl_usd"] = round(row["total_pnl"] / row["trades"], 2) if row["trades"] else 0
+        del row["_pct_sum"]
+    return rows
+
+
+def _momentum_alltime_totals():
+    """Totais all-time do momentum — direto do BANCO, nunca do state.
+
+    `momentum_state.json` nao serve para isto: seu `total_fee_usd` so acumula os
+    trades cuja fee foi medida no fechamento (fee_model='flat_taker'); os demais
+    tiveram a fee backfilled apenas no banco. Hoje o state diz 148,88 de fee onde
+    o banco soma 286,25 — derivar o liquido do state subestimaria a perda em ~137
+    USD (net -10,9% em vez dos -24,7% reais). Mesmo erro de familia do "+10,42%
+    que circula e gross".
+    """
+    empty = {"net_usd": 0.0, "gross_usd": 0.0, "fee_usd": 0.0,
+             "trades": 0, "is_net": True}
+    try:
+        conn = db._get_conn()
+    except Exception:
+        return empty
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS trades, "
+            "COALESCE(SUM(COALESCE(net_pnl_usd, pnl_usd)), 0) AS net_usd, "
+            "COALESCE(SUM(pnl_usd), 0) AS gross_usd, "
+            "COALESCE(SUM(total_fee_usd), 0) AS fee_usd, "
+            "SUM(net_pnl_usd IS NULL) AS sem_net "
+            "FROM momentum_trades"
+        ).fetchone()
+    except Exception:
+        return empty
+    finally:
+        conn.close()
+    return {
+        "net_usd": _safe_float(row["net_usd"]),
+        "gross_usd": _safe_float(row["gross_usd"]),
+        "fee_usd": _safe_float(row["fee_usd"]),
+        "trades": _safe_int(row["trades"]),
+        "is_net": _safe_int(row["sem_net"]) == 0,
+    }
+
+
+def _get_momentum_funnel(hours=24):
+    """Funil de decisoes do momentum (substitui o funil do scalping aposentado).
+
+    `opened` sai de blocked_by='none', NAO de outcome='trade': outcome diz que o
+    SINAL foi de trade, mas a abertura ainda podia ser barrada depois por
+    max_positions/cooldown/suspended (paper_executor regrava a linha com o motivo).
+    All-time o banco tem 1.088 linhas com outcome='trade' para 283 posicoes reais
+    — usar outcome inflaria `opened` em ~4x.
+    """
+    empty = {"total": 0, "breakdown": {}, "opened": 0, "hours": hours}
+    try:
+        conn = db._get_conn()
+    except Exception:
+        return empty
+    try:
+        rows = conn.execute(
+            "SELECT outcome, blocked_by, COUNT(*) AS count FROM momentum_decisions "
+            "WHERE timestamp > datetime('now', ?) GROUP BY outcome, blocked_by",
+            (f"-{hours} hours",),
+        ).fetchall()
+    except Exception:
+        return empty
+    finally:
+        conn.close()
+
+    breakdown, opened = {}, 0
+    for row in rows:
+        count = int(row["count"])
+        blocked_by = row["blocked_by"] or ""
+        if blocked_by == "none":
+            opened += count
+            key = "opened"
+        else:
+            key = blocked_by or row["outcome"] or "unknown"
+        breakdown[key] = breakdown.get(key, 0) + count
+    return {
+        "total": sum(breakdown.values()),
+        "breakdown": breakdown,
+        "opened": opened,
+        "hours": hours,
+    }
+
+
 # ── HELPERS ──────────────────────────────────────────────────────────────────
 
 def _build_status(include_logs=True, include_trades=True):
-    """Coleta todos os dados necessarios para o dashboard."""
+    """Coleta todos os dados necessarios para o dashboard.
+
+    MOMENTUM-ONLY desde 2026-08-03: paper/agent/pump/scalping foram aposentados
+    (ver CLAUDE.md) e vinham entregando capital ESTATICO — `get_capital_status()`
+    ja devolvia so {"Momentum": ...} e os `.get("Paper", FALLBACK)` daqui caiam no
+    capital inicial hardcoded. Todo numero de PnL abaixo e LIQUIDO.
+    """
     paused = is_paused()
 
-    # Capital atual de cada sistema (lido dos arquivos de estado)
+    # Capital do momentum: o state guarda o BRUTO de proposito (governa o sizing
+    # v1.1); o liquido sai descontando a fee acumulada. Os dois vao no payload —
+    # o bruto porque e o que dimensiona a posicao, o liquido porque e a verdade.
     caps = get_capital_status()
-    paper_cap = caps.get("Paper", PAPER_INITIAL_CAPITAL)
-    agent_cap = caps.get("Agent", AGENT_INITIAL_CAPITAL)
-    pump_cap  = caps.get("Pump",  PUMP_INITIAL_CAPITAL)
-
-    # Scalping capital (from scalping_state.json)
-    scalping_cap = SCALPING_INITIAL_CAPITAL
-    scalping_state = _read_json(SCALPING_STATE_FILE, {})
-    scalping_cap = _safe_float(
-        scalping_state.get("capital", SCALPING_INITIAL_CAPITAL),
-        SCALPING_INITIAL_CAPITAL,
+    momentum_state = _read_json(MOMENTUM_STATE_FILE, {})
+    momentum_cap = _safe_float(
+        caps.get("Momentum", momentum_state.get("capital", MOMENTUM_INITIAL_CAPITAL)),
+        MOMENTUM_INITIAL_CAPITAL,
     )
-    scalping_trades_30d = _get_scalping_history(days=30, limit=500)
-    scalping_recent = _get_scalping_history(days=1, limit=100)
-    today_str = date.today().isoformat()
-    scalping_today = [
-        trade for trade in scalping_recent
-        if (trade.get("timestamp") or "")[:10] == today_str
-    ]
-    scalping_total_trades = _safe_int(scalping_state.get("total_trades"), len(scalping_trades_30d))
 
     def _ret(current, initial):
         return round((current - initial) / initial * 100, 2) if initial else 0
 
-    # Trades de hoje
-    paper_today = db.get_trades_today("paper_trades")
-    agent_today = db.get_trades_today("agent_trades")
-    pump_today  = db.get_trades_today("pump_trades")
+    momentum_today = db.get_trades_today("momentum_trades")
+    momentum_trades_30d = get_trades_range("momentum_trades", days=30, limit=2000)
+    momentum_stats_today = calc_daily_stats(momentum_today)  # NET-first
 
-    paper_stats = calc_daily_stats(paper_today)
-    agent_stats = calc_daily_stats(agent_today)
-    pump_stats  = calc_daily_stats(pump_today)
+    # All-time vem do BANCO (ver _momentum_alltime_totals: o state subestima a fee).
+    # O capital liquido e reconstruido do capital inicial + net acumulado, e nao
+    # do capital bruto do state — assim os dois lados vem da mesma fonte.
+    alltime = _momentum_alltime_totals()
+    momentum_net_total = alltime["net_usd"]
+    momentum_fee_total = alltime["fee_usd"]
+    momentum_net_cap = round(MOMENTUM_INITIAL_CAPITAL + momentum_net_total, 2)
 
-    scalping_stats_today = calc_daily_stats(scalping_today)
+    # Ancora do drawdown da janela: o capital liquido no INICIO dos 30 dias, nao
+    # o capital inicial de abril. Ancorar em 1000 colocaria a curva ~250 USD acima
+    # da real e, como dd = (pico-vale)/pico, o denominador inflado encolheria todo
+    # o percentual.
+    window_net = sum(_net_pnl_usd(t) for t in momentum_trades_30d)
+    momentum_window_start_cap = momentum_net_cap - window_net
 
     # Posicoes abertas com P&L ao vivo
     positions = _get_live_positions()
 
-    # Trades de hoje por sistema
-    paper_recent = paper_today
-    agent_recent = agent_today
-    pump_recent = pump_today
-
-    # Dados do grafico P&L acumulado (30 dias)
-    def _cumulative(daily_rows):
-        """Converte P&L diario em acumulado para o grafico."""
-        result = []
-        acc = 0.0
-        for row in daily_rows:
-            acc += float(row.get("daily_pnl") or 0)
-            result.append({"day": row["day"], "pnl": round(acc, 2)})
-        return result
-
-    paper_chart = _cumulative(db.get_cumulative_pnl("paper_trades", 30))
-    agent_chart = _cumulative(db.get_cumulative_pnl("agent_trades", 30))
-    pump_chart  = _cumulative(db.get_cumulative_pnl("pump_trades",  30))
-
-    # Scalping chart (from scalping_state.json history)
-    scalping_chart = []
-    daily_pnl = {}
-    for trade in scalping_trades_30d:
-        ts = trade.get("timestamp", "")
-        if ts:
-            day = ts[:10]
-            daily_pnl[day] = daily_pnl.get(day, 0) + _safe_float(trade.get("pnl_usd"))
-    acc = 0.0
-    for day in sorted(daily_pnl.keys()):
-        acc += daily_pnl[day]
-        scalping_chart.append({"day": day, "pnl": round(acc, 2)})
-
-    # Circuit breaker status (read-only, no Telegram alerts)
+    # Circuit breaker (read-only, sem alertas Telegram)
     from daily_report import check_circuit_breaker
-    cb_paper = check_circuit_breaker("paper")
-    cb_agent = check_circuit_breaker("agent")
-    cb_pump  = check_circuit_breaker("pump")
-    cb_scalping = check_circuit_breaker("scalping")
+    cb_momentum = check_circuit_breaker("momentum")
 
-    # Advanced metrics (30 days) -- per system
-    metrics_per_system = {
-        "paper":    get_all_time_stats("paper_trades", 30),
-        "agent":    get_all_time_stats("agent_trades", 30),
-        "pump":     get_all_time_stats("pump_trades",  30),
-        "scalping": _compute_trade_metrics(scalping_trades_30d),
-    }
-
-    all_totals = sum(m["total_trades"] for m in metrics_per_system.values())
-    all_wins = sum(
-        m.get("win_rate", 0) * m["total_trades"] / 100
-        for m in metrics_per_system.values()
-        if m["total_trades"]
-    )
-    all_wins = int(all_wins)
-    combined_win_rate = (all_wins / all_totals * 100) if all_totals > 0 else 0
-
-    all_largest_win = max((m.get("largest_win", 0) for m in metrics_per_system.values()), default=0)
-    all_largest_loss = min((m.get("largest_loss", 0) for m in metrics_per_system.values()), default=0)
-    all_max_dd = max((m.get("max_drawdown_pct", 0) for m in metrics_per_system.values()), default=0)
-
-    sum_pf_num = sum(m.get("profit_factor", 0) * m["total_trades"] for m in metrics_per_system.values() if m["total_trades"])
-    sum_pf_den = sum(m["total_trades"] for m in metrics_per_system.values() if m["total_trades"])
-    combined_pf = (sum_pf_num / sum_pf_den) if sum_pf_den > 0 else 0
-    combined_avg = sum(m.get("avg_pnl_pct", 0) * m["total_trades"] for m in metrics_per_system.values() if m["total_trades"])
-    combined_avg = (combined_avg / sum_pf_den) if sum_pf_den > 0 else 0
+    momentum_metrics = _compute_momentum_metrics(momentum_trades_30d, momentum_window_start_cap)
+    metrics_per_system = {"momentum": momentum_metrics}
 
     metrics = {
-        "total_trades": all_totals,
-        "win_rate": round(combined_win_rate, 1),
-        "profit_factor": round(combined_pf, 2),
-        "max_drawdown_pct": round(all_max_dd, 2),
-        "largest_win": round(all_largest_win, 2),
-        "largest_loss": round(all_largest_loss, 2),
-        "avg_pnl_pct": round(combined_avg, 2),
+        "total_trades": momentum_metrics["total_trades"],
+        "win_rate": momentum_metrics["win_rate"],
+        "profit_factor": momentum_metrics["profit_factor"],
+        "max_drawdown_pct": momentum_metrics["max_drawdown_pct"],
+        "largest_win": momentum_metrics["largest_win"],
+        "largest_loss": momentum_metrics["largest_loss"],
+        "avg_pnl_pct": momentum_metrics["avg_pnl_pct"],
+        "is_net": momentum_metrics["is_net"],
         "per_system": metrics_per_system,
     }
 
-    # Per-symbol performance (30 days) -- merge all systems
-    by_symbol_raw = {}
-    for table in ["paper_trades", "agent_trades", "pump_trades"]:
-        for row in get_stats_by_symbol(table, 30):
-            sym = row["symbol"]
-            if sym not in by_symbol_raw:
-                by_symbol_raw[sym] = {"symbol": sym, "trades": 0, "wins": 0, "losses": 0, "total_pnl": 0.0}
-            by_symbol_raw[sym]["trades"] += row["trades"]
-            by_symbol_raw[sym]["wins"] += row["wins"]
-            by_symbol_raw[sym]["losses"] += row["losses"]
-            by_symbol_raw[sym]["total_pnl"] += _safe_float(row["total_pnl"])
+    by_symbol = _momentum_by_symbol(momentum_trades_30d)
 
-    for trade in scalping_trades_30d:
-        sym = trade.get("symbol", "--")
-        if sym not in by_symbol_raw:
-            by_symbol_raw[sym] = {"symbol": sym, "trades": 0, "wins": 0, "losses": 0, "total_pnl": 0.0}
-        by_symbol_raw[sym]["trades"] += 1
-        pnl_pct = _safe_float(trade.get("pnl_pct"))
-        if pnl_pct > 0:
-            by_symbol_raw[sym]["wins"] += 1
-        elif pnl_pct < 0:
-            by_symbol_raw[sym]["losses"] += 1
-        by_symbol_raw[sym]["total_pnl"] += _safe_float(trade.get("pnl_usd"))
-
-    by_symbol = sorted(by_symbol_raw.values(), key=lambda x: x["total_pnl"], reverse=True)
-    for s in by_symbol:
-        s["total_pnl"] = round(s["total_pnl"], 2)
-        s["avg_pnl_pct"] = round(s["total_pnl"] / s["trades"], 2) if s["trades"] else 0
-
-    charts = {
-        "paper": paper_chart,
-        "agent": agent_chart,
-        "pump": pump_chart,
-        "scalping": scalping_chart,
-    }
-    charts["total"] = _merge_cumulative_charts({
-        "paper": paper_chart,
-        "agent": agent_chart,
-        "pump": pump_chart,
-        "scalping": scalping_chart,
-    })
+    momentum_chart = _momentum_equity_chart(momentum_trades_30d)
+    charts = {"momentum": momentum_chart, "total": momentum_chart}
 
     capital = {
-        "paper": {"value": round(paper_cap, 2), "ret": _ret(paper_cap, PAPER_INITIAL_CAPITAL), "cb": cb_paper},
-        "agent": {"value": round(agent_cap, 2), "ret": _ret(agent_cap, AGENT_INITIAL_CAPITAL), "cb": cb_agent},
-        "pump": {"value": round(pump_cap, 2), "ret": _ret(pump_cap, PUMP_INITIAL_CAPITAL), "cb": cb_pump},
-        "scalping": {"value": round(scalping_cap, 2), "ret": _ret(scalping_cap, SCALPING_INITIAL_CAPITAL), "cb": cb_scalping},
+        "momentum": {
+            "value": round(momentum_cap, 2),
+            "ret": _ret(momentum_cap, MOMENTUM_INITIAL_CAPITAL),
+            "net_value": momentum_net_cap,
+            "net_ret": _ret(momentum_net_cap, MOMENTUM_INITIAL_CAPITAL),
+            "fee_usd": round(momentum_fee_total, 2),
+            "cb": cb_momentum,
+        },
     }
-    stats_today = {
-        "paper": paper_stats,
-        "agent": agent_stats,
-        "pump": pump_stats,
-        "scalping": scalping_stats_today,
-    }
-    total_initial_capital = (
-        PAPER_INITIAL_CAPITAL
-        + AGENT_INITIAL_CAPITAL
-        + PUMP_INITIAL_CAPITAL
-        + SCALPING_INITIAL_CAPITAL
-    )
-    portfolio_value = sum(system["value"] for system in capital.values())
+    stats_today = {"momentum": momentum_stats_today}
+    total_initial_capital = MOMENTUM_INITIAL_CAPITAL
+    portfolio_value = momentum_net_cap  # headline e o LIQUIDO
     total_chart = charts["total"]
     total_curve_current = total_chart[-1]["pnl"] if total_chart else 0
     total_curve_peak = max((point["pnl"] for point in total_chart), default=0)
-    best_system_key = max(capital.keys(), key=lambda key: capital[key]["ret"])
+    best_system_key = "momentum"
 
     # Week PnL: soma P&L dos ultimos 7 dias (hoje + 6 anteriores)
     seven_days_ago = (date.today() - timedelta(days=6)).isoformat()
     week_pnl_usd = 0.0
-    for sys_chart in [paper_chart, agent_chart, pump_chart, scalping_chart]:
-        if not sys_chart:
-            continue
-        before = [p for p in sys_chart if p["day"] < seven_days_ago]
+    if momentum_chart:
+        before = [p for p in momentum_chart if p["day"] < seven_days_ago]
         base = before[-1]["pnl"] if before else 0
-        week_pnl_usd += sys_chart[-1]["pnl"] - base
+        week_pnl_usd = momentum_chart[-1]["pnl"] - base
 
     # Exposure: soma de position_size_usd / portfolio_value
     total_notional = sum(_safe_float(p.get("position_size_usd")) for p in positions)
@@ -1410,23 +1264,19 @@ def _build_status(include_logs=True, include_trades=True):
 
     last_trade_ts = None
     _best_norm = ""
-    all_recent = paper_today + agent_today + pump_today + scalping_today
-    for t in all_recent:
-        ts = t.get("timestamp") or ""
-        ts_norm = _norm_ts(ts)
+    for t in (momentum_today or momentum_trades_30d):
+        ts_norm = _norm_ts(t.get("timestamp") or "")
         if ts_norm and ts_norm > _best_norm:
             _best_norm = ts_norm
             last_trade_ts = ts_norm
-    if not last_trade_ts and scalping_trades_30d:
-        for t in scalping_trades_30d:
-            ts = _norm_ts(t.get("timestamp", ""))
-            if ts and ts > (_best_norm or ""):
-                last_trade_ts = ts
-                _best_norm = ts
 
     summary = {
-        "portfolio_value": round(portfolio_value, 2),
+        "portfolio_value": round(portfolio_value, 2),  # LIQUIDO
         "portfolio_ret": _ret(portfolio_value, total_initial_capital),
+        "gross_value": round(momentum_cap, 2),
+        "gross_ret": _ret(momentum_cap, total_initial_capital),
+        "net_total_usd": round(momentum_net_total, 2),
+        "is_net": alltime["is_net"],
         "today_pnl_usd": round(sum(_safe_float(item.get("pnl_usd")) for item in stats_today.values()), 2),
         "week_pnl_usd": round(week_pnl_usd, 2),
         "curve_current": round(total_curve_current, 2),
@@ -1436,8 +1286,9 @@ def _build_status(include_logs=True, include_trades=True):
         "last_trade_ts": last_trade_ts,
         "best_system": {
             "key": best_system_key,
-            "ret": capital[best_system_key]["ret"],
-            "value": capital[best_system_key]["value"],
+            # LIQUIDO — o "ret" bruto do capital fica em gross_ret; aqui engana.
+            "ret": capital[best_system_key]["net_ret"],
+            "value": capital[best_system_key]["net_value"],
         },
         "open_positions": len(positions),
     }
@@ -1447,9 +1298,8 @@ def _build_status(include_logs=True, include_trades=True):
 
     # Bot operational status -- checks if processes are alive and last cycle was recent
     bot_status = _get_bot_status()
-    scalping_funnel = get_scalping_funnel_stats(days=1)
+    funnel = _get_momentum_funnel(hours=24)
     strategy_leaderboard = _build_system_leaderboard(capital, stats_today, metrics_per_system)
-    strategy_research = _get_strategy_research_snapshot()
 
     logs = _get_recent_logs(source="main", lines=20) if include_logs else []
 
@@ -1466,22 +1316,17 @@ def _build_status(include_logs=True, include_trades=True):
         "by_symbol": by_symbol,
         "health": health,
         "bot_status": bot_status,
-        "scalping_funnel": scalping_funnel,
-        "insights": {
-            "system_leaderboard": strategy_leaderboard,
-            "research": strategy_research,
-        },
-        "ai_brain": _build_ai_brain_payload(),
+        "funnel": funnel,
+        "insights": {"system_leaderboard": strategy_leaderboard},
         "logs": logs,
     }
 
+    # ai_brain saiu do payload: eram ~25 dos 30 KB, com decisoes de ABRIL de
+    # sistemas desativados, recarregadas a cada auto-refresh. Quem precisar chama
+    # /api/ai-brain, que ja existia e serve exatamente isso.
+
     if include_trades:
-        status["trades"] = {
-            "paper": paper_recent,
-            "agent": agent_recent,
-            "pump": pump_recent,
-            "scalping": scalping_today,
-        }
+        status["trades"] = {"momentum": momentum_today}
     else:
         status["trades"] = {}
 
@@ -1932,10 +1777,13 @@ def api_trades():
     """Historico de trades com filtro de periodo.
 
     Query params:
-      system — paper, agent, pump (default: paper)
+      system — momentum (default) ou scalping/paper/agent/pump (historico)
       days   — quantidade de dias para trás (default: 7)
+
+    Os sistemas aposentados seguem consultaveis (o historico nao some), mas o
+    default virou momentum — o unico que ainda produz trades.
     """
-    system = request.args.get("system", "paper").lower()
+    system = request.args.get("system", "momentum").lower()
     days = request.args.get("days", "7")
 
     try:
@@ -1944,6 +1792,7 @@ def api_trades():
         days = 7
 
     table_map = {
+        "momentum": "momentum_trades",
         "paper": "paper_trades",
         "agent": "agent_trades",
         "pump":  "pump_trades",
