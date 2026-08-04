@@ -4,11 +4,18 @@
 Aplica os cinco critérios selados em docs/pre_registros/PREREG_maker_fill_v11.md.
 Remove somente a fixture sintética conhecida que testes antigos gravaram no bot.db;
 a identidade vem do próprio tests/test_momentum_paper_executor.py, não de PnL.
+
+Reporte §6 completo: além dos 5 critérios, o §6 exige "sempre reportadas" as
+métricas de seleção adversa — PnL bruto médio preenchidos vs não-preenchidos e
+MFE dos perdidos. A sombra só rastreia MFE pós-fill (no-fill => 0.0 por
+construção), então o MFE dos perdidos vem do `momentum_trades.mfe_pct` do trade
+taker pareado (pareamento por valor de PnL líquido; multiset já validado 1:1).
 """
 from __future__ import annotations
 
 import json
 import sqlite3
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -111,6 +118,19 @@ def evaluate(rows: list[dict]) -> dict:
     missed = [r for r in rows if r["status"] == "no_fill"]
     avg_missed = sum(float(r["taker_net_pnl_pct"]) for r in missed) / len(missed) if missed else None
 
+    # §6, reporte obrigatório: PnL BRUTO médio fill vs no-fill + MFE dos perdidos.
+    # Campos anexados pelo pareamento em load_and_validate; ausentes => None
+    # (linhas sintéticas de teste sem pareamento não fabricam métrica).
+    def _avg(vals: list[float]) -> float | None:
+        return round(sum(vals) / len(vals), 6) if vals else None
+
+    gross_filled = [float(r["taker_gross_pnl_pct"]) for r in filled
+                    if r.get("taker_gross_pnl_pct") is not None]
+    gross_missed = [float(r["taker_gross_pnl_pct"]) for r in missed
+                    if r.get("taker_gross_pnl_pct") is not None]
+    mfe_missed = [float(r["taker_mfe_pct"]) for r in missed
+                  if r.get("taker_mfe_pct") is not None]
+
     return {
         "veredito": verdict,
         "n": n,
@@ -122,6 +142,16 @@ def evaluate(rows: list[dict]) -> dict:
         "selecao_adversa": {
             "taker_net_medio_quando_maker_preenche": round(avg_filled, 6) if avg_filled is not None else None,
             "taker_net_medio_quando_maker_nao_preenche": round(avg_missed, 6) if avg_missed is not None else None,
+            "taker_gross_medio_quando_maker_preenche": _avg(gross_filled),
+            "taker_gross_medio_quando_maker_nao_preenche": _avg(gross_missed),
+            "mfe_dos_perdidos_pct": {
+                "n": len(mfe_missed),
+                "media": _avg(mfe_missed),
+                "mediana": round(statistics.median(mfe_missed), 6),
+                "max": round(max(mfe_missed), 6),
+                "fonte": "momentum_trades.mfe_pct do trade taker pareado "
+                         "(sombra não rastreia MFE pré-fill)",
+            } if mfe_missed else None,
         },
     }
 
@@ -145,7 +175,7 @@ def load_and_validate(db_path=DB_DEFAULT) -> tuple[list[dict], dict]:
 
     start_day = min(r["signal_ts"][:10] for r in clean)
     trades = conn.execute(
-        "SELECT net_pnl_pct, gross_pnl_pct, total_cost_bps FROM momentum_trades "
+        "SELECT net_pnl_pct, gross_pnl_pct, total_cost_bps, mfe_pct FROM momentum_trades "
         "WHERE timestamp >= ? AND timestamp < ? ORDER BY net_pnl_pct",
         (start_day, CUTOFF),
     ).fetchall()
@@ -161,11 +191,44 @@ def load_and_validate(db_path=DB_DEFAULT) -> tuple[list[dict], dict]:
     if shadow_net != trade_net:
         raise ValueError("multiset de PnL taker das sombras não casa com momentum_trades")
 
+    # Pareamento sombra->trade por PnL líquido (multiset validado idêntico acima):
+    # anexa gross e MFE do trade taker p/ as métricas §6. Se um mesmo valor de
+    # PnL cobre trades com MFE distintos, a atribuição é arbitrária — conta como
+    # ambígua (gross nunca é ambíguo: custo constante de 10 bps).
+    by_net: dict[float, list] = {}
+    for t in trades:
+        by_net.setdefault(round(float(t["net_pnl_pct"]), 8), []).append(t)
+    ambiguous_keys = {
+        key for key, bucket in by_net.items()
+        if len(bucket) > 1 and len({t["mfe_pct"] for t in bucket}) > 1
+    }
+    # A métrica mfe_dos_perdidos só fica indeterminada se o bucket ambíguo tem
+    # status MISTO: bucket 100% no_fill entrega todos os seus MFEs aos perdidos
+    # de qualquer forma (multiset fixo, atribuição irrelevante).
+    statuses_by_key: dict[float, set] = {}
+    for r in clean:
+        statuses_by_key.setdefault(
+            round(float(r["taker_net_pnl_pct"]), 8), set()).add(r["status"])
+    ambiguous = ambiguous_affecting_missed = 0
+    for r in clean:
+        key = round(float(r["taker_net_pnl_pct"]), 8)
+        if key in ambiguous_keys:
+            ambiguous += 1
+            if len(statuses_by_key[key]) > 1 and r["status"] == "no_fill":
+                ambiguous_affecting_missed += 1
+        t = by_net[key].pop()
+        r["taker_gross_pnl_pct"] = float(t["gross_pnl_pct"])
+        r["taker_mfe_pct"] = float(t["mfe_pct"]) if t["mfe_pct"] is not None else None
+
     audit = {
         "raw_rows": len(raw), "synthetic_fixture_rows_removed": removed,
         "clean_unique_rows": len(clean), "baseline_trades": len(trades),
         "baseline_cost_bps_values": costs,
         "top10_ranking_note": "gross = net + 10 bps constante; ranking por taker_net é idêntico",
+        "pareamentos_mfe_ambiguos": ambiguous,
+        "pareamentos_mfe_afetando_perdidos": ambiguous_affecting_missed,
+        "pareamento_mfe_note": "mfe_dos_perdidos só é indeterminado em bucket "
+                               "ambíguo de status misto; 0 => métrica exata",
     }
     return clean, audit
 
@@ -179,6 +242,9 @@ def main(db_path=DB_DEFAULT, out_path=OUT_DEFAULT) -> dict:
         "cutoff_exclusive": CUTOFF,
         "data_quality": audit,
         "criterios_source": "docs/pre_registros/PREREG_maker_fill_v11.md §5-§6",
+        "revisao": "2026-08-03: reporte §6 completado (PnL bruto médio fill/no-fill "
+                   "+ MFE dos perdidos via trade taker pareado); critérios e "
+                   "veredito intocados",
     })
     if out_path is not None:
         Path(out_path).write_text(json.dumps(payload, indent=2, ensure_ascii=False))

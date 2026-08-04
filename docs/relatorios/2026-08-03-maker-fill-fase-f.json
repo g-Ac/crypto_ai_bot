@@ -47,11 +47,20 @@
   },
   "selecao_adversa": {
     "taker_net_medio_quando_maker_preenche": -0.230954,
-    "taker_net_medio_quando_maker_nao_preenche": 0.19423
+    "taker_net_medio_quando_maker_nao_preenche": 0.19423,
+    "taker_gross_medio_quando_maker_preenche": -0.130954,
+    "taker_gross_medio_quando_maker_nao_preenche": 0.29423,
+    "mfe_dos_perdidos_pct": {
+      "n": 27,
+      "media": 0.525789,
+      "mediana": 0.4925,
+      "max": 1.1467,
+      "fonte": "momentum_trades.mfe_pct do trade taker pareado (sombra não rastreia MFE pré-fill)"
+    }
   },
   "fase": "F",
   "estudo": "maker-fill-v1.1",
-  "gerado_em": "2026-08-03T18:02:27.543243+00:00",
+  "gerado_em": "2026-08-04T00:10:30.672732+00:00",
   "cutoff_exclusive": "2026-08-01",
   "data_quality": {
     "raw_rows": 587,
@@ -61,7 +70,11 @@
     "baseline_cost_bps_values": [
       10.0
     ],
-    "top10_ranking_note": "gross = net + 10 bps constante; ranking por taker_net é idêntico"
+    "top10_ranking_note": "gross = net + 10 bps constante; ranking por taker_net é idêntico",
+    "pareamentos_mfe_ambiguos": 14,
+    "pareamentos_mfe_afetando_perdidos": 0,
+    "pareamento_mfe_note": "mfe_dos_perdidos só é indeterminado em bucket ambíguo de status misto; 0 => métrica exata"
   },
-  "criterios_source": "docs/pre_registros/PREREG_maker_fill_v11.md §5-§6"
+  "criterios_source": "docs/pre_registros/PREREG_maker_fill_v11.md §5-§6",
+  "revisao": "2026-08-03: reporte §6 completado (PnL bruto médio fill/no-fill + MFE dos perdidos via trade taker pareado); critérios e veredito intocados"
 }
