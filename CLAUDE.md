@@ -29,22 +29,24 @@ O dono do projeto e o **Gabriel** (dev principal). Comunique em **portugues bras
 
 ## Project Overview
 
-Bot automatizado de trading de criptomoedas rodando 24/7 num Raspberry Pi 4. Todo trading e **virtual (paper)** — sem execucao real. Usa Binance Futures API para dados de mercado. Notificacoes e comandos via Telegram. **Foco atual: Momentum Pullback v1.1** — unica estrategia ativa. Pump e scalping aposentados temporariamente.
+Bot automatizado de trading de criptomoedas rodando 24/7 num Raspberry Pi 4. Todo trading e **virtual (paper)** — sem execucao real. Usa Binance Futures API para dados de mercado. Notificacoes e comandos via Telegram. **Estrategias ativas: Momentum Pullback v1.1 (primaria) + Breakout 5m** — ambas rodando no main loop via paper executors. Pump e scalping aposentados temporariamente.
 
 ## Arquitetura
 
 O bot roda como **servico systemd** (`cryptobot`) gerenciado por `supervisor.py`, que spawna e monitora 2 processos com auto-restart (backoff exponencial: 10s→30s→60s→120s→300s, max 10 restarts por bot):
 
-1. **main.py** — Loop principal (ciclo de 5 min): busca candles da Binance, calcula indicadores, gera sinais, roda momentum paper
+1. **main.py** — Loop principal (ciclo de 5 min): busca candles da Binance, calcula indicadores, gera sinais, roda momentum paper + breakout 5m paper
 2. **dashboard_server.py** — Dashboard web Flask na porta 5000
 
 ### Subsistemas de Trading (todos paper)
 
 | Sistema | Arquivo | Status |
 |---|---|---|
-| **Momentum Pullback** | `momentum/` + `paper_executor.py` | **Foco unico** — v1.1 baseline, params congelados, ATIVO |
+| **Momentum Pullback** | `momentum/` + `momentum/paper_executor.py` | **ATIVO (primario)** — v1.1 baseline, params congelados |
+| **Breakout 5m** | `engines_5m/` + `breakout/paper_executor.py` | **ATIVO** — integrado no main loop (`BREAKOUT_TRADER_ENABLED`) |
 | Pump Scanner | `pump_scanner.py` + `pump_trader.py` | Aposentado — infra preservada para reuso futuro |
 | Scalping | `scalping_trader.py` + engines | Aposentado — nao integrado no main.py atual |
+| Engines 1m (MomentumBurst v1/v2) | `engines_1m/` | Experimental — validados offline, sem uso no main loop |
 | Agent Trader | `trade_agents.py` | Desativado |
 | Paper Trader | `paper_trader.py` | Desativado |
 | Defensive CFER/RAVR | `defensive/` | Descontinuada — codigo preservado, sem uso ativo |
@@ -56,9 +58,9 @@ O bot roda como **servico systemd** (`cryptobot`) gerenciado por `supervisor.py`
 market.py (Binance candles)
   → indicators.py (SMA, RSI, volume)
     → strategy.py (score 0-5.5)
-      → htf.py (1h trend filter + regime gate)
+      → htf.py (1h trend filter + regime gate v2: ADX + ADX slope + DI spread)
 
-Momentum Pullback (ATIVO — v1.1 baseline, unica estrategia rodando):
+Momentum Pullback (ATIVO — v1.1 baseline, estrategia primaria):
   momentum/swing_detector.py (trend + swing detection via EMAs)
     → momentum/pullback_detector.py (retracement 30-70% + EMA slow respect)
       → momentum/momentum_trader.py (signal evaluation + sizing)
@@ -67,6 +69,12 @@ Momentum Pullback (ATIVO — v1.1 baseline, unica estrategia rodando):
   Research pipeline (offline):
     → momentum/research_runner.py + research_db.py (backtesting + metricas)
     → momentum/robustness_check.py (walk-forward por periodo e regime)
+
+Breakout 5m (ATIVO — integrado no main loop):
+  engines_5m/breakout.py (consolidacao → candle de breakout + volume, timeout 5h)
+    → breakout/paper_executor.py (paper trading: partial close TP1→breakeven, TP2 blended)
+      → main.py (integrado via process_breakout_cycle a cada ciclo)
+  Backtest/validacao: scripts/backtest_breakout_5m.py (GO/NO-GO: PF>=1.2 e trades>=10)
 
 Scalping (APOSENTADO — codigo preservado, nao integrado no main.py):
   scalping_data.py (candles multi-TF + indicadores)
@@ -103,21 +111,23 @@ CFER/RAVR foram descontinuadas (mean reversion nao provou edge). Codigo em `defe
 
 Hipotese: em tendencia confirmada, pullback de 30-70% que respeita EMA slow e depois retoma (close past EMA fast) tende a continuar. v1.1 confirmada como baseline robusta (3/3 testes de robustez PASS). Integrado ao main loop via `paper_executor.py` (process_momentum_cycle). Config em `momentum/config.py` (`MomentumConfig`) e `config.py` (`MOMENTUM_*`). Research pipeline offline em `research_runner.py`, `research_db.py`, `research_report.py`, `robustness_check.py`. Parametros v1.1 congelados — nao alterar. **ATIVO** (`MOMENTUM_TRADER_ENABLED=true`).
 
-### Engines 1m e 5m (experimentais)
+### Engines 1m e 5m
 
-Sistemas multi-engine de curto prazo (codigo preservado, sem uso ativo no main loop):
+Frameworks multi-engine de curto prazo. **Breakout 5m esta ATIVO** no main loop; engines 1m sao experimentais (validados offline, sem uso no main loop).
 
-| Diretório | Conteúdo |
-|---|---|
-| `engines_1m/` | MomentumBurst 1m (ATR/volume/body), base Engine1m |
-| `engines_5m/` | Breakout 5m engine |
-| `breakout/` | Paper executor para breakout 5m |
-| `config_1m.py` | Config do sistema 1-min |
-| `indicators_1m.py` | EMAs, ATR, BB, RSI, VWAP para 1-min |
-| `indicators_5m.py` | Indicadores 5-min |
-| `market_1m.py` | Fetch de candles 1-min (live + historico) |
-| `risk_calculator_1m.py` | Position sizing fee-aware para 1-min |
-| `backtest_1m.py` | Backtest candle-by-candle 1-min |
+| Diretório / Arquivo | Conteúdo | Status |
+|---|---|---|
+| `engines_5m/breakout.py` + `engines_5m/base.py` | Engine de breakout 5m (consolidacao → breakout), contrato Engine5m | **ATIVO** |
+| `breakout/paper_executor.py` | Paper executor do breakout 5m (partial close, breakeven, blended TP2) | **ATIVO** |
+| `engines_1m/momentum_burst.py` | MomentumBurst v1: candle explosivo (range > 2x ATR, volume spike, body forte) | Experimental |
+| `engines_1m/momentum_burst_v2.py` | MomentumBurst v2: state machine Break & Retest (melhor R:R) | Experimental |
+| `engines_1m/breakout.py` + `engines_1m/base.py` | Breakout 1m + contrato base Engine1m | Experimental |
+| `config_1m.py` | Config do sistema 1-min | Experimental |
+| `indicators_1m.py` | EMAs, ATR, BB, RSI, VWAP para 1-min | Experimental |
+| `indicators_5m.py` | Indicadores 5-min | Suporte |
+| `market_1m.py` | Fetch de candles 1-min (live + historico) | Experimental |
+| `risk_calculator_1m.py` | Position sizing fee-aware para 1-min | Experimental |
+| `backtest_1m.py` | Backtest candle-by-candle 1-min | Experimental |
 
 ### Camadas intermediarias
 
@@ -129,6 +139,19 @@ Sistemas multi-engine de curto prazo (codigo preservado, sem uso ativo no main l
 - **Validation auditor**: `validation_auditor.py` — analise offline de edge por sistema de trading. CLI com `--days` e `--output-dir`
 - **Pattern memory**: `pattern_memory_desk.py` — agrega padroes de sucesso/falha dos trade reviews offline
 - **Research lab**: `scalping_research.py` — scorer historico por familia de setup, export de dataset (JSON/JSONL/CSV)
+- **Exporters**: `exporter.py` (export de analise por simbolo → JSON) + `opportunity_exporter.py` (export de oportunidades relevantes). Ambos chamados a cada ciclo no main.py
+- **Filtros de sinal** (helpers, nao integrados no main loop): `news_filter.py` (bloqueia sinais ±15min de eventos macro — FOMC, CPI, NFP), `funding_filter.py` (veto quando funding indica crowd no mesmo lado)
+- **AI context**: `context_agent.py` — interpretacao tecnica concisa de sinais via Claude Haiku (com fallback rule-based)
+
+### Engines de entrada (scalping aposentado — preservados, sem uso ativo)
+
+Conjunto alternativo de motores de entrada para scalping (distinto dos 3 motores de microestrutura). Codigo preservado:
+
+| Arquivo | O que faz |
+|---|---|
+| `volume_breakout.py` | Deteccao de breakout por spike de volume |
+| `rsi_bb_reversal.py` | Reversao via RSI + Bandas de Bollinger |
+| `ema_crossover.py` | Cruzamento EMA-9/EMA-21 com confirmacao de retest |
 
 ### Telegram
 
@@ -141,11 +164,15 @@ Sistemas multi-engine de curto prazo (codigo preservado, sem uso ativo no main l
 - **Runtime isolation**: `runtime_config.py` — multiplas instancias (baseline vs v2) com DB, logs, estado e portas separados. Via `BOT_ID` env var
 - **Dual instance**: `run_dual_supervisors.py` — A/B test lado a lado
 - **AI Gate**: `ai_gate_local.py` — LLM local via llama.cpp. **DESATIVADA** (`SCALPING_DISABLE_AI_GATE=true`)
-- **Circuit breaker**: `daily_report.py` — para trading se perda diaria > 5% ou > 20 trades
+- **Circuit breaker**: `daily_report.py` — `enforce_circuit_breaker(system)` por sistema (momentum, breakout). Para novas entradas se perda diaria > 5% ou > 20 trades; posicoes abertas continuam sendo geridas
 - **Proactive alerts**: `proactive_alerts.py` — detecta problemas antes que se agravem (drawdown, inatividade, erros)
 - **Audit framework**: `audit_helpers.py` + `audit_data.py` + `signal_types.py` — 51 campos por trade + 32 por decision
-- **Scripts**: `scripts/research_matrix.py` (grid search parametrico), `scripts/tuning_matrix.py` (tuning), `scripts/verify_and_benchmark.sh`, `scripts/fase3_*.py` (validacao de engines), `scripts/backtest_breakout_5m.py`
-- **Research data**: `research/` — databases SQLite de resultados de matrix runs (matrix_v1.db, etc.)
+- **Alertas (infra)**: `alert_control.py` (throttling/dedup por prioridade) + `alert_logger.py` (persiste alertas no DB)
+- **Trade review lab**: `trade_review_lab.py` — analise qualitativa offline de trades individuais via Claude (CLI: `--system`)
+- **Outcome labeling**: `scalping_outcomes.py` — labels forward (MFE/MAE, time-to-TP/SL) para trades de scalping
+- **Scripts**: `scripts/research_matrix.py` (grid search parametrico), `scripts/tuning_matrix.py` (tuning), `scripts/robustness_check.py`, `scripts/verify_and_benchmark.sh`, `scripts/fase3_*.py` (validacao de engines: validation/breakout/comparison/v2), `scripts/backtest_breakout_5m.py`
+- **Ferramentas standalone (CLI, fora do ciclo)**: `compare_instances.py` (compara runtimes A/B), `close_orphan_trades.py` (fecha posicoes orfas, com dry-run), `reset_capital.py` (reset de capital por sistema), `migrate_csv_to_db.py` (migracao one-time CSV→SQLite), `benchmark_ai_local.py` (benchmark de LLMs locais GGUF no Pi)
+- **Research data**: `research/` — outputs de robustez/matrix runs (JSON e databases SQLite)
 
 ---
 
@@ -173,7 +200,7 @@ journalctl -u cryptobot --since "1 hour ago" --no-pager  # ultima hora
 
 ### Testes
 ```bash
-python -m pytest tests/ --tb=short -q           # todos (~683 testes)
+python -m pytest tests/ --tb=short -q           # todos (~693 testes, 44 arquivos)
 python -m pytest tests/test_confluence.py -v      # arquivo especifico
 python -m pytest tests/test_confluence.py::test_x -v  # teste unico
 ```
@@ -198,6 +225,9 @@ sqlite3 runtime/baseline/bot.db "SELECT blocked_by, COUNT(*) FROM momentum_decis
 
 # Ultimas decisoes momentum
 sqlite3 runtime/baseline/bot.db "SELECT id, timestamp, symbol, blocked_by FROM momentum_decisions ORDER BY id DESC LIMIT 5;"
+
+# Performance breakout 5m (sistema ativo)
+sqlite3 runtime/baseline/bot.db "SELECT COUNT(*), ROUND(AVG(pnl_pct),4), ROUND(SUM(pnl_pct),4) FROM breakout_trades;"
 
 # Performance scalping (aposentado — historico)
 sqlite3 runtime/baseline/bot.db "SELECT COUNT(*), ROUND(AVG(pnl_pct),4), ROUND(SUM(pnl_pct),4) FROM scalping_trades;"
@@ -288,6 +318,10 @@ V2_1B_PAPER_ENABLED=false
 SCALPING_EXPERIMENTAL_FORCE_ENTRIES=true/false  # habilita tambem: ignore_risk, disable_ai_gate, disable_cooldown
 MOMENTUM_TRADER_ENABLED=true       # habilita momentum paper trading no main loop
 MOMENTUM_SYMBOLS=BTCUSDT,ETHUSDT   # pares do momentum
+BREAKOUT_TRADER_ENABLED=true       # habilita breakout 5m paper trading no main loop
+BREAKOUT_SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT  # pares do breakout 5m
+BOT_BREAKOUT_INITIAL_CAPITAL=1000  # capital do breakout 5m
+BOT_MOMENTUM_INITIAL_CAPITAL=...   # override de capital do momentum (default via target portfolio)
 DEFENSIVE_INITIAL_CAPITAL=1000     # capital do subsistema defensive (descontinuado)
 DEFENSIVE_SYMBOLS=BTCUSDT,ETHUSDT  # pares do defensive (descontinuado)
 BOT_PORTFOLIO_TARGET_CAPITAL=35000 # escala capital proporcional entre sistemas (default sum: 35K)
@@ -354,9 +388,21 @@ SQLite WAL mode em `runtime/<BOT_ID>/bot.db`. Tabelas-chave:
 | `scalping_outcome_labels` | Labels de outcome pos-trade |
 | `momentum_trades` | Trades finalizados do momentum pullback (paper) |
 | `momentum_decisions` | Decisoes do ciclo momentum (funil) |
+| `breakout_trades` | Trades finalizados do breakout 5m (paper) |
+| `breakout_decisions` | Decisoes do ciclo breakout 5m (funil) |
 | `market_microstructure` | Snapshots de microestrutura (funding, OI, basis) |
 | `*_v2_1b` | Tabelas espelho para instancia V2.1b experimental |
 
 Tabelas legadas (sistemas desativados): `paper_trades`, `agent_trades`, `ai_decisions`.
 
-Roadmap de evolucao: `docs/ROADMAP_V1.md`
+---
+
+## Documentacao (`docs/`)
+
+- `docs/ROADMAP_V1.md` — roadmap de evolucao V1
+- `docs/EXPERIMENT_REGISTRY.md` — registro de experimentos (EXP-001…EXP-005: pair trading, universe expansion, etc.)
+- `docs/CHANGELOG_FASE0_FASE1.md` — changelog fases 0→1
+- `docs/GUIA_CLAUDE_CODE.md` — guia de uso do Claude Code no projeto
+- `docs/FRONTEND_REDESIGN.md` — design do dashboard
+- `docs/defensive/` — specs do subsistema defensive (arquitetura, backtest, risco, decisoes)
+- `docs/superpowers/specs/` e `docs/superpowers/plans/` — specs e planos de implementacao (multi-engine 1m, paper readiness, pip-boy dashboard, momentum/breakout integration, EXP-005 universe expansion)
