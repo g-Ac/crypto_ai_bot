@@ -4,6 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+> ## ⚠️ PROJETO ENCERRADO EM 2026-08-12
+>
+> A pergunta que originou este repo ("da para ter renda automatica operando cripto?") foi
+> respondida: **nao**. 16 experimentos formais, 849+ hipoteses, 7 julgamentos forward
+> pre-registrados — zero GO operacional. O bot perdeu para uma carteira 50% BTC / 50% caixa
+> nas duas dimensoes (retorno e drawdown).
+>
+> **Leia [`docs/POST_MORTEM.md`](docs/POST_MORTEM.md) antes de qualquer coisa.**
+>
+> Estado: trading **desligado** (`MOMENTUM_TRADER_ENABLED=false`); coletores de dados
+> **ligados** (custo zero, o dataset e o ativo que sobrou); codigo congelado.
+>
+> O resto deste documento descreve o sistema como ele foi construido e continua valido
+> como referencia tecnica — mas nada aqui e trabalho em andamento.
+
+---
+
 ## Sua identidade
 
 Voce e **socio tecnico** deste projeto. Nao e um assistente passivo — voce tem autonomia para:
@@ -29,7 +46,7 @@ O dono do projeto e o **Gabriel** (dev principal). Comunique em **portugues bras
 
 ## Project Overview
 
-Bot automatizado de trading de criptomoedas rodando 24/7 num Raspberry Pi 4. Todo trading e **virtual (paper)** — sem execucao real. Usa Binance Futures API para dados de mercado. Notificacoes e comandos via Telegram. **Foco atual: Momentum Pullback v1.1** — unica estrategia ativa. Pump e scalping aposentados temporariamente.
+Bot automatizado de trading de criptomoedas rodando 24/7 num Raspberry Pi 4. Todo trading e **virtual (paper)** — sem execucao real. Usa Binance Futures API para dados de mercado. Notificacoes e comandos via Telegram. **PROJETO ENCERRADO 2026-08-12** — nenhuma estrategia opera. Momentum Pullback v1.1 foi a ultima ativa (desligada); pump e scalping ja estavam aposentados. Ver `docs/POST_MORTEM.md`.
 
 ## Arquitetura
 
@@ -42,7 +59,7 @@ O bot roda como **servico systemd** (`cryptobot`) gerenciado por `supervisor.py`
 
 | Sistema | Arquivo | Status |
 |---|---|---|
-| **Momentum Pullback** | `momentum/` + `paper_executor.py` | **Foco unico** — v1.1 baseline, params congelados, ATIVO |
+| **Momentum Pullback** | `momentum/` + `paper_executor.py` | **DESLIGADO 2026-08-12** — v1.1 baseline; 299 trades, -20,4% liquido, perdeu para BTC B&H |
 | Pump Scanner | `pump_scanner.py` + `pump_trader.py` | Aposentado — infra preservada para reuso futuro |
 | Scalping | `scalping_trader.py` + engines | Aposentado — nao integrado no main.py atual |
 | Agent Trader | `trade_agents.py` | Desativado |
@@ -58,7 +75,7 @@ market.py (Binance candles)
     → strategy.py (score 0-5.5)
       → htf.py (1h trend filter + regime gate)
 
-Momentum Pullback (ATIVO — v1.1 baseline, unica estrategia rodando):
+Momentum Pullback (DESLIGADO 2026-08-12 — v1.1 baseline, foi a ultima estrategia ativa):
   momentum/swing_detector.py (trend + swing detection via EMAs)
     → momentum/pullback_detector.py (retracement 30-70% + EMA slow respect)
       → momentum/momentum_trader.py (signal evaluation + sizing)
@@ -101,7 +118,7 @@ CFER/RAVR foram descontinuadas (mean reversion nao provou edge). Codigo em `defe
 
 ### Momentum Pullback — Paper Trading (v1.1 baseline)
 
-Hipotese: em tendencia confirmada, pullback de 30-70% que respeita EMA slow e depois retoma (close past EMA fast) tende a continuar. v1.1 confirmada como baseline robusta (3/3 testes de robustez PASS). Integrado ao main loop via `paper_executor.py` (process_momentum_cycle). Config em `momentum/config.py` (`MomentumConfig`) e `config.py` (`MOMENTUM_*`). Research pipeline offline em `research_runner.py`, `research_db.py`, `research_report.py`, `robustness_check.py`. Parametros v1.1 congelados — nao alterar. **ATIVO** (`MOMENTUM_TRADER_ENABLED=true`).
+Hipotese: em tendencia confirmada, pullback de 30-70% que respeita EMA slow e depois retoma (close past EMA fast) tende a continuar. v1.1 confirmada como baseline robusta (3/3 testes de robustez PASS). Integrado ao main loop via `paper_executor.py` (process_momentum_cycle). Config em `momentum/config.py` (`MomentumConfig`) e `config.py` (`MOMENTUM_*`). Research pipeline offline em `research_runner.py`, `research_db.py`, `research_report.py`, `robustness_check.py`. Parametros v1.1 congelados. **DESLIGADO** (`MOMENTUM_TRADER_ENABLED=false`) desde 2026-08-12 — sem edge apos fee (fee 10bps = 2x o edge bruto de 5bps). Ver `docs/POST_MORTEM.md`.
 
 ### Engines 1m e 5m (experimentais)
 
@@ -287,7 +304,7 @@ PAPER_TRADER_ENABLED=false
 AGENT_TRADER_ENABLED=false
 V2_1B_PAPER_ENABLED=false
 SCALPING_EXPERIMENTAL_FORCE_ENTRIES=true/false  # habilita tambem: ignore_risk, disable_ai_gate, disable_cooldown
-MOMENTUM_TRADER_ENABLED=true       # habilita momentum paper trading no main loop
+MOMENTUM_TRADER_ENABLED=false      # DESLIGADO 2026-08-12 (encerramento) — era o momentum paper no main loop
 MOMENTUM_SYMBOLS=BTCUSDT,ETHUSDT   # pares do momentum
 DEFENSIVE_INITIAL_CAPITAL=1000     # capital do subsistema defensive (descontinuado)
 DEFENSIVE_SYMBOLS=BTCUSDT,ETHUSDT  # pares do defensive (descontinuado)
