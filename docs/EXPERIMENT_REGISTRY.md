@@ -316,7 +316,120 @@ Bloqueados > executados nos dois regimes, mas margem pequena; unico bucket PF>1.
 
 ---
 
-> **Nota:** EXP-007 a EXP-012 e EXP-FH-01 foram registrados em `docs/pre_registros/` + `~/obsidian-vault/context/decisoes/` (registry principal nao atualizado em tempo). Veredictos: 007 morto (pre-condicionado a 006), 008/011 funding/LSR NO-GO, FH-01 funding harvest NO-GO de regime.
+### Backfill Graveyard 2026-06 — lacunas históricas sem ID formal
+
+Registry backfill source: session memory / decision note / postmortem; added during Graveyard Autopsy 2026-06 for completeness.
+
+| Hipótese | Família | Status | Número / métrica registrada | Decisão |
+|---|---|---|---|---|
+| BE50 | Price-action / exit | CLOSED / DEAD | Fonte de sessão/decision note; auditoria completa não preservada no registry | Não reabrir; nulo puro / sem edge líquido suficiente |
+| PB25 | Price-action / pullback | CLOSED / DEAD | Fonte de sessão/decision note; auditoria completa não preservada no registry | Não reabrir; nulo puro / sem edge líquido suficiente |
+| Session filter | Filtro categórico | CLOSED / DEAD | Fonte de sessão/decision note | Não reabrir sem walk-forward categórico novo |
+| Hourly sizing | Sizing / timing | CLOSED / DEAD | Fonte de sessão/decision note | Sizing não criou edge; não relitigar |
+| Breakout 5m | Price-action intraday | CLOSED / DEAD | Fonte de sessão/decision note | Anatomia de custo/ruído insuficiente; não reabrir sem mecanismo novo |
+
+**Referência consolidada:** `docs/relatorios/2026-06-10-graveyard-autopsy.md`.
+
+---
+
+### EXP-007: Risk Sizing & Leverage — pré-condicionado ao router
+
+| Campo | Valor |
+|---|---|
+| **Família** | Executor / sizing |
+| **Estágio** | **DEAD (não aberto)** |
+| **Hipótese** | Sizing/leverage poderia melhorar distribuição se EXP-006 mostrasse edge de seleção/roteamento |
+| **Data de morte** | 2026-05-27 |
+| **Decisão** | Saiu da mesa porque EXP-006 deu NO-GO; sizing não cria edge sem seleção com edge |
+
+**Motivo da morte:** EXP-007 estava pré-condicionado a GO do Momentum Position Router. Como o score do router foi refutado antes do replay portfolio-aware, não há base para testar leverage/sizing em cima dele.
+
+**Referência:** `~/obsidian-vault/context/decisoes/2026-05-27-exp-006-position-router-no-go.md`.
+
+---
+
+### EXP-008: H3 LSR vanilla
+
+| Campo | Valor |
+|---|---|
+| **Família** | Microestrutura / posicionamento |
+| **Estágio** | **NO-GO** |
+| **Hipótese** | Divergência top×global long/short ratio antecipa retorno forward |
+| **Fonte** | `k_prices` + `k_ratios` (`long_short_ratio`) |
+| **Data do veredito** | 2026-05-29 |
+| **Decisão** | NO-GO honesto; harness validado, mas LSR vanilla não tem edge detectável |
+
+**Métricas principais:** spread OOS -21.44 bps; p_perm=0.1263; nenhum estrato de regime passa lift incremental. FLAT p=0.0187 não sobrevive multiplicidade.
+
+**Referências:** `docs/pre_registros/PREREG_H3_lsr_vanilla.md`, `~/obsidian-vault/context/decisoes/2026-05-29-exp-008-h3-no-go.md`.
+
+---
+
+### EXP-009: Leverage timing / K-hypothesis
+
+| Campo | Valor |
+|---|---|
+| **Família** | Microestrutura / leverage timing |
+| **Estágio** | **NO-GO (selado)** |
+| **Hipótese** | Modos de pump/OI/funding poderiam gerar edge líquido sob alavancagem controlada |
+| **Período efetivo** | ~27d após warmup |
+| **Data do veredito** | 2026-05-07 |
+| **Decisão** | NO-GO / insufficient NW + temporal drift; no further collection authorized absent new mechanism |
+
+**Métricas principais:** 0/64 combinações passaram P1 simultaneamente; maior NW_t entre cells com edge OK = 1.92 com N=49 (precisava NW_t ≥ 2.0 e N ≥ 200). Todas as 16 combinações modo×horizonte 12h+ exibiram drift positivo→negativo.
+
+**Motivo da morte:** falha estatística por NW_t/N insuficientes e drift temporal forte. Não reabrir por “mais coleta” ou threshold ajustado; só por mecanismo novo pré-registrado.
+
+**Referências:** `~/obsidian-vault/context/decisoes/2026-05-06-exp009-abertura-criterios-pre-commit.md`, `~/obsidian-vault/context/decisoes/2026-05-07-exp009-resultado-no-go.md`.
+
+---
+
+### EXP-010: Liquidation / squeeze
+
+| Campo | Valor |
+|---|---|
+| **Família** | Microestrutura / liquidações |
+| **Estágio** | **RESERVED / BACKLOG** |
+| **Hipótese** | Cascatas de liquidação forçam fluxo não-otimizado e podem criar overshoot explorável |
+| **Data de reserva** | 2026-04-29 |
+| **Decisão** | Não aberto; permanece adiado no backlog estrutural |
+
+**Nota:** não é reabertura de price-action. Só pode avançar com mecanismo novo, dados forward e pré-registro. Não compete com Funding BTC na fila atual.
+
+**Referências:** `~/obsidian-vault/context/decisoes/2026-04-29-matriz-popperiana-hermes.md`, `~/obsidian-vault/context/decisoes/2026-05-29-exp-011-h1-funding-no-go.md`.
+
+---
+
+### EXP-011: H1 funding-conditioning
+
+| Campo | Valor |
+|---|---|
+| **Família** | Microestrutura / funding |
+| **Estágio** | **NO-GO de margem** |
+| **Hipótese** | Funding z-score condiciona expectancy de sinais momentum-pullback |
+| **Data do veredito** | 2026-05-29 |
+| **Decisão** | NO-GO formal; BTC funding fica 1º da fila pós-pausa, forward-only |
+
+**Métricas principais:** gap agregado -46.1 bps contra piso ≥ 50 bps; p≈0.0003; persistência IS→OOS; BTC×TRENDING -70.2 bps e BTC×WEAK_TREND -75.9 bps passam lift incremental; ETH não confirma e mata o agregado.
+
+**Natureza:** NO-GO de margem, não nulo puro. Não reabrir H1 nos mesmos dados; eventual H1-bis BTC-only exige dados novos e pré-registro forward-only.
+
+**Referências:** `docs/pre_registros/PREREG_H1_funding_conditioning.md`, `~/obsidian-vault/context/decisoes/2026-05-29-exp-011-h1-funding-no-go.md`.
+
+---
+
+### EXP-FH-01: Funding Harvest
+
+| Campo | Valor |
+|---|---|
+| **Família** | Microestrutura / funding harvest |
+| **Estágio** | **NO-GO** |
+| **Pré-registro** | `docs/pre_registros/PREREG_funding_harvest.md` |
+| **Decisão** | NO-GO de regime; não promove operação |
+
+**Nota:** registrado para completar a trilha histórica citada no registry. Mantido fora da sequência EXP-NNN porque o próprio artefato usa o namespace EXP-FH.
+
+**Referência:** `docs/pre_registros/PREREG_funding_harvest.md`, `docs/relatorios/2026-06-10-graveyard-autopsy.md`.
 
 ---
 
@@ -339,16 +452,138 @@ Bloqueados > executados nos dois regimes, mas margem pequena; unico bucket PF>1.
 
 ---
 
+### EXP-014: Trend-following diario (BTC/ETH/SOL) — TESTE FINAL
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Trend-following (ultima candidata de price-action em majors) |
+| **Estagio** | **NO-GO (inconclusivo)** — linha BTC/ETH/SOL FECHADA |
+| **Hipotese** | Trend-following no 1d (unico TF onde o fee vira ruido) tem edge selecionavel, ou e so drift + estrutura de saida? |
+| **Periodo** | ~2 anos diario, ~25-28 estacoes/simbolo |
+| **Data** | 2026-06-02 |
+| **Decisao** | NO-GO. Os 3 com IC do PF cruzando 1,0 (inconclusivo, selado = NO-GO). BTC/SOL nem batem entrada aleatoria. ETH parece forte (PF 2,16, perc 96%) mas IC [0,65-6,16] + multiplicidade + concentracao + ciclo unico = nao distinguivel de sorte |
+
+**Parametros (congelados a priori):** ADX>25, ATR(14), stop 2·ATR, trailing chandelier 3·ATR, custo 0,10%. GO exigia 4 criterios + IC conclusivo.
+
+**Significado:** a busca por edge de price-action simples em majors esta **exaurida com dados** (v1.1 15m, intraday fee, funding basis, trend diario inconclusivo). Pre-compromisso honrado: sem #5, sem altcoin, sem "mais dado".
+
+**Codigo:** `scripts/trend_following_study.py` + `tests/test_trend_following_study.py` (10 testes). **Ref:** `~/obsidian-vault/context/decisoes/2026-06-02-exp-014-trend-following-diario-no-go.md`
+
+---
+
+### EXP-015: Varredura de Liquidez + Retracao (LINK) — REJEITADA A PRIORI
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Price-action (liquidity sweep / Wyckoff spring) |
+| **Versao** | spec v1.0 (proposta Gabriel, 2026-06-09) |
+| **Estagio** | **DEAD (no HYPOTHESIS)** — rejeitada por anatomia estrutural a priori, nunca rodada |
+| **Hipotese** | Quando o low fura o fundo dos ultimos 8 candles (2h) mas o close volta acima dele (falso rompimento / stop hunt), a favor da tendencia 1h (close > EMA8), reverte >= 1R em ate 16 candles (4h) |
+| **Timeframe** | 15m (validacao 1h) |
+| **Ativo** | LINKUSDT |
+| **Data de criacao** | 2026-06-09 |
+| **Data de morte** | 2026-06-09 (mesmo dia — rejeicao a priori) |
+| **Decisao** | Nao rodar. Herda a causa de morte ja provada de EXP-004 e EXP-013; backtest testaria de novo o que ja reprovou, com roupa de altcoin |
+
+**Por que rejeitada SEM rodar (precedente metodologico):**
+
+Primeira hipotese do lab morta por **deducao estrutural a priori** — nao por dados novos. O argumento decisivo nao e o N=5 do teste preliminar (vies de amostra, que mais dados resolveriam); e a **anatomia de custo**, que mais dados NAO resolvem:
+
+- Stop na minima do pavio de varredura => R pequeno => o fee round-trip (~0,1% taker) vira fracao grande do R.
+- Se R ~ 0,5%, o fee ja come ~20% do R e o break-even sobe pra ~60% de acerto — **antes** de slippage. No LINK (menos liquido que BTC/ETH), o slippage real piora a conta.
+- Quanto melhor o RR aparente (stop mais apertado), PIOR o peso relativo do fee. O atrativo da estrategia e a propria armadilha.
+
+Mesma anatomia que ja matou:
+- **EXP-004** (pair trading): "penalizacao de fees torna break-even inviavel mesmo com sinal direcional fraco".
+- **EXP-013** (sinal de entrada v1.1): o v1.1 nao perde pelo SINAL — perde por fee drag (0.37 PF) + atraso de execucao (0.43 PF), empilhados. Sweep->1R em 15m herda a causa, nao so o sinal.
+
+**Colisao com pre-compromissos selados:**
+- EXP-014 (02/06) fechou price-action em majors como "exaurido com dados", LINHA FECHADA, pre-compromisso "sem #5, sem altcoin, sem mais dado". Esta era o #5, em altcoin.
+- Wyckoff/spring removido do menu de eixos (29/04) por overfit de regras ad-hoc. A spec e o spring de Wyckoff.
+- Reorientacao 01/06: de "prever direcao" para "capturar estrutura que paga sem prever". Sweep e prever direcao, 100% derivado do preco.
+- Plano regime-surfavel (07/06): Fase 0 = pausa; gatilho "2 NO-GOs -> pausa 90d" ativo ate ~13/07.
+
+**Condicao de reentrada (forward-only):** so reabre se um argumento mecanico mudar a ANATOMIA, nao a roupa:
+- um componente estrutural real (funding/OI/liquidacao/basis — info que nao deriva do preco) com fonte de friccao identificavel, respondendo as 3 perguntas popperianas; ou
+- um TF onde o fee vira ruido com sinal que sobreviva (mas trend diario ja deu NO-GO via EXP-014).
+- NUNCA reabre por "mais dados" ou "outro ativo".
+
+**Referencia:** `~/obsidian-vault/context/decisoes/2026-06-09-exp-015-liquidity-sweep-link-rejeitada-a-priori.md`
+
+---
+
+### EXP-016: Exit-on-trend-exhaustion pós-entrada (v1.1)
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Executor/Saída defensiva do v1.1 (não é estratégia nova, não tuna entrada) |
+| **Estagio** | **OOS JULGADO 2026-08-03** — H1 `GO` apenas como melhoria de executor; H2 `NO-GO` |
+| **Hipotese** | `trend_exhaustion` pós-entrada como saída defensiva reduz perdas sem destruir winners. H1: sair no 1º exhaustion se regime de entrada = WEAK_TREND. H2: sair no 1º exhaustion se ele aparece em ≤2 candles 15m pós-entrada |
+| **Origem** | Autópsias descritivas 10–11/06 (`trade_visual_autopsy`, `near_tp_and_exhaustion_autopsy`) sobre trades id≤156 (discovery/in-sample, não decide) |
+| **Criteria congelado** | `reports/exp_exit_on_trend_exhaustion_criteria_2026-06-11.md`, hash `b686760bab2c350012c59593d5fd7774a662cbce54014312b8b155b276a50eae` |
+| **Julga quando** | OOS (id>156) ≥30 trades fechados E ≥10 alterados por hipótese. GO exige delta ≥ +2.0pp, improved ≥ worsened, sem dano ≤ −1.25%, caps de concentração |
+| **Data de criacao** | 2026-06-11 |
+
+**OOS final (127 trades, 2026-08-03):** H1 `WEAK_TREND only` passou a régua congelada: 26 alterados, 16 melhorados/10 piorados, delta +3,7147 pp, pior dano −0,4407 pp, maior trade 17,5% e maior grupo 41,8% do delta positivo. **Isso não cria edge:** baseline OOS fez −19,0795% e a simulação ainda faria −15,3648%. O GO autoriza somente mini-spec/shadow separado; não autoriza produção. H2 `age <= 2 candles` foi **NO-GO**: 10 alterados, delta +1,6301 pp, abaixo do piso +2,0 pp. Integridade: 127/127 entradas mapeadas; nenhum preço ausente nos casos alterados.
+
+**Tensão registrada:** 4ª tentativa de ajuste no executor v1.1 pós-decisão "v1 no ótimo local" (BE50, PB25, hourly sizing — todas NO-GO). Diferenciais desta: saída por sinal de estado (não por nível de preço), nascida de autópsia e não de grid, custo de coleta zero (shadow sobre trades fechados). Limite estrutural conhecido: v1.1 perde por fee drag + atraso (EXP-013); saída defensiva reduz sangramento, não cria edge. Limite preservado: nenhuma implementação operacional sem mini-spec separada.
+
+---
+
+### EXP-017: Breakout compression regime-gated (shadow)
+
+| Campo | Valor |
+|---|---|
+| **Familia** | Price-action condicionado (BreakoutEngine5m existente + gate de regime) |
+| **Estagio** | **OOS EM COLETA** — `DADO INSUFICIENTE` em 2026-08-03: 15/30 fills (BTC 6, ETH 9) |
+| **Hipotese** | Breakout de compressão 5m só tem edge quando o regime maior já é direcional. Elegível apenas TRENDING/WEAK_TREND (regime de `momentum_decisions` ±45min); RANGING/VOLATILE/UNKNOWN bloqueados. Sem tocar em thresholds do engine |
+| **Timeframe / Ativos** | 5m / BTCUSDT, ETHUSDT |
+| **Discovery (30d, não decide)** | Cru: NO-GO (PF 0.79, false breakout 67.7%). Gated: n=20, net +1.63%, PF 1.20, WR 45%, FB 55%. SHORT carrega (PF 1.40 vs LONG 0.88); lucro concentrado em timeouts (n=6, PF 18.31), TP2 raro (5%); fees ≈55% do gross |
+| **Criteria congelado** | `reports/exp_breakout_regime_gated_criteria_2026-06-12.md`, hash `e5d942591a7f86cdb3d58e66a0e669a87f66fafe8450a47576318b7a34edbcbc` |
+| **Julga quando** | OOS ≥30 fills (≥10/símbolo, não concentrado em 1 dia). GO: net>0, PF≥1.20, WR≥40%, FB≤60%, sem dano ≤−1.25%, caps de concentração. Ritmo do discovery (20 fills/30d) projeta ~45 dias para 30 fills OOS |
+| **Coleta forward** | Dados reconstruíveis de Binance 5m + `momentum_decisions`; runner manual. Cron Hermes `3b63e5000255` nunca executou (`last_run_at=null`, agenda presa em junho) e foi pausado em 03/08 para não dar falsa sensação de monitoramento. Reavaliar manualmente quando houver chance plausível de ≥30 fills |
+| **Data de criacao** | 2026-06-12 |
+
+**Leitura OOS em 2026-08-03:** 1.454 sinais/linhas OOS registrados, 862 bloqueados por regime, 577 rejeitados por risco e somente 15 fills em 12 dias distintos (BTC 6, ETH 9), sem regime ausente. Verdict obrigatório: **DADO INSUFICIENTE** (<30 e ainda <10 por símbolo). As métricas intermediárias (net −0,2934%, PF 0,95, WR 33,3%, false breakout 66,7%) não decidem e não autorizam encerramento seletivo nem ajuste.
+
+**Relação com pré-compromissos (registro honesto):** é price-action em majors após EXP-014 ter selado a linha como "exaurida, sem #5". Não satisfaz formalmente a régua de reentrada de EXP-015 (gate de regime deriva de preço via EMAs — não é componente estrutural funding/OI/liq/basis). A anatomia fee/R, porém, é distinta da que matou EXP-015: stop ~0.9% (fee ~11% do R, não ~20%), alvo é deriva longa via timeout, não 1R rápido. O EXP auto-mata pelo critério congelado e custa ~zero para reavaliar (runner manual, dados reconstruíveis; cron pausado em 03/08). **Continuidade da linha = decisão de rumo em aberto (discussão 12/06).** Linha vermelha até OOS≥30: não ativar breakout, não mudar engine/thresholds, não fazer BTC-only/SHORT-only, não adicionar invalidação rápida, não mexer no Momentum Pullback por causa deste EXP.
+
+---
+
+## Medicao de execucao — Maker-Fill v1.1 (2026-06-10)
+
+Pre-registro selado a priori: `docs/pre_registros/PREREG_maker_fill_v11.md` (Fase R kill-only; Fase F julga com GO = fill>=50% + PF executados >=1.15 + dPnL>taker + captura >=5/10 top winners + convergencia mecanica BTC/ETH). **Medicao de politica de execucao, nao experimento de edge — sem promocao operacional em nenhum desfecho.**
+
+**Fase R (replay retroativo, 156/156 pareados, 2026-06-10): nao dispara kill.** Politica maker melhora materialmente o v1.1 versus taker (+2.39% net vs -3.23%; delta +5.62 pts; top-10 winners 10/10 preenchidos; fill rate 99.4%, provavelmente otimista — sem book/fila), mas o replay otimista fica **abaixo do piso de GO** (PF executados 1.058 < 1.15) e **falha robustez por simbolo** (BTC 0.998 / ETH 1.131). Conclusao extremamente sensivel a poucos bps de fee: maker 0.01 → PF 1.116; 0.03 → 1.003. Prosseguiu apenas para medicao forward shadow; sem promocao operacional.
+
+**Fase F (forward, corte exclusivo 2026-08-01): NO-GO em 2026-08-03.** Depois de remover 464 linhas da fixture sintética conhecida que testes antigos gravaram no banco, restaram 123 sombras únicas, todas resolvidas e pareadas 1:1 com os 123 `momentum_trades` da janela. Fill 96/123 = 78,05% (PASS); PF executados 0,475 (FAIL); delta maker−taker +0,2425 pp (PASS estreito, mas ambos negativos: maker −16,6849% vs taker −16,9274%); captura top-10 = 5/10 (PASS no limite); convergência FAIL nos dois símbolos (BTC net −8,0519%, PF 0,299; ETH net −8,6330%, PF 0,574). Seleção adversa confirmada: trades preenchidos tiveram taker net médio −0,231%, não-preenchidos +0,194%; no bruto (§6): preenchidos −0,131% vs não-preenchidos +0,294%, e MFE médio dos 27 perdidos 0,526% (mediana 0,493%, máx 1,147%) — a limit perde justamente os trades que andam a favor. Pelo anti-relitígio do pré-registro, arquivado sem rodada extra.
+
+**Achado colateral de 1a ordem (LAB-NOTE candle anchoring divergence):** o executor v1.1 decide no 1o ciclo de 5min do candle 15m novo com preco PARCIAL (`candles.iloc[-1]` em formacao) — o v1.1 medido em producao/paper **nao e semanticamente identico** ao v1.1 da matriz historica (closes finalizados). Nao invalida os 156 trades (sao o que aconteceu); enfraquece a ponte direta backtest↔producao. Sem correcao oportunista; sem reabrir tuning. Detalhe: §4-bis do pre-registro + `~/obsidian-vault/context/decisoes/2026-06-10-lab-note-v11-candle-anchoring-divergence.md`.
+
+Artefatos: `momentum/maker_shadow.py` (18 testes TDD), `scripts/replay_maker_shadow.py`, relatorio `docs/relatorios/2026-06-10-maker-fill-fase-r.json`. 1o run da Fase R (ancora por close exato, 8/156) **descartado como invalido** — nenhum veredicto extraido; registrado como nota de auditoria no §4-bis.
+
+---
+
 ## Indice Rapido
 
 | ID | Nome | Familia | Estagio | PF (melhor) | Decisao |
 |---|---|---|---|---|---|
 | EXP-001 | CFER v0.2 | Defensive | DEAD | 0.43 | Hipotese nao existe |
 | EXP-002 | RAVR v2 | Defensive | DEAD | 0.90 | Edge insuficiente |
-| EXP-003 | Momentum v1.1 | Momentum | PAPER (impl.) | 1.48 | Baseline oficial (B1) |
+| EXP-003 | Momentum v1.1 | Momentum | PAPER (impl.) / graveyard auditado | 1.48 | Baseline oficial; autopsia: núcleo acerta rápido, mas não paga cauda/relógio/custo |
 | EXP-004 | Pair BTC/ETH v1.0 | Cross-asset stat arb | DEAD (no BACKTEST) | 0.32 | Falhou 5/7 criterios; random trader supera 4.5x |
 | EXP-006 | Momentum Position Router | Executor/Router | NO-GO (SHADOW) | 1.07* | Premissa regrediu (1.49→0.67); 80% do peso do score aponta errado |
+| EXP-007 | Risk Sizing & Leverage | Executor/Sizing | DEAD (não aberto) | — | Pré-condicionado a EXP-006 GO; saiu da mesa |
+| EXP-008 | H3 LSR vanilla | Microestrutura/LSR | NO-GO | — | Spread OOS -21.44 bps, p=0.126; nenhum estrato passa |
+| EXP-009 | Leverage timing / K | Microestrutura/Leverage | NO-GO (selado) | — | 0/64 cells passam P1; insufficient NW + temporal drift |
+| EXP-010 | Liquidation / squeeze | Microestrutura/Liquidações | RESERVED / BACKLOG | — | Não aberto; só com mecanismo novo e pré-registro |
+| EXP-011 | H1 funding-conditioning | Microestrutura/Funding | NO-GO de margem | — | 46.1 < 50 bps; BTC funding fica 1º da fila pós-pausa |
+| EXP-FH-01 | Funding Harvest | Microestrutura/Funding | NO-GO | — | NO-GO de regime |
 | EXP-013 | Sinal de entrada v1.1 (diagnostico) | Validacao | NO-GO | — | Timing nao-significante, direcao ≈ acaso; perdedor com custo (IC PF [0.36,0.87]) |
+| EXP-014 | Trend-following diario BTC/ETH/SOL | Trend-following | NO-GO (inconclusivo) | 2.16* | Ultima candidata; IC cruza 1.0 nos 3; ETH seduz mas nao robusto. LINHA FECHADA |
+| EXP-015 | Varredura de liquidez + retracao (LINK) | Price-action (sweep) | DEAD (no HYPOTHESIS) | — | Rejeitada a priori: stop apertado => fee vira fracao do R; herda morte de EXP-004/013 |
+| EXP-016 | Exit-on-trend-exhaustion (v1.1) | Executor/Saída defensiva | OOS JULGADO | — | H1 GO só para mini-spec/shadow (delta +3,71 pp, mas ainda perde); H2 NO-GO |
+| EXP-017 | Breakout compression regime-gated | Price-action condicionado | OOS EM COLETA | 1.20* | DADO INSUFICIENTE (15/30 fills; BTC 6, ETH 9); linha vermelha ativa |
 
 ---
 

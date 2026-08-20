@@ -13,6 +13,7 @@ Comandos disponiveis:
   /relatorio   - envia o relatorio diario agora
   /ajuda       - lista de comandos
 """
+import inspect
 import json
 import os
 import shutil
@@ -288,9 +289,44 @@ def _cmd_ajuda():
         "/pausar - pausa novos trades\n"
         "/retomar - retoma operacao normal\n"
         "/relatorio - relatorio diario completo\n"
-        "/ajuda - esta mensagem"
+        "/mercado [SIMBOLO] - leitura de mercado (regime + pressao); com simbolo = zoom\n"
+        "/ajuda - esta mensagem\n\n"
+        "\U0001f9ed <b>Copiloto de Disciplina</b> <i>(nao preve, so vigia)</i>\n"
+        "/clima - termometro do mercado (BTC, funding, liquidacao, medo/ganancia)\n"
+        "/risco SIMBOLO ENTRADA STOP [ALVO] - quanto arriscar e se paga o pedagio do fee\n"
+        "/banca VALOR - teu capital real pro sizing (ex: /banca 2000)\n"
+        "/vigiar SIMBOLO [compra|venda] - guarda de entrada (avisa quando a faca parar)\n"
+        "/entrei SIMBOLO ENTRADA stop STOP - vigia de saida (avisa pra realizar)\n"
+        "/vigiando - o que estou vigiando (entrada + saida)\n"
+        "/cancelar SIMBOLO - tira da watchlist de entrada\n"
+        "/fechei SIMBOLO - fecha a vigia de saida"
     )
 
+
+def _cmd_mercado(arg: str = ""):
+    """Leitura de mercado sob demanda. Sem arg = macro; com arg = zoom no simbolo."""
+    import database as db
+    import market_read as mr
+
+    conn = db._get_conn()
+    try:
+        fresh = mr.read_freshness(conn, int(time.time()))
+        token = arg.strip().upper()
+        if not token:
+            return mr.format_macro(mr.read_regime(conn), mr.read_pressure(conn), freshness=fresh)
+        symbol = token if token.endswith("USDT") else f"{token}USDT"  # aceita "BTC" ou "BTCUSDT"
+        known = set(mr.all_symbols(conn))
+        if symbol not in known:
+            disponiveis = ", ".join(mr._sym_short(s) for s in sorted(known))
+            return (f"\u2753 <b>{token}</b> nao esta entre os simbolos coletados.\n"
+                    f"<i>Disponiveis:</i> {disponiveis}")
+        return mr.format_symbol(mr.read_symbol(conn, symbol), freshness=fresh)
+    finally:
+        conn.close()
+
+
+import copiloto  # noqa: E402  (Copiloto de Disciplina — Modulos A/B)
+import contexto  # noqa: E402  (Copiloto — Contexto: termometro do mercado)
 
 _HANDLERS = {
     "/status": _cmd_status,
@@ -303,18 +339,34 @@ _HANDLERS = {
     "/relatorio": _cmd_relatorio,
     "/ajuda": _cmd_ajuda,
     "/help": _cmd_ajuda,
+    "/mercado": _cmd_mercado,
+    # Copiloto de Disciplina — nao preve, so vigia; a decisao e sempre sua
+    "/entrei": copiloto.cmd_entrei,       # Modulo B: vigia de saida (anti-sair-tarde)
+    "/vigiando": copiloto.cmd_vigiando,   # lista entrada + saida
+    "/fechei": copiloto.cmd_fechei,
+    "/vigiar": copiloto.cmd_vigiar,       # Modulo A: guarda de entrada (anti-entrar-cedo)
+    "/cancelar": copiloto.cmd_cancelar,
+    "/clima": contexto.cmd_clima,         # Contexto: termometro do mercado (leitura, nao previsao)
+    "/risco": copiloto.cmd_risco,         # Fatia Risco: quanto arriscar + R:R liquido de fee
+    "/banca": copiloto.cmd_banca,         # capital REAL pro sizing (persistido)
 }
 
 
 def _handle_command(text: str):
-    cmd = text.strip().lower().split()[0]
+    raw = text.strip()
+    cmd = raw.lower().split()[0]
     # Remove @botname suffix (ex: /status@MyBot)
     if "@" in cmd:
         cmd = cmd.split("@")[0]
     handler = _HANDLERS.get(cmd)
     if not handler:
         return None  # comando desconhecido - ignora silenciosamente
+    # argumento = resto do texto ORIGINAL (preserva case do simbolo)
+    parts = raw.split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
     try:
+        if inspect.signature(handler).parameters:
+            return handler(arg)
         return handler()
     except Exception as e:
         return f"\u274c <b>Erro ao executar {cmd}:</b>\n<code>{e}</code>"

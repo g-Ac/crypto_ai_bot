@@ -24,6 +24,11 @@
             <li><a href="/analytics" {% if active_page == 'analytics' %}class="active"{% endif %}>Analytics</a></li>
             <li><a href="/equity" {% if active_page == 'equity' %}class="active"{% endif %}>Equity</a></li>
             <li><a href="/system" {% if active_page == 'system' %}class="active"{% endif %}>System</a></li>
+            <li><a href="/raiox/" {% if active_page == 'raiox' %}class="active"{% endif %}>Raio-X</a></li>
+            <li><a href="/raiox/mapa" {% if active_page == 'mapa' %}class="active"{% endif %}>Mapa</a></li>
+            <li><a href="/raiox/mercado" {% if active_page == 'mercado' %}class="active"{% endif %}>Mercado</a></li>
+            <li><a href="/raiox/paper" {% if active_page == 'paper' %}class="active"{% endif %}>Paper</a></li>
+            <li><a href="/rotulagem" {% if active_page == 'rotulagem' %}class="active"{% endif %}>Rotular</a></li>
           </ul>
         </nav>
       </div>
@@ -61,6 +66,11 @@
       <a href="/analytics" {% if active_page == 'analytics' %}class="active"{% endif %}>Analytics</a>
       <a href="/equity" {% if active_page == 'equity' %}class="active"{% endif %}>Equity</a>
       <a href="/system" {% if active_page == 'system' %}class="active"{% endif %}>System</a>
+      <a href="/raiox/" {% if active_page == 'raiox' %}class="active"{% endif %}>Raio-X</a>
+      <a href="/raiox/mapa" {% if active_page == 'mapa' %}class="active"{% endif %}>Mapa</a>
+      <a href="/raiox/mercado" {% if active_page == 'mercado' %}class="active"{% endif %}>Mercado</a>
+      <a href="/raiox/paper" {% if active_page == 'paper' %}class="active"{% endif %}>Paper</a>
+      <a href="/rotulagem" {% if active_page == 'rotulagem' %}class="active"{% endif %}>Rotular</a>
     </nav>
 
     <!-- Content -->
@@ -197,7 +207,8 @@
     pauseLabel.textContent = d.paused ? 'Paused' : 'Running';
 
     const ver = $('#footer-version');
-    if (d.instance?.version) ver.textContent = 'v' + d.instance.version + ' · ' + (d.instance.bot_id || '');
+    // o payload expoe version_tag (ex.: "baseline:c3ed087"); `version` nunca existiu
+    if (d.instance?.version_tag) ver.textContent = d.instance.version_tag;
     $('#footer-refresh').textContent = d.last_update || '';
   }
 
@@ -213,8 +224,8 @@
     if (d.bot_status?.last_cycle_ago) $('#tk-cycle').textContent = d.bot_status.last_cycle_ago;
     if (d.health?.uptime) $('#tk-uptime').textContent = d.health.uptime;
 
-    // Funnel pass rate
-    const funnel = d.scalping_funnel;
+    // Funnel pass rate (momentum — o funil do scalping saiu com o sistema)
+    const funnel = d.funnel;
     if (funnel?.total) {
       const opened = funnel.breakdown?.opened || 0;
       $('#tk-decisions').textContent = funnel.total + ' (' + (opened / funnel.total * 100).toFixed(0) + '% pass)';

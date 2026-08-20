@@ -1356,15 +1356,9 @@
           </div>
         </div>
         <div class="subtab-row" id="historyTabs">
-          <button class="subtab-btn active" data-system="paper" data-target="histPaper">Paper</button>
-          <button class="subtab-btn" data-system="agent" data-target="histAgent">Agent</button>
-          <button class="subtab-btn" data-system="pump" data-target="histPump">Pump</button>
-          <button class="subtab-btn" data-system="scalping" data-target="histScalping">Scalping</button>
+          <button class="subtab-btn active" data-system="momentum" data-target="histMomentum">Momentum</button>
         </div>
-        <div id="histPaper" class="subtab-pane active"><div id="histPaper_content"></div></div>
-        <div id="histAgent" class="subtab-pane"><div id="histAgent_content"></div></div>
-        <div id="histPump" class="subtab-pane"><div id="histPump_content"></div></div>
-        <div id="histScalping" class="subtab-pane"><div id="histScalping_content"></div></div>
+        <div id="histMomentum" class="subtab-pane active"><div id="histMomentum_content"></div></div>
       </div>
 
       <div class="card">
@@ -1417,34 +1411,6 @@
           </div>
         </div>
       </div>
-
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <span class="eyebrow">Research Lab</span>
-              <h3>Signal Quality</h3>
-            </div>
-            <span class="badge-sm" id="researchStampChip">Research --</span>
-          </div>
-          <div class="card-body">
-            <div class="chart-wrap medium" style="margin-bottom:16px;">
-              <canvas id="researchChart"></canvas>
-            </div>
-            <div class="metric-grid mb-16" id="researchSummary"></div>
-            <div id="topReasonsList"></div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <span class="eyebrow">Best Strategy Families</span>
-              <h3>Top Setups (Scorer 30d)</h3>
-            </div>
-          </div>
-          <div class="card-body" id="setupLeaderboard"></div>
-        </div>
       </div>
     </section>
 
@@ -1641,11 +1607,10 @@
   <script>
     /* ===== Constants & State ===== */
     const initialStatus = {{ dashboard | tojson }};
+    // Momentum-only: paper/agent/pump/scalping foram aposentados e saíram do
+    // payload em 2026-08-03 (rendiam cards com capital inicial estático).
     const systemMeta = {
-      paper:    { label: "Paper Trading", color: "#5fb7ff" },
-      agent:    { label: "Multi-Agent",   color: "#00ff88" },
-      pump:     { label: "Pump Scanner",  color: "#ff9f66" },
-      scalping: { label: "Scalping",      color: "#a78bfa" }
+      momentum: { label: "Momentum Pullback", color: "#5fb7ff" }
     };
 
     const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -1657,7 +1622,6 @@
     let pnlChartInstance = null;
     let systemsChartInstance = null;
     let funnelChartInstance = null;
-    let researchChartInstance = null;
     let currentPeriod = 0;
     let activeLogSource = "main";
 
@@ -1790,7 +1754,7 @@
           label.textContent = "Healthy";
         } else if (bot.overall === "degraded") {
           dot.classList.add("warn");
-          label.textContent = bot.errors_today > 0 ? `Degraded (${bot.errors_today} errs)` : "Degraded";
+          label.textContent = bot.errors_recent > 0 ? `Degraded (${bot.errors_recent} errs)` : "Degraded";
         } else {
           dot.classList.add("err");
           label.textContent = "Offline";
@@ -1840,7 +1804,7 @@
       const bot = status.bot_status || {};
       const summary = status.summary || {};
       const best = summary.best_system || {};
-      const meta = systemMeta[best.key] || systemMeta.paper;
+      const meta = systemMeta[best.key] || systemMeta.momentum;
       const experiment = (status.instance || {}).scalping_experiment || {};
       const flags = [
         experiment.force_entries ? "force entries" : "",
@@ -1869,8 +1833,8 @@
             <strong>${escapeHtml(bot.last_cycle_ago || "N/A")}</strong>
           </div>
           <div class="mini-stat">
-            <div class="mini-stat-label">Errors Today</div>
-            <strong>${safeNumber(bot.errors_today)}</strong>
+            <div class="mini-stat-label">Errors (recent)</div>
+            <strong>${safeNumber(bot.errors_recent)}</strong>
           </div>
           <div class="mini-stat">
             <div class="mini-stat-label">Leader</div>
@@ -1907,8 +1871,9 @@
               </span>
               ${sys.cb ? '<span class="badge-sm tone-neg">CB Active</span>' : '<span class="badge-sm">Stable</span>'}
             </div>
-            <div class="capital-val">${formatMoney(sys.value)}</div>
-            <div class="capital-ret ${toneClass(sys.ret)}">${formatPct(sys.ret)}</div>
+            <div class="capital-val">${formatMoney(sys.net_value ?? sys.value)}</div>
+            <div class="capital-ret ${toneClass(sys.net_ret ?? sys.ret)}">${formatPct(sys.net_ret ?? sys.ret)} <span class="capital-stat" style="font-size:.65rem">net</span></div>
+            ${sys.net_value != null ? `<div class="capital-stat" style="font-size:.65rem;opacity:.7">${formatMoney(sys.value)} ${formatPct(sys.ret)} gross &middot; fee ${formatMoney(sys.fee_usd)}</div>` : ""}
             <div class="capital-stats">
               <div class="capital-stat">Trades<strong>${safeNumber(day.count)}</strong></div>
               <div class="capital-stat">P&amp;L<strong class="${toneClass(day.pnl_usd)}">${formatMoney(day.pnl_usd)}</strong></div>
@@ -2064,91 +2029,27 @@
     function renderFunnelSummary(status) {
       const el = document.getElementById("funnelSummary");
       if (!el) return;
-      const funnel = status.scalping_funnel || {};
+      const funnel = status.funnel || {};
       const bd = funnel.breakdown || {};
-      const outcomes = ((((status.insights||{}).research)||{}).outcomes_summary) || {};
       const total = safeNumber(funnel.total);
       const opened = safeNumber(bd.opened);
-      const confBlock = safeNumber(bd.confluence_block);
-      const extra = safeNumber(bd.ai_rejected) + safeNumber(bd.risk_blocked) + safeNumber(bd.cooldown) + safeNumber(bd.in_position) + safeNumber(bd.error);
+      const regime = safeNumber(bd.regime_blocked);
+      const passRate = total ? (opened / total * 100).toFixed(1) : "0.0";
+      // Top bloqueio derivado do payload — sem lista fixa de chaves do scalping.
+      const blocks = Object.entries(bd).filter(([k]) => k !== "opened");
+      const topBlock = blocks.sort((a, b) => b[1] - a[1])[0];
 
       el.innerHTML = `
-        <div class="stack-card"><div class="stack-label">Observed</div><strong>${total}</strong><div class="stack-sub">${opened} opened, ${confBlock} confluence blocked.</div></div>
-        <div class="stack-card"><div class="stack-label">Extra Blocks</div><strong>${extra}</strong><div class="stack-sub">AI, risk, cooldown, in-position, errors.</div></div>
-        <div class="stack-card"><div class="stack-label">Labeled Events</div><strong>${safeNumber(outcomes.labeled_events)}</strong><div class="stack-sub">${safeNumber(outcomes.complete_labels)} complete, ${safeNumber(outcomes.partial_labels)} partial.</div></div>
-        <div class="stack-card"><div class="stack-label">Actionable</div><strong>${safeNumber(outcomes.actionable)}</strong><div class="stack-sub">${safeNumber(outcomes.winners)} winners, ${safeNumber(outcomes.losers)} losers identified.</div></div>
+        <div class="stack-card"><div class="stack-label">Decisions (${safeNumber(funnel.hours)}h)</div><strong>${total}</strong><div class="stack-sub">${opened} viraram posição.</div></div>
+        <div class="stack-card"><div class="stack-label">Pass Rate</div><strong>${passRate}%</strong><div class="stack-sub">Sinais que passaram por todos os gates.</div></div>
+        <div class="stack-card"><div class="stack-label">Regime Blocked</div><strong>${regime}</strong><div class="stack-sub">Tendência não confirmada no filtro 1h.</div></div>
+        <div class="stack-card"><div class="stack-label">Top Block</div><strong>${topBlock ? safeNumber(topBlock[1]) : 0}</strong><div class="stack-sub">${topBlock ? escapeHtml(topBlock[0]) : "nenhum bloqueio"}</div></div>
       `;
     }
 
     /* ===== Render: Research Summary (Analytics) ===== */
-    function renderResearchSummary(status) {
-      const research = ((status.insights||{}).research) || {};
-      const outcomes = research.outcomes_summary || {};
-      const scorer = research.scorer_summary || {};
-      const reasons = research.top_reasons || [];
-
-      const stamp = document.getElementById("researchStampChip");
-      if (stamp) stamp.innerHTML = `Research <strong>${escapeHtml(research.generated_at || "--")}</strong>`;
-
-      const sm = document.getElementById("researchSummary");
-      if (sm) {
-        sm.innerHTML = `
-          <div class="metric-card" style="--accent:var(--blue);"><div class="metric-label">Labels</div><div class="metric-value">${safeNumber(outcomes.labeled_events)}</div></div>
-          <div class="metric-card" style="--accent:var(--cyan);"><div class="metric-label">Complete</div><div class="metric-value">${safeNumber(outcomes.complete_labels)}</div></div>
-          <div class="metric-card" style="--accent:var(--green);"><div class="metric-label">Actionable</div><div class="metric-value">${safeNumber(outcomes.actionable)}</div></div>
-          <div class="metric-card" style="--accent:var(--purple);"><div class="metric-label">Avg 60m</div><div class="metric-value ${toneClass(outcomes.avg_close_return_60m_pct)}">${formatPct(outcomes.avg_close_return_60m_pct, 2)}</div></div>
-          <div class="metric-card" style="--accent:var(--orange);"><div class="metric-label">Groups</div><div class="metric-value">${safeNumber(scorer.groups_total)}</div></div>
-          <div class="metric-card" style="--accent:var(--green);"><div class="metric-label">Promising</div><div class="metric-value">${safeNumber(scorer.promising_groups)}</div></div>
-        `;
-      }
-
-      const rl = document.getElementById("topReasonsList");
-      if (!rl) return;
-      if (!reasons.length) {
-        rl.innerHTML = '<div class="empty-state">No dominant reasons available yet. This grows as the dataset matures.</div>';
-        return;
-      }
-      rl.innerHTML = reasons.map(r => `
-        <div class="reason-row">
-          <div>
-            <div style="font-weight:700;">${escapeHtml(r.reason || "No reason")}</div>
-            <div style="font-size:12px;color:var(--text-2);">Frequent reason in labeled events.</div>
-          </div>
-          <span class="badge-sm"><strong>${safeNumber(r.count)}</strong>x</span>
-        </div>
-      `).join("");
-    }
 
     /* ===== Render: Setup Leaderboard (Analytics) ===== */
-    function renderSetupLeaderboard(status) {
-      const el = document.getElementById("setupLeaderboard");
-      if (!el) return;
-      const setups = ((((status.insights||{}).research)||{}).top_setups) || [];
-
-      if (!setups.length) {
-        el.innerHTML = '<div class="empty-state">Not enough setup families to classify. This panel populates as the scorer gains data.</div>';
-        return;
-      }
-
-      el.innerHTML = setups.map(s => `
-        <div class="setup-card">
-          <div class="setup-head">
-            <div>
-              <div class="setup-title">${escapeHtml(String(s.best_signal_source||"no_signal").replace(/_/g," "))} &middot; ${escapeHtml(s.direction||"NEUTRAL")}</div>
-              <div class="setup-sub">${escapeHtml(s.scenario_type||"unknown")} / ${escapeHtml(s.event_outcome||"unknown")}</div>
-            </div>
-            <span class="setup-pill ${recommendationClass(s.recommendation)}">${recommendationLabel(s.recommendation)}</span>
-          </div>
-          <div class="setup-sub">${escapeHtml(s.top_reason || "No dominant reason mapped yet.")}</div>
-          <div class="lb-stats" style="margin-top:10px;">
-            <div class="mini-stat"><div class="mini-stat-label">Edge</div><strong class="${toneClass(s.edge_score)}">${safeNumber(s.edge_score).toFixed(2)}</strong></div>
-            <div class="mini-stat"><div class="mini-stat-label">Win Rate</div><strong>${safeNumber(s.win_rate).toFixed(1)}%</strong></div>
-            <div class="mini-stat"><div class="mini-stat-label">60m Avg</div><strong class="${toneClass(s.avg_close_return_60m_pct)}">${formatPct(s.avg_close_return_60m_pct, 2)}</strong></div>
-            <div class="mini-stat"><div class="mini-stat-label">Sample</div><strong>${safeNumber(s.complete_actionable)}/${safeNumber(s.total)}</strong></div>
-          </div>
-        </div>
-      `).join("");
-    }
 
     /* ===== Render: Trade Table ===== */
     function renderConfidenceBadge(v) {
@@ -2167,20 +2068,23 @@
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>P&amp;L %</th><th>P&amp;L $</th><th>Reason</th>
+              <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>P&amp;L % (net)</th><th>P&amp;L $ (net)</th><th>Reason</th>
               ${isAgent ? "<th>Confidence</th>" : ""}
             </tr></thead>
             <tbody>${trades.map(t => {
-              const side = String(t.type||"").toUpperCase();
+              // momentum grava `direction`, nao `type`; e o P&L exibido e o LIQUIDO
+              const side = String(t.type || t.direction || "").toUpperCase();
               const sc = side === "SHORT" ? "side-short" : "side-long";
+              const pnlPct = t.net_pnl_pct ?? t.pnl_pct;
+              const pnlUsd = t.net_pnl_usd ?? t.pnl_usd;
               return `<tr>
                 <td class="text-mono">${escapeHtml(t.timestamp || t.exit_time || "--")}</td>
                 <td><strong>${escapeHtml(t.symbol || "--")}</strong></td>
                 <td><span class="side-badge ${sc}">${escapeHtml(side || "--")}</span></td>
                 <td class="text-mono">${t.entry_price ? safeNumber(t.entry_price).toFixed(4) : "--"}</td>
                 <td class="text-mono">${t.exit_price ? safeNumber(t.exit_price).toFixed(4) : "--"}</td>
-                <td class="text-mono ${toneClass(t.pnl_pct)}">${formatPct(t.pnl_pct)}</td>
-                <td class="text-mono ${toneClass(t.pnl_usd)}">${formatMoney(t.pnl_usd)}</td>
+                <td class="text-mono ${toneClass(pnlPct)}">${formatPct(pnlPct)}</td>
+                <td class="text-mono ${toneClass(pnlUsd)}">${formatMoney(pnlUsd)}</td>
                 <td>${escapeHtml(t.exit_reason || "--")}</td>
                 ${isAgent ? `<td>${renderConfidenceBadge(t.analyst_confidence)}</td>` : ""}
               </tr>`;
@@ -2192,7 +2096,7 @@
 
     function renderTradesFromState(status) {
       const trades = status.trades || {};
-      const targets = { paper: "histPaper_content", agent: "histAgent_content", pump: "histPump_content", scalping: "histScalping_content" };
+      const targets = { momentum: "histMomentum_content" };
       Object.entries(targets).forEach(([sys, id]) => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = renderTradeTable(trades[sys] || [], sys);
@@ -2307,19 +2211,16 @@
     }
 
     function buildChartPayload(status) {
+      // Momentum-only: as séries de paper/agent/pump/scalping saíram do payload.
+      // getFilledSeries(undefined) NÃO devolve vazio — devolve um array de zeros
+      // do tamanho de labels, então elas eram desenhadas como retas em zero.
       const chart = status.chart || {};
       const labels = [...new Set([
-        ...(chart.total||[]).map(i=>i.day), ...(chart.paper||[]).map(i=>i.day),
-        ...(chart.agent||[]).map(i=>i.day), ...(chart.pump||[]).map(i=>i.day),
-        ...(chart.scalping||[]).map(i=>i.day)
+        ...(chart.total||[]).map(i=>i.day), ...(chart.momentum||[]).map(i=>i.day)
       ])].sort();
       return {
         labels,
-        total:    getFilledSeries(chart.total||[], labels),
-        paper:    getFilledSeries(chart.paper||[], labels),
-        agent:    getFilledSeries(chart.agent||[], labels),
-        pump:     getFilledSeries(chart.pump||[], labels),
-        scalping: getFilledSeries(chart.scalping||[], labels)
+        total: getFilledSeries(chart.total||[], labels)
       };
     }
 
@@ -2358,12 +2259,8 @@
       const ctx = canvas.getContext("2d");
 
       const datasets = [
-        { label: "Portfolio Total", data: payload.total, borderColor: "#00d4ff", borderWidth: 3, fill: true, tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
-          backgroundColor: ({ chart }) => { const a = chart.chartArea; return a ? buildGradient(chart.ctx, a) : "rgba(0,212,255,0.1)"; } },
-        { label: "Paper",      data: payload.paper,    borderColor: "#5fb7ff", borderWidth: 1.5, tension: 0.25, pointRadius: 0 },
-        { label: "Multi-Agent", data: payload.agent,   borderColor: "#00ff88", borderWidth: 1.5, tension: 0.25, pointRadius: 0 },
-        { label: "Pump",       data: payload.pump,     borderColor: "#ff9f66", borderWidth: 1.5, tension: 0.25, pointRadius: 0 },
-        { label: "Scalping",   data: payload.scalping, borderColor: "#a78bfa", borderWidth: 1.5, tension: 0.25, pointRadius: 0 }
+        { label: "Momentum (net)", data: payload.total, borderColor: "#00d4ff", borderWidth: 3, fill: true, tension: 0.3, pointRadius: 0, pointHoverRadius: 4,
+          backgroundColor: ({ chart }) => { const a = chart.chartArea; return a ? buildGradient(chart.ctx, a) : "rgba(0,212,255,0.1)"; } }
       ];
 
       if (!pnlChartInstance) {
@@ -2440,17 +2337,31 @@
     function createOrUpdateFunnelChart(status) {
       const canvas = document.getElementById("funnelChart");
       if (!canvas) return;
-      const funnel = status.scalping_funnel || {};
+      const funnel = status.funnel || {};
       const bd = funnel.breakdown || {};
-      const entries = [
-        { key: "opened",           label: "Opened",     color: "#00ff88" },
-        { key: "confluence_block", label: "Confluence",  color: "#5fb7ff" },
-        { key: "risk_blocked",     label: "Risk",        color: "#ff9f66" },
-        { key: "ai_rejected",      label: "AI",          color: "#ff5a6e" },
-        { key: "cooldown",         label: "Cooldown",    color: "#ffd166" },
-        { key: "in_position",      label: "In Position", color: "#00d4ff" },
-        { key: "error",            label: "Error",       color: "#ffffff" }
-      ].filter(e => safeNumber(bd[e.key]) > 0);
+      // Vocabulário do MOMENTUM (blocked_by de momentum_decisions). As chaves do
+      // scalping (confluence_block, ai_rejected, in_position...) nunca batiam —
+      // o doughnut mostrava "No data" com centenas de decisões no funil.
+      const FUNNEL_LABELS = {
+        opened:            { label: "Opened",        color: "#00ff88" },
+        regime_blocked:    { label: "Regime",        color: "#5fb7ff" },
+        no_valid_pullback: { label: "Sem pullback",  color: "#ff9f66" },
+        trend_too_young:   { label: "Trend jovem",   color: "#ffd166" },
+        no_confirmation:   { label: "Sem confirm.",  color: "#00d4ff" },
+        trend_exhaustion:  { label: "Exaustão",      color: "#ff5a6e" },
+        max_positions:     { label: "Max posições",  color: "#b592ff" },
+        cooldown:          { label: "Cooldown",      color: "#ffa8c5" },
+        suspended:         { label: "Suspenso",      color: "#8899aa" },
+      };
+      // Deriva do payload: chave nova no backend aparece sozinha, sem virar buraco.
+      const entries = Object.keys(bd)
+        .filter(k => safeNumber(bd[k]) > 0)
+        .sort((a, b) => safeNumber(bd[b]) - safeNumber(bd[a]))
+        .map(k => ({
+          key: k,
+          label: FUNNEL_LABELS[k]?.label || k,
+          color: FUNNEL_LABELS[k]?.color || "#5a7294",
+        }));
 
       const labels = entries.length ? entries.map(e => e.label) : ["No data"];
       const values = entries.length ? entries.map(e => safeNumber(bd[e.key])) : [1];
@@ -2476,34 +2387,6 @@
       funnelChartInstance.update();
     }
 
-    function createOrUpdateResearchChart(status) {
-      const canvas = document.getElementById("researchChart");
-      if (!canvas) return;
-      const rc = ((((status.insights||{}).research)||{}).recommendation_counts) || {};
-      const labels = ["Promising", "Watch", "Avoid", "Low Sample"];
-      const values = [safeNumber(rc.promising), safeNumber(rc.watch), safeNumber(rc.avoid), safeNumber(rc.insufficient)];
-      const colors = ["rgba(0,255,136,0.78)", "rgba(0,212,255,0.78)", "rgba(255,90,110,0.78)", "rgba(255,159,102,0.78)"];
-
-      if (!researchChartInstance) {
-        researchChartInstance = new Chart(canvas.getContext("2d"), {
-          type: "bar",
-          data: { labels, datasets: [{ label: "Groups", data: values, borderRadius: 10, borderSkipped: false, backgroundColor: colors }] },
-          options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false }, tooltip: chartTooltipStyle },
-            scales: {
-              x: { grid: { display: false, drawBorder: false }, ticks: { color: "#7a92ad" } },
-              y: { grid: { color: "rgba(255,255,255,0.04)", drawBorder: false }, ticks: { color: "#5a7294", precision: 0 } }
-            }
-          }
-        });
-        return;
-      }
-      researchChartInstance.data.labels = labels;
-      researchChartInstance.data.datasets[0].data = values;
-      researchChartInstance.data.datasets[0].backgroundColor = colors;
-      researchChartInstance.update();
-    }
 
     /* ===== AI Brain Renders ===== */
     function renderAiBrainKpis(status) {
@@ -2671,6 +2554,19 @@
       renderValidationAudit(status);
     }
 
+    /* O ai_brain saiu do /api/status: eram ~25 dos 30 KB do payload, recarregados
+       a cada refresh de 25s. São dados históricos (a AI gate está desativada), então
+       vêm do /api/ai-brain uma vez no load, não a cada ciclo. */
+    async function loadAiBrain() {
+      try {
+        const res = await fetch("/api/ai-brain");
+        if (!res.ok) return;
+        renderAiBrain({ ai_brain: await res.json() });
+      } catch (err) {
+        console.warn("ai-brain indisponível:", err);
+      }
+    }
+
     /* ===== Master Apply ===== */
     function applyStatus(status) {
       dashboardState = status;
@@ -2681,8 +2577,6 @@
       renderMetrics(status);
       renderSystemLeaderboard(status);
       renderFunnelSummary(status);
-      renderResearchSummary(status);
-      renderSetupLeaderboard(status);
       renderPositions(status);
       renderSymbolPerformance(status);
       renderGauges(status);
@@ -2691,8 +2585,7 @@
       createOrUpdateChart(status);
       createOrUpdateSystemsChart(status);
       createOrUpdateFunnelChart(status);
-      createOrUpdateResearchChart(status);
-      renderAiBrain(status);
+      // renderAiBrain sai daqui: alimentado por loadAiBrain() no boot da pagina.
     }
 
     /* ===== Trade History Loading ===== */
@@ -2778,6 +2671,7 @@
       applyStatus(initialStatus);
       renderTradesFromState(initialStatus);
       renderLogLines("logMainContent", initialStatus.logs || []);
+      loadAiBrain();
 
       // 25s auto-refresh
       setInterval(refreshDashboard, 25000);

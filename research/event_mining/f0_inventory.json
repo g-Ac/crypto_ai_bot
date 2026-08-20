@@ -1,0 +1,1172 @@
+{
+  "exp": "EXP-016",
+  "phase": "F0",
+  "as_of_last_k_prices_bucket": "2026-06-12 04:00",
+  "db": "/home/pi/crypto_ai_bot/runtime/baseline/bot.db",
+  "symbols": [
+    "1000PEPEUSDT",
+    "ADAUSDT",
+    "AVAXUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "ETHUSDT",
+    "HYPEUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "SOLUSDT",
+    "SUIUSDT",
+    "TRXUSDT",
+    "XRPUSDT"
+  ],
+  "n_symbols": 14,
+  "k_prices_window": {
+    "from": "2026-04-09 11:00",
+    "to": "2026-06-12 04:00",
+    "per_symbol_gaps": {}
+  },
+  "source_windows": {
+    "k_funding_rates": {
+      "from": "2026-03-01 08:00",
+      "to": "2026-06-12 04:00"
+    },
+    "k_basis": {
+      "from": "2026-05-11 23:00",
+      "to": "2026-06-12 03:00"
+    },
+    "k_ratios_top": {
+      "from": "2026-04-09 11:00",
+      "to": "2026-06-12 04:00"
+    },
+    "k_ratios_global": {
+      "from": "2026-04-09 11:00",
+      "to": "2026-06-12 04:00"
+    },
+    "k_open_interest": {
+      "from": "2026-04-15 23:00",
+      "to": "2026-06-12 04:00"
+    }
+  },
+  "rules": {
+    "cooldown_h": 24,
+    "episode_gap_h": 24,
+    "n_min_events": 30,
+    "n_min_episodes": 10,
+    "oi_shock_metric": "relative 1h change (proposta CP0)",
+    "basis_metric": "basis_rate (proposta CP0)",
+    "strict_inequality": "v > p95 / v < p5 (proposta CP0; funding tem massa no valor modal 0.0001 \u2014 >= p95 dispararia em mercado normal em 9/14 simbolos)",
+    "order": "threshold -> elegibilidade(ref T+1h existe) -> cooldown -> episodios"
+  },
+  "thresholds": {
+    "FUND+": {
+      "1000PEPEUSDT": 0.0001,
+      "ADAUSDT": 0.0001,
+      "AVAXUSDT": 0.0001,
+      "BNBUSDT": 9.436e-05,
+      "BTCUSDT": 7.173e-05,
+      "DOGEUSDT": 0.0001,
+      "ETHUSDT": 8.61e-05,
+      "HYPEUSDT": 5e-05,
+      "LINKUSDT": 0.0001,
+      "LTCUSDT": 0.0001,
+      "SOLUSDT": 0.0001,
+      "SUIUSDT": 0.0001,
+      "TRXUSDT": 0.0001,
+      "XRPUSDT": 9.462e-05
+    },
+    "FUND-": {
+      "1000PEPEUSDT": -0.00046252,
+      "ADAUSDT": -0.0001743,
+      "AVAXUSDT": -0.00014582,
+      "BNBUSDT": 0.0,
+      "BTCUSDT": -7.525e-05,
+      "DOGEUSDT": -0.00010917,
+      "ETHUSDT": -8.88e-05,
+      "HYPEUSDT": -9.644e-05,
+      "LINKUSDT": -8.757e-05,
+      "LTCUSDT": -7.549e-05,
+      "SOLUSDT": -0.00020712,
+      "SUIUSDT": -9.147e-05,
+      "TRXUSDT": -0.00048336,
+      "XRPUSDT": -0.00013871
+    },
+    "BASIS+": {
+      "1000PEPEUSDT": 0.0009,
+      "ADAUSDT": -0.0001,
+      "AVAXUSDT": -0.0002,
+      "BNBUSDT": 0.0008,
+      "BTCUSDT": -0.0003,
+      "DOGEUSDT": -0.0002,
+      "ETHUSDT": -0.0003,
+      "HYPEUSDT": 0.0006,
+      "LINKUSDT": -0.0002,
+      "LTCUSDT": -0.0003,
+      "SOLUSDT": -0.0003,
+      "SUIUSDT": -0.0001,
+      "TRXUSDT": -0.0003,
+      "XRPUSDT": -0.0003
+    },
+    "BASIS-": {
+      "1000PEPEUSDT": -0.0018,
+      "ADAUSDT": -0.0013,
+      "AVAXUSDT": -0.0011,
+      "BNBUSDT": 0.0003,
+      "BTCUSDT": -0.0006,
+      "DOGEUSDT": -0.0008,
+      "ETHUSDT": -0.0007,
+      "HYPEUSDT": -0.0012,
+      "LINKUSDT": -0.001,
+      "LTCUSDT": -0.001,
+      "SOLUSDT": -0.0009,
+      "SUIUSDT": -0.001,
+      "TRXUSDT": -0.0017,
+      "XRPUSDT": -0.0008
+    },
+    "LSR-TOP-SQZ": {
+      "1000PEPEUSDT": 0.12708,
+      "ADAUSDT": 0.06122,
+      "AVAXUSDT": 0.0705,
+      "BNBUSDT": 0.02792,
+      "BTCUSDT": 0.02726,
+      "DOGEUSDT": 0.10602,
+      "ETHUSDT": 0.04038,
+      "HYPEUSDT": 0.0439,
+      "LINKUSDT": 0.0784,
+      "LTCUSDT": 0.10608,
+      "SOLUSDT": 0.0547,
+      "SUIUSDT": 0.07064,
+      "TRXUSDT": 0.01752,
+      "XRPUSDT": 0.04806
+    },
+    "LSR-GLB-SQZ": {
+      "1000PEPEUSDT": 0.07086,
+      "ADAUSDT": 0.05582,
+      "AVAXUSDT": 0.05646,
+      "BNBUSDT": 0.09172,
+      "BTCUSDT": 0.05616,
+      "DOGEUSDT": 0.08932,
+      "ETHUSDT": 0.1281,
+      "HYPEUSDT": 0.05214,
+      "LINKUSDT": 0.04732,
+      "LTCUSDT": 0.09766,
+      "SOLUSDT": 0.10996,
+      "SUIUSDT": 0.05434,
+      "TRXUSDT": 0.0284,
+      "XRPUSDT": 0.06606
+    },
+    "OI-SHOCK": {
+      "1000PEPEUSDT": 0.02111024,
+      "ADAUSDT": 0.01469827,
+      "AVAXUSDT": 0.01068579,
+      "BNBUSDT": 0.01019933,
+      "BTCUSDT": 0.01221422,
+      "DOGEUSDT": 0.01747144,
+      "ETHUSDT": 0.01337168,
+      "HYPEUSDT": 0.01835775,
+      "LINKUSDT": 0.01146164,
+      "LTCUSDT": 0.00910046,
+      "SOLUSDT": 0.01154006,
+      "SUIUSDT": 0.01594365,
+      "TRXUSDT": 0.00709324,
+      "XRPUSDT": 0.00975093
+    }
+  },
+  "families": {
+    "FUND+": {
+      "per_symbol_post_cooldown": {
+        "1000PEPEUSDT": 0,
+        "ADAUSDT": 0,
+        "AVAXUSDT": 0,
+        "BNBUSDT": 11,
+        "BTCUSDT": 10,
+        "DOGEUSDT": 0,
+        "ETHUSDT": 8,
+        "HYPEUSDT": 2,
+        "LINKUSDT": 0,
+        "LTCUSDT": 0,
+        "SOLUSDT": 0,
+        "SUIUSDT": 0,
+        "TRXUSDT": 0,
+        "XRPUSDT": 7
+      },
+      "pre_cooldown_total": 55,
+      "pooled_n": 38,
+      "pooled_episodes": 21,
+      "pooled_episodes_anchored": 22,
+      "btc_n": 10,
+      "btc_episodes": 10,
+      "btc_episodes_anchored": 10,
+      "window_used": {
+        "from": "2026-04-09 10:00",
+        "to": "2026-06-12 04:00",
+        "days": 63.8
+      },
+      "thirds": {
+        "counts": [
+          7,
+          15,
+          16
+        ],
+        "edges": [
+          "2026-04-30 16:00",
+          "2026-05-21 22:00"
+        ],
+        "max_min_ratio": 2.29,
+        "rule_3of3_triggered": true,
+        "rule_e_applies": true
+      },
+      "per_horizon": {
+        "+1h": {
+          "pooled": {
+            "n": 38,
+            "episodes": 21,
+            "episodes_anchored": 22
+          },
+          "btc": {
+            "n": 10,
+            "episodes": 10,
+            "episodes_anchored": 10
+          }
+        },
+        "+4h": {
+          "pooled": {
+            "n": 38,
+            "episodes": 21,
+            "episodes_anchored": 22
+          },
+          "btc": {
+            "n": 10,
+            "episodes": 10,
+            "episodes_anchored": 10
+          }
+        },
+        "+24h": {
+          "pooled": {
+            "n": 38,
+            "episodes": 21,
+            "episodes_anchored": 22
+          },
+          "btc": {
+            "n": 10,
+            "episodes": 10,
+            "episodes_anchored": 10
+          }
+        }
+      }
+    },
+    "FUND-": {
+      "per_symbol_post_cooldown": {
+        "1000PEPEUSDT": 0,
+        "ADAUSDT": 4,
+        "AVAXUSDT": 5,
+        "BNBUSDT": 0,
+        "BTCUSDT": 9,
+        "DOGEUSDT": 0,
+        "ETHUSDT": 7,
+        "HYPEUSDT": 12,
+        "LINKUSDT": 3,
+        "LTCUSDT": 5,
+        "SOLUSDT": 4,
+        "SUIUSDT": 4,
+        "TRXUSDT": 9,
+        "XRPUSDT": 2
+      },
+      "pre_cooldown_total": 92,
+      "pooled_n": 64,
+      "pooled_episodes": 30,
+      "pooled_episodes_anchored": 34,
+      "btc_n": 9,
+      "btc_episodes": 9,
+      "btc_episodes_anchored": 9,
+      "window_used": {
+        "from": "2026-04-09 10:00",
+        "to": "2026-06-12 04:00",
+        "days": 63.8
+      },
+      "thirds": {
+        "counts": [
+          30,
+          12,
+          22
+        ],
+        "edges": [
+          "2026-04-30 16:00",
+          "2026-05-21 22:00"
+        ],
+        "max_min_ratio": 2.5,
+        "rule_3of3_triggered": true,
+        "rule_e_applies": true
+      },
+      "per_horizon": {
+        "+1h": {
+          "pooled": {
+            "n": 64,
+            "episodes": 30,
+            "episodes_anchored": 34
+          },
+          "btc": {
+            "n": 9,
+            "episodes": 9,
+            "episodes_anchored": 9
+          }
+        },
+        "+4h": {
+          "pooled": {
+            "n": 63,
+            "episodes": 29,
+            "episodes_anchored": 33
+          },
+          "btc": {
+            "n": 9,
+            "episodes": 9,
+            "episodes_anchored": 9
+          }
+        },
+        "+24h": {
+          "pooled": {
+            "n": 63,
+            "episodes": 29,
+            "episodes_anchored": 33
+          },
+          "btc": {
+            "n": 9,
+            "episodes": 9,
+            "episodes_anchored": 9
+          }
+        }
+      }
+    },
+    "BASIS+": {
+      "per_symbol_post_cooldown": {
+        "1000PEPEUSDT": 15,
+        "ADAUSDT": 13,
+        "AVAXUSDT": 14,
+        "BNBUSDT": 9,
+        "BTCUSDT": 11,
+        "DOGEUSDT": 7,
+        "ETHUSDT": 12,
+        "HYPEUSDT": 12,
+        "LINKUSDT": 10,
+        "LTCUSDT": 11,
+        "SOLUSDT": 11,
+        "SUIUSDT": 13,
+        "TRXUSDT": 10,
+        "XRPUSDT": 6
+      },
+      "pre_cooldown_total": 302,
+      "pooled_n": 154,
+      "pooled_episodes": 4,
+      "pooled_episodes_anchored": 26,
+      "btc_n": 11,
+      "btc_episodes": 11,
+      "btc_episodes_anchored": 11,
+      "window_used": {
+        "from": "2026-05-11 23:00",
+        "to": "2026-06-12 03:00",
+        "days": 31.2
+      },
+      "thirds": {
+        "counts": [
+          59,
+          33,
+          62
+        ],
+        "edges": [
+          "2026-05-22 08:20",
+          "2026-06-01 17:40"
+        ],
+        "max_min_ratio": 1.88,
+        "rule_3of3_triggered": false,
+        "rule_e_applies": false
+      },
+      "per_horizon": {
+        "+1h": {
+          "pooled": {
+            "n": 153,
+            "episodes": 4,
+            "episodes_anchored": 26
+          },
+          "btc": {
+            "n": 11,
+            "episodes": 11,
+            "episodes_anchored": 11
+          }
+        },
+        "+4h": {
+          "pooled": {
+            "n": 152,
+            "episodes": 4,
+            "episodes_anchored": 25
+          },
+          "btc": {
+            "n": 11,
+            "episodes": 11,
+            "episodes_anchored": 11
+          }
+        },
+        "+24h": {
+          "pooled": {
+            "n": 151,
+            "episodes": 4,
+            "episodes_anchored": 25
+          },
+          "btc": {
+            "n": 11,
+            "episodes": 11,
+            "episodes_anchored": 11
+          }
+        }
+      }
+    },
+    "BASIS-": {
+      "per_symbol_post_cooldown": {
+        "1000PEPEUSDT": 15,
+        "ADAUSDT": 12,
+        "AVAXUSDT": 12,
+        "BNBUSDT": 12,
+        "BTCUSDT": 11,
+        "DOGEUSDT": 8,
+        "ETHUSDT": 9,
+        "HYPEUSDT": 14,
+        "LINKUSDT": 8,
+        "LTCUSDT": 9,
+        "SOLUSDT": 7,
+        "SUIUSDT": 13,
+        "TRXUSDT": 5,
+        "XRPUSDT": 10
+      },
+      "pre_cooldown_total": 380,
+      "pooled_n": 145,
+      "pooled_episodes": 5,
+      "pooled_episodes_anchored": 26,
+      "btc_n": 11,
+      "btc_episodes": 11,
+      "btc_episodes_anchored": 11,
+      "window_used": {
+        "from": "2026-05-11 23:00",
+        "to": "2026-06-12 03:00",
+        "days": 31.2
+      },
+      "thirds": {
+        "counts": [
+          38,
+          25,
+          82
+        ],
+        "edges": [
+          "2026-05-22 08:20",
+          "2026-06-01 17:40"
+        ],
+        "max_min_ratio": 3.28,
+        "rule_3of3_triggered": true,
+        "rule_e_applies": false
+      },
+      "per_horizon": {
+        "+1h": {
+          "pooled": {
+            "n": 145,
+            "episodes": 5,
+            "episodes_anchored": 26
+          },
+          "btc": {
+            "n": 11,
+            "episodes": 11,
+            "episodes_anchored": 11
+          }
+        },
+        "+4h": {
+          "pooled": {
+            "n": 145,
+            "episodes": 5,
+            "episodes_anchored": 26
+          },
+          "btc": {
+            "n": 11,
+            "episodes": 11,
+            "episodes_anchored": 11
+          }
+        },
+        "+24h": {
+          "pooled": {
+            "n": 136,
+            "episodes": 5,
+            "episodes_anchored": 25
+          },
+          "btc": {
+            "n": 10,
+            "episodes": 10,
+            "episodes_anchored": 10
+          }
+        }
+      }
+    },
+    "LSR-TOP-SQZ": {
+      "per_symbol_post_cooldown": {
+        "1000PEPEUSDT": 30,
+        "ADAUSDT": 30,
+        "AVAXUSDT": 31,
+        "BNBUSDT": 30,
+        "BTCUSDT": 27,
+        "DOGEUSDT": 29,
+        "ETHUSDT": 29,
+        "HYPEUSDT": 31,
+        "LINKUSDT": 32,
+        "LTCUSDT": 30,
+        "SOLUSDT": 35,
+        "SUIUSDT": 27,
+        "TRXUSDT": 31,
+        "XRPUSDT": 32
+      },
+      "pre_cooldown_total": 1075,
+      "pooled_n": 424,
+      "pooled_episodes": 2,
+      "pooled_episodes_anchored": 56,
+      "btc_n": 27,
+      "btc_episodes": 27,
+      "btc_episodes_anchored": 27,
+      "window_used": {
+        "from": "2026-04-09 12:00",
+        "to": "2026-06-12 04:00",
+        "days": 63.7
+      },
+      "thirds": {
+        "counts": [
+          108,
+          144,
+          172
+        ],
+        "edges": [
+          "2026-04-30 17:20",
+          "2026-05-21 22:40"
+        ],
+        "max_min_ratio": 1.59,
+        "rule_3of3_triggered": false,
+        "rule_e_applies": true
+      },
+      "per_horizon": {
+        "+1h": {
+          "pooled": {
+            "n": 424,
+            "episodes": 2,
+            "episodes_anchored": 56
+          },
+          "btc": {
+            "n": 27,
+            "episodes": 27,
+            "episodes_anchored": 27
+          }
+        },
+        "+4h": {
+          "pooled": {
+            "n": 423,
+            "episodes": 2,
+            "episodes_anchored": 56
+          },
+          "btc": {
+            "n": 27,
+            "episodes": 27,
+            "episodes_anchored": 27
+          }
+        },
+        "+24h": {
+          "pooled": {
+            "n": 416,
+            "episodes": 2,
+            "episodes_anchored": 55
+          },
+          "btc": {
+            "n": 26,
+            "episodes": 26,
+            "episodes_anchored": 26
+          }
+        }
+      }
+    },
+    "LSR-GLB-SQZ": {
+      "per_symbol_post_cooldown": {
+        "1000PEPEUSDT": 29,
+        "ADAUSDT": 30,
+        "AVAXUSDT": 27,
+        "BNBUSDT": 33,
+        "BTCUSDT": 27,
+        "DOGEUSDT": 28,
+        "ETHUSDT": 29,
+        "HYPEUSDT": 26,
+        "LINKUSDT": 31,
+        "LTCUSDT": 33,
+        "SOLUSDT": 33,
+        "SUIUSDT": 30,
+        "TRXUSDT": 33,
+        "XRPUSDT": 35
+      },
+      "pre_cooldown_total": 1077,
+      "pooled_n": 424,
+      "pooled_episodes": 5,
+      "pooled_episodes_anchored": 56,
+      "btc_n": 27,
+      "btc_episodes": 27,
+      "btc_episodes_anchored": 27,
+      "window_used": {
+        "from": "2026-04-09 12:00",
+        "to": "2026-06-12 04:00",
+        "days": 63.7
+      },
+      "thirds": {
+        "counts": [
+          152,
+          147,
+          125
+        ],
+        "edges": [
+          "2026-04-30 17:20",
+          "2026-05-21 22:40"
+        ],
+        "max_min_ratio": 1.22,
+        "rule_3of3_triggered": false,
+        "rule_e_applies": true
+      },
+      "per_horizon": {
+        "+1h": {
+          "pooled": {
+            "n": 424,
+            "episodes": 5,
+            "episodes_anchored": 56
+          },
+          "btc": {
+            "n": 27,
+            "episodes": 27,
+            "episodes_anchored": 27
+          }
+        },
+        "+4h": {
+          "pooled": {
+            "n": 423,
+            "episodes": 5,
+            "episodes_anchored": 56
+          },
+          "btc": {
+            "n": 27,
+            "episodes": 27,
+            "episodes_anchored": 27
+          }
+        },
+        "+24h": {
+          "pooled": {
+            "n": 421,
+            "episodes": 5,
+            "episodes_anchored": 55
+          },
+          "btc": {
+            "n": 27,
+            "episodes": 27,
+            "episodes_anchored": 27
+          }
+        }
+      }
+    },
+    "OI-SHOCK": {
+      "per_symbol_post_cooldown": {
+        "1000PEPEUSDT": 26,
+        "ADAUSDT": 28,
+        "AVAXUSDT": 30,
+        "BNBUSDT": 24,
+        "BTCUSDT": 27,
+        "DOGEUSDT": 22,
+        "ETHUSDT": 30,
+        "HYPEUSDT": 22,
+        "LINKUSDT": 28,
+        "LTCUSDT": 27,
+        "SOLUSDT": 29,
+        "SUIUSDT": 31,
+        "TRXUSDT": 28,
+        "XRPUSDT": 33
+      },
+      "pre_cooldown_total": 966,
+      "pooled_n": 385,
+      "pooled_episodes": 3,
+      "pooled_episodes_anchored": 50,
+      "btc_n": 27,
+      "btc_episodes": 27,
+      "btc_episodes_anchored": 27,
+      "window_used": {
+        "from": "2026-04-16 00:00",
+        "to": "2026-06-12 04:00",
+        "days": 57.2
+      },
+      "thirds": {
+        "counts": [
+          104,
+          133,
+          148
+        ],
+        "edges": [
+          "2026-05-05 01:20",
+          "2026-05-24 02:40"
+        ],
+        "max_min_ratio": 1.42,
+        "rule_3of3_triggered": false,
+        "rule_e_applies": true
+      },
+      "per_horizon": {
+        "+1h": {
+          "pooled": {
+            "n": 385,
+            "episodes": 3,
+            "episodes_anchored": 50
+          },
+          "btc": {
+            "n": 27,
+            "episodes": 27,
+            "episodes_anchored": 27
+          }
+        },
+        "+4h": {
+          "pooled": {
+            "n": 385,
+            "episodes": 3,
+            "episodes_anchored": 50
+          },
+          "btc": {
+            "n": 27,
+            "episodes": 27,
+            "episodes_anchored": 27
+          }
+        },
+        "+24h": {
+          "pooled": {
+            "n": 379,
+            "episodes": 3,
+            "episodes_anchored": 49
+          },
+          "btc": {
+            "n": 26,
+            "episodes": 26,
+            "episodes_anchored": 26
+          }
+        }
+      }
+    }
+  },
+  "cells": [
+    {
+      "family": "FUND+",
+      "horizon": "+1h",
+      "agg": "pooled",
+      "n_events": 38,
+      "n_episodes": 21,
+      "n_episodes_anchored": 22,
+      "alive_single_linkage": true,
+      "alive_anchored": true
+    },
+    {
+      "family": "FUND+",
+      "horizon": "+1h",
+      "agg": "btc",
+      "n_events": 10,
+      "n_episodes": 10,
+      "n_episodes_anchored": 10,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "FUND+",
+      "horizon": "+4h",
+      "agg": "pooled",
+      "n_events": 38,
+      "n_episodes": 21,
+      "n_episodes_anchored": 22,
+      "alive_single_linkage": true,
+      "alive_anchored": true
+    },
+    {
+      "family": "FUND+",
+      "horizon": "+4h",
+      "agg": "btc",
+      "n_events": 10,
+      "n_episodes": 10,
+      "n_episodes_anchored": 10,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "FUND+",
+      "horizon": "+24h",
+      "agg": "pooled",
+      "n_events": 38,
+      "n_episodes": 21,
+      "n_episodes_anchored": 22,
+      "alive_single_linkage": true,
+      "alive_anchored": true
+    },
+    {
+      "family": "FUND+",
+      "horizon": "+24h",
+      "agg": "btc",
+      "n_events": 10,
+      "n_episodes": 10,
+      "n_episodes_anchored": 10,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "FUND-",
+      "horizon": "+1h",
+      "agg": "pooled",
+      "n_events": 64,
+      "n_episodes": 30,
+      "n_episodes_anchored": 34,
+      "alive_single_linkage": true,
+      "alive_anchored": true
+    },
+    {
+      "family": "FUND-",
+      "horizon": "+1h",
+      "agg": "btc",
+      "n_events": 9,
+      "n_episodes": 9,
+      "n_episodes_anchored": 9,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "FUND-",
+      "horizon": "+4h",
+      "agg": "pooled",
+      "n_events": 63,
+      "n_episodes": 29,
+      "n_episodes_anchored": 33,
+      "alive_single_linkage": true,
+      "alive_anchored": true
+    },
+    {
+      "family": "FUND-",
+      "horizon": "+4h",
+      "agg": "btc",
+      "n_events": 9,
+      "n_episodes": 9,
+      "n_episodes_anchored": 9,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "FUND-",
+      "horizon": "+24h",
+      "agg": "pooled",
+      "n_events": 63,
+      "n_episodes": 29,
+      "n_episodes_anchored": 33,
+      "alive_single_linkage": true,
+      "alive_anchored": true
+    },
+    {
+      "family": "FUND-",
+      "horizon": "+24h",
+      "agg": "btc",
+      "n_events": 9,
+      "n_episodes": 9,
+      "n_episodes_anchored": 9,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "BASIS+",
+      "horizon": "+1h",
+      "agg": "pooled",
+      "n_events": 153,
+      "n_episodes": 4,
+      "n_episodes_anchored": 26,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "BASIS+",
+      "horizon": "+1h",
+      "agg": "btc",
+      "n_events": 11,
+      "n_episodes": 11,
+      "n_episodes_anchored": 11,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "BASIS+",
+      "horizon": "+4h",
+      "agg": "pooled",
+      "n_events": 152,
+      "n_episodes": 4,
+      "n_episodes_anchored": 25,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "BASIS+",
+      "horizon": "+4h",
+      "agg": "btc",
+      "n_events": 11,
+      "n_episodes": 11,
+      "n_episodes_anchored": 11,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "BASIS+",
+      "horizon": "+24h",
+      "agg": "pooled",
+      "n_events": 151,
+      "n_episodes": 4,
+      "n_episodes_anchored": 25,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "BASIS+",
+      "horizon": "+24h",
+      "agg": "btc",
+      "n_events": 11,
+      "n_episodes": 11,
+      "n_episodes_anchored": 11,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "BASIS-",
+      "horizon": "+1h",
+      "agg": "pooled",
+      "n_events": 145,
+      "n_episodes": 5,
+      "n_episodes_anchored": 26,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "BASIS-",
+      "horizon": "+1h",
+      "agg": "btc",
+      "n_events": 11,
+      "n_episodes": 11,
+      "n_episodes_anchored": 11,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "BASIS-",
+      "horizon": "+4h",
+      "agg": "pooled",
+      "n_events": 145,
+      "n_episodes": 5,
+      "n_episodes_anchored": 26,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "BASIS-",
+      "horizon": "+4h",
+      "agg": "btc",
+      "n_events": 11,
+      "n_episodes": 11,
+      "n_episodes_anchored": 11,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "BASIS-",
+      "horizon": "+24h",
+      "agg": "pooled",
+      "n_events": 136,
+      "n_episodes": 5,
+      "n_episodes_anchored": 25,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "BASIS-",
+      "horizon": "+24h",
+      "agg": "btc",
+      "n_events": 10,
+      "n_episodes": 10,
+      "n_episodes_anchored": 10,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "LSR-TOP-SQZ",
+      "horizon": "+1h",
+      "agg": "pooled",
+      "n_events": 424,
+      "n_episodes": 2,
+      "n_episodes_anchored": 56,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "LSR-TOP-SQZ",
+      "horizon": "+1h",
+      "agg": "btc",
+      "n_events": 27,
+      "n_episodes": 27,
+      "n_episodes_anchored": 27,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "LSR-TOP-SQZ",
+      "horizon": "+4h",
+      "agg": "pooled",
+      "n_events": 423,
+      "n_episodes": 2,
+      "n_episodes_anchored": 56,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "LSR-TOP-SQZ",
+      "horizon": "+4h",
+      "agg": "btc",
+      "n_events": 27,
+      "n_episodes": 27,
+      "n_episodes_anchored": 27,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "LSR-TOP-SQZ",
+      "horizon": "+24h",
+      "agg": "pooled",
+      "n_events": 416,
+      "n_episodes": 2,
+      "n_episodes_anchored": 55,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "LSR-TOP-SQZ",
+      "horizon": "+24h",
+      "agg": "btc",
+      "n_events": 26,
+      "n_episodes": 26,
+      "n_episodes_anchored": 26,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "LSR-GLB-SQZ",
+      "horizon": "+1h",
+      "agg": "pooled",
+      "n_events": 424,
+      "n_episodes": 5,
+      "n_episodes_anchored": 56,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "LSR-GLB-SQZ",
+      "horizon": "+1h",
+      "agg": "btc",
+      "n_events": 27,
+      "n_episodes": 27,
+      "n_episodes_anchored": 27,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "LSR-GLB-SQZ",
+      "horizon": "+4h",
+      "agg": "pooled",
+      "n_events": 423,
+      "n_episodes": 5,
+      "n_episodes_anchored": 56,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "LSR-GLB-SQZ",
+      "horizon": "+4h",
+      "agg": "btc",
+      "n_events": 27,
+      "n_episodes": 27,
+      "n_episodes_anchored": 27,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "LSR-GLB-SQZ",
+      "horizon": "+24h",
+      "agg": "pooled",
+      "n_events": 421,
+      "n_episodes": 5,
+      "n_episodes_anchored": 55,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "LSR-GLB-SQZ",
+      "horizon": "+24h",
+      "agg": "btc",
+      "n_events": 27,
+      "n_episodes": 27,
+      "n_episodes_anchored": 27,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "OI-SHOCK",
+      "horizon": "+1h",
+      "agg": "pooled",
+      "n_events": 385,
+      "n_episodes": 3,
+      "n_episodes_anchored": 50,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "OI-SHOCK",
+      "horizon": "+1h",
+      "agg": "btc",
+      "n_events": 27,
+      "n_episodes": 27,
+      "n_episodes_anchored": 27,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "OI-SHOCK",
+      "horizon": "+4h",
+      "agg": "pooled",
+      "n_events": 385,
+      "n_episodes": 3,
+      "n_episodes_anchored": 50,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "OI-SHOCK",
+      "horizon": "+4h",
+      "agg": "btc",
+      "n_events": 27,
+      "n_episodes": 27,
+      "n_episodes_anchored": 27,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    },
+    {
+      "family": "OI-SHOCK",
+      "horizon": "+24h",
+      "agg": "pooled",
+      "n_events": 379,
+      "n_episodes": 3,
+      "n_episodes_anchored": 49,
+      "alive_single_linkage": false,
+      "alive_anchored": true
+    },
+    {
+      "family": "OI-SHOCK",
+      "horizon": "+24h",
+      "agg": "btc",
+      "n_events": 26,
+      "n_episodes": 26,
+      "n_episodes_anchored": 26,
+      "alive_single_linkage": false,
+      "alive_anchored": false
+    }
+  ]
+}

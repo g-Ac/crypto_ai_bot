@@ -24,27 +24,39 @@ from runtime_config import (
 
 
 
+def _pnl_net_first(t, net_key, gross_key):
+    """Prefere o PnL LIQUIDO (net) quando registrado; cai pro gross senao (rows/tabelas
+    antigas sem fee). Evita reportar lucro bruto como se fosse o resultado."""
+    v = t.get(net_key)
+    return float(v) if v is not None else float(t.get(gross_key, 0) or 0)
+
+
 def calc_daily_stats(trades):
-    """Calculate stats from a list of trade dicts."""
+    """Stats de uma lista de trade dicts. Usa PnL LIQUIDO (net_pnl_pct/net_pnl_usd) quando
+    disponivel — o headline e o resultado real, nao o bruto. Cai pro gross onde nao houver
+    fee registrado (backward-compat). Expoe gross_pnl_pct + is_net para transparencia."""
+    zero = {"count": 0, "pnl_pct": 0, "pnl_usd": 0, "wins": 0, "losses": 0,
+            "gross_pnl_pct": 0, "is_net": False}
     if not trades:
-        return {"count": 0, "pnl_pct": 0, "pnl_usd": 0, "wins": 0, "losses": 0}
+        return dict(zero)
 
     # Filtrar trades de abertura (exit_reason='open') para nao inflar contagem
     trades = [t for t in trades if t.get("exit_reason") != "open"]
     if not trades:
-        return {"count": 0, "pnl_pct": 0, "pnl_usd": 0, "wins": 0, "losses": 0}
+        return dict(zero)
 
-    pnl_pct = 0
-    pnl_usd = 0
-    wins = 0
-    losses = 0
-
+    pnl_pct = pnl_usd = gross_pct = 0.0
+    wins = losses = 0
+    any_net = False
     for t in trades:
-        p = float(t.get("pnl_pct", 0) or 0)
-        u = float(t.get("pnl_usd", 0) or 0)
+        p = _pnl_net_first(t, "net_pnl_pct", "pnl_pct")   # LIQUIDO (headline honesto)
+        u = _pnl_net_first(t, "net_pnl_usd", "pnl_usd")
+        gross_pct += float(t.get("pnl_pct", 0) or 0)
+        if t.get("net_pnl_pct") is not None:
+            any_net = True
         pnl_pct += p
         pnl_usd += u
-        if p > 0:
+        if p > 0:                                          # win/loss pela realidade LIQUIDA
             wins += 1
         elif p < 0:
             losses += 1
@@ -55,6 +67,8 @@ def calc_daily_stats(trades):
         "pnl_usd": round(pnl_usd, 2),
         "wins": wins,
         "losses": losses,
+        "gross_pnl_pct": round(gross_pct, 2),
+        "is_net": any_net,
     }
 
 

@@ -1,0 +1,27 @@
+{# Painel compacto de condicoes do simbolo selecionado — incluso em paper.html.
+   view.condicoes tem a mesma estrutura de symbol_view (mercado_data).
+   Macros de _mercado_macros.html: spans montados DENTRO das macros (licao Jinja).
+   Leitura descritiva; sem recomendacao de acao. #}
+{% import "_mercado_macros.html" as mm %}
+
+<div class="met-grid">
+  {{ mm.met_pair('Retorno 24h / 7d', view.condicoes.ret_24h, view.condicoes.ret_7d) }}
+  {{ mm.met('Range medio 24h', view.condicoes.vol) }}
+  {{ mm.met('Taker comprador 24h', view.condicoes.taker) }}
+  {{ mm.met('LSR global / top', view.condicoes.lsr['global'] ~ ' / ' ~ view.condicoes.lsr['top']) }}
+  {{ mm.met_signed('Funding', view.condicoes.funding) }}
+  {{ mm.met_signed('Basis', view.condicoes.basis) }}
+  {{ mm.met_signed('Delta OI 24h', view.condicoes.oi) }}
+</div>
+
+{% if view.condicoes.pressure %}
+<div style="margin-top:8px">
+  <span class="met"><span class="label">Pressao 24h</span>
+    <span class="value">{{ view.condicoes.pressure.total }} — {{ view.condicoes.pressure.label }}</span>
+  </span>
+  {{ mm.pressure_bar(view.condicoes.pressure) }}
+</div>
+{% endif %}
+
+{{ mm.translation_block(view.condicoes.translation) }}
+{{ mm.freshness_block(view.condicoes.freshness) }}

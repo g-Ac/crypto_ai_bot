@@ -65,6 +65,35 @@ def _pf(pnls: list[float]) -> float:
     return float("inf") if wins > 0 else 0.0
 
 
+# Custo round-trip taker aplicado ao shadow: 0,05%/lado x2 = 0,10%, espelhando o
+# fee REAL dos trades (MOMENTUM_PAPER_*_FEE_RATE=0.05). momentum_shadow_outcomes
+# guarda pnl_pct GROSS, entao o custo e aplicado por outcome aqui antes de agregar.
+# NAO usar SINGLE_SIDE_FEE_PCT=0.04 global (desatualizado) — ver project_momentum_fee_net.
+SHADOW_ROUNDTRIP_FEE_PCT = 0.10
+
+
+def _apply_fee(pnls: list[float], fee: float = SHADOW_ROUNDTRIP_FEE_PCT) -> list[float]:
+    """Converte serie de PnL gross em net subtraindo o custo round-trip por trade."""
+    return [p - fee for p in pnls]
+
+
+def shadow_aggregate(pnls_gross: list[float], fee: float = SHADOW_ROUNDTRIP_FEE_PCT) -> dict:
+    """Agrega outcomes shadow em metricas NET (avg/total/PF liquidos de fee).
+
+    WR/contagem (wins) permanece em gross — winrate alto com PnL net negativo e
+    justamente o sintoma a expor (o fee come a margem fina).
+    """
+    net = _apply_fee(pnls_gross, fee)
+    n = len(net)
+    return {
+        "n": n,
+        "wins": sum(1 for p in pnls_gross if p > 0),
+        "avg": (sum(net) / n) if n else 0.0,
+        "total": sum(net),
+        "pf": _pf(net),
+    }
+
+
 def _fmt_pf(pf: float) -> str:
     if pf == float("inf"):
         return "inf"
@@ -93,7 +122,7 @@ def shadow_breakdown_lines(blocked_by: str = "max_positions", min_n: int = 20) -
         for r in rows:
             k = r[idx] or "(none)"
             groups.setdefault(k, []).append(r[3])
-        return {k: (_pf(v), len(v)) for k, v in groups.items()}
+        return {k: (_pf(_apply_fee(v)), len(v)) for k, v in groups.items()}
 
     def fmt(d: dict[str, tuple[float, int]]) -> str:
         return " | ".join(f"{k}={_fmt_pf(pf)}({n})" for k, (pf, n) in sorted(d.items()))
@@ -109,7 +138,7 @@ def build_report() -> str:
     # === 24h ===
     trades24 = q(
         """
-        SELECT symbol, direction, exit_reason, pnl_pct, mfe_pct, mae_pct
+        SELECT symbol, direction, exit_reason, pnl_pct, mfe_pct, mae_pct, net_pnl_pct
         FROM momentum_trades
         WHERE timestamp >= datetime('now','-24 hours') AND exit_price IS NOT NULL
         ORDER BY id DESC
@@ -142,9 +171,9 @@ def build_report() -> str:
         SELECT
           COUNT(*) as n,
           SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
-          ROUND(SUM(pnl_pct), 2) as pnl_total,
-          ROUND(MAX(pnl_pct), 2) as best,
-          ROUND(MIN(pnl_pct), 2) as worst,
+          ROUND(SUM(net_pnl_pct), 2) as pnl_total,
+          ROUND(MAX(net_pnl_pct), 2) as best,
+          ROUND(MIN(net_pnl_pct), 2) as worst,
           MIN(date(timestamp)) as first_day,
           MAX(date(timestamp)) as last_day
         FROM momentum_trades WHERE exit_price IS NOT NULL
@@ -169,7 +198,7 @@ def build_report() -> str:
             SELECT
               COUNT(*) as n,
               SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
-              COALESCE(SUM(pnl_pct), 0) as pnl_sum
+              COALESCE(SUM(net_pnl_pct), 0) as pnl_sum
             FROM momentum_trades
             WHERE timestamp >= datetime('now','-{days} days') AND exit_price IS NOT NULL
             """
@@ -197,7 +226,7 @@ def build_report() -> str:
     n24 = len(trades24)
     wins24 = sum(1 for t in trades24 if (t[3] or 0) > 0)
     losses24 = n24 - wins24
-    pnl24 = sum((t[3] or 0) for t in trades24)
+    pnl24 = sum((t[6] or 0) for t in trades24)  # net_pnl_pct (index 6)
     exits24: dict[str, int] = {}
     for t in trades24:
         er = t[2] or "unknown"
@@ -258,26 +287,31 @@ def build_report() -> str:
     funil_str = "\n".join(f"  {b}: {n}" for b, n in funil) or "  (sem decisoes bloqueadas)"
 
     # === Shadow simulation (oportunidades bloqueadas que teriam dado X) ===
-    shadow_rows = q(
+    # NET: momentum_shadow_outcomes guarda pnl_pct GROSS; o custo round-trip e
+    # aplicado por outcome via shadow_aggregate (avg/total/PF ficam liquidos).
+    shadow_raw = q(
         """
-        SELECT blocked_by, COUNT(*) as n,
-               SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
-               ROUND(AVG(pnl_pct), 3) as avg_pnl,
-               ROUND(SUM(pnl_pct), 2) as total_pnl
+        SELECT blocked_by, pnl_pct
         FROM momentum_shadow_outcomes
         WHERE complete = 1
-        GROUP BY blocked_by
-        ORDER BY total_pnl DESC
         """
     )
-    if shadow_rows:
+    if shadow_raw:
+        by_block: dict[str, list[float]] = {}
+        for bb, pnl in shadow_raw:
+            by_block.setdefault(bb, []).append(pnl or 0.0)
+        agg = {bb: shadow_aggregate(pnls) for bb, pnls in by_block.items()}
         shadow_lines = []
-        for bb, n, wins, avg, total in shadow_rows:
-            wr = (wins / n * 100) if n else 0
-            shadow_lines.append(f"  {bb}: N={n} WR={wr:.0f}% avg={avg:+.3f}% total={total:+.2f}%")
-            # Flag oportunidade clara: filtro bloqueia trades positivos
-            if bb != "none" and total > 1 and avg > 0.05:
-                pontos.append(f"shadow: {bb} bloqueou {n} trades com edge +{avg:.3f}%/trade ({total:+.2f}% total)")
+        for bb, s in sorted(agg.items(), key=lambda kv: -kv[1]["total"]):
+            wr = (s["wins"] / s["n"] * 100) if s["n"] else 0
+            shadow_lines.append(
+                f"  {bb}: N={s['n']} WR={wr:.0f}% avg={s['avg']:+.3f}% total={s['total']:+.2f}%"
+            )
+            # Flag so dispara se o shadow for NET-lucrativo de verdade (avg liquido > custo)
+            if bb != "none" and s["total"] > 1 and s["avg"] > 0.05:
+                pontos.append(
+                    f"shadow: {bb} bloqueou {s['n']} trades com edge NET +{s['avg']:.3f}%/trade ({s['total']:+.2f}% total)"
+                )
         shadow_str = "\n".join(shadow_lines)
     else:
         shadow_str = "  (sem dados — rodar python shadow_simulator.py)"
@@ -299,27 +333,27 @@ def build_report() -> str:
 
 <b>━ TRADES 24h ━</b>
 {n24} fechados | {len(abertos)} abertos | media 30d={media_30d}
-WL: {wins24}W/{losses24}L ({(wins24/n24*100 if n24 else 0):.0f}%) | PnL: {fmt_pct(pnl24)}
+WL: {wins24}W/{losses24}L ({(wins24/n24*100 if n24 else 0):.0f}%) | PnL net: {fmt_pct(pnl24)}
 Exits: {exits_str}
 
 <b>━ VISAO GERAL (all-time) ━</b>
 Total: {at_n} trades em {days_active:.0f} dias
-WR: {at_wr:.1f}% | PnL acumulado: {fmt_pct(at_pnl)}
-Best: {fmt_pct(at_best)} | Worst: {fmt_pct(at_worst)}
+WR: {at_wr:.1f}% | PnL net acum.: {fmt_pct(at_pnl)}
+Best: {fmt_pct(at_best)} | Worst: {fmt_pct(at_worst)} (net)
 Trades/dia: {trades_per_day_alltime:.1f} (range {min_30d}-{max_30d} em 30d)
 
 <b>━ TENDENCIA 7d vs 30d ━</b>
 WR: 7d={wr7:.0f}% vs 30d={wr30:.0f}% {arrow_wr}
-PnL/dia: 7d={fmt_pct(pnl_d7)} vs 30d={fmt_pct(pnl_d30)} {arrow_pnl}
+PnL net/dia: 7d={fmt_pct(pnl_d7)} vs 30d={fmt_pct(pnl_d30)} {arrow_pnl}
 Trades/dia: 7d={tpd7:.1f} vs 30d={tpd30:.1f} {arrow_tpd}
 
 <b>━ GARGALO 24h ━</b>
 {funil_str}
 
-<b>━ SHADOW (oportunidades simuladas) ━</b>
+<b>━ SHADOW (net · fee 0,10% round-trip) ━</b>
 {shadow_str}
 
-<b>━ SHADOW DEEP — max_positions por dimensao ━</b>
+<b>━ SHADOW DEEP — max_positions por dimensao (PF net) ━</b>
 {breakdown_str}
 
 <b>━ PONTOS DE ATENCAO ━</b>

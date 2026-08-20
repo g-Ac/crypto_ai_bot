@@ -1,6 +1,9 @@
 # === SEGREDOS (NUNCA commitar) ===
 .env
 
+# === EXPORTS / BACKUPS (DR: passphrase em texto plano + zip grande; artefatos de pesquisa) ===
+exports/
+
 # === BANCO DE DADOS (runtime) ===
 bot.db
 bot.db-shm

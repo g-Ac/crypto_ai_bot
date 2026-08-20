@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Rotulagem — Olho{% endblock %}
+{% block head %}
+<style>
+  .rot-wrap { max-width: 1080px; margin: 0 auto; padding: 12px; }
+  .rot-head { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  .rot-meta { font-size:16px; font-weight:600; }
+  .rot-meta .long { color:#46ff9a; } .rot-meta .short { color:#ff6b6b; }
+  .rot-trade-id { font-size:12px; color:#567; font-weight:400; }
+  .rot-progress { font-size:13px; color:#8a8; }
+  .rot-bar { height:6px; background:#1c1c1c; border-radius:3px; overflow:hidden; margin:8px 0 12px; }
+  .rot-bar > i { display:block; height:100%; background:#46ff9a; width:0; transition:width .3s; }
+  #rot-chart { height: 420px; border:1px solid #1c1c1c; border-radius:8px; }
+  .rot-hint { font-size:12px; color:#678; margin:8px 0 4px; }
+  .rot-guess { color:#cfd8d0; }
+  .rot-cues { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0; }
+  .rot-cue { display:flex; align-items:center; gap:7px; background:#11150f; border:1px solid #1d3a24;
+             border-radius:8px; padding:9px 13px; cursor:pointer; font-size:14px; user-select:none; }
+  .rot-cue input { width:16px; height:16px; accent-color:#46ff9a; }
+  .rot-actions { display:flex; gap:14px; }
+  .rot-btn { flex:1; padding:18px; font-size:17px; font-weight:700; border:none; border-radius:10px; cursor:pointer; }
+  .rot-btn.like { background:#46ff9a; color:#06120a; }
+  .rot-btn.nope { background:#ff6b6b; color:#1a0606; }
+  .rot-kbd { font-size:11px; color:#567; text-align:center; margin-top:8px; }
+  .rot-done { text-align:center; padding:48px 16px; font-size:18px; color:#8fe6b3; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="rot-wrap">
+  <div class="rot-head">
+    <div class="rot-meta" id="rot-meta">carregando…</div>
+    <div class="rot-progress" id="rot-prog">—</div>
+  </div>
+  <div class="rot-bar"><i id="rot-barfill"></i></div>
+
+  <div id="rot-chart"></div>
+  <p class="rot-hint">candles até a entrada · resultado escondido · clique no gráfico = <strong>onde você sairia</strong>
+     · <span class="rot-guess" id="rot-guess">sem palpite de saída</span></p>
+
+  <div id="rot-panel">
+    <div class="rot-cues">
+      <label class="rot-cue"><input type="checkbox" id="cue-empurrao"> 1 · empurrão forte?</label>
+      <label class="rot-cue"><input type="checkbox" id="cue-nivel"> 2 · parou num nível?</label>
+      <label class="rot-cue"><input type="checkbox" id="cue-direcao"> 3 · direção de pé?</label>
+      <label class="rot-cue"><input type="checkbox" id="cue-recuo"> 4 · recuo confirmou?</label>
+    </div>
+    <div class="rot-actions">
+      <button class="rot-btn nope" id="btn-nope">✗ NÃO GOSTEI</button>
+      <button class="rot-btn like" id="btn-like">✓ GOSTEI</button>
+    </div>
+    <p class="rot-kbd">atalhos: <strong>G</strong> gostei · <strong>N</strong> não · <strong>1-4</strong> pistas</p>
+  </div>
+
+  <div class="rot-done" id="rot-done" style="display:none">
+    🎉 Lote completo — todos rotulados. Hora de revelar e cruzar com o resultado real.
+  </div>
+</div>
+<script src="/static/js/lightweight-charts.standalone.production.js"></script>
+<script src="/static/js/rotulagem.js"></script>
+{% endblock %}

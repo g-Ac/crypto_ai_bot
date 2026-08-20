@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% import "_mercado_macros.html" as mm %}
+{% block title %}Mercado — {{ view.name }}{% endblock %}
+{% block head %}{{ mm.styles() }}{% endblock %}
+{% block content %}
+
+<section class="card">
+  <div class="card-header">
+    <h1>🔎 {{ view.name }}</h1>
+    <p>
+      <a href="/raiox/mercado">← voltar à leitura macro</a>
+      {% if view.tem_mapa %} · <a href="/raiox/mapa?symbol={{ view.symbol }}">ver no Mapa da Moeda</a>{% endif %}
+      · Leitura de {{ view.read_at }} ·
+      <a href="/raiox/mercado/{{ view.symbol }}">↻ atualizar</a>
+    </p>
+  </div>
+
+  <div class="met-grid">
+    {{ mm.met_pair('Retorno 24h / 7d', view.ret_24h, view.ret_7d) }}
+    {{ mm.met('Range médio 24h', view.vol) }}
+    {{ mm.met('Taker buy 24h', view.taker) }}
+    {{ mm.met('LSR global / top', view.lsr['global'] ~ ' / ' ~ view.lsr['top']) }}
+    {{ mm.met_signed('Funding', view.funding) }}
+    {{ mm.met_signed('Basis', view.basis) }}
+    {{ mm.met_signed('ΔOI 24h', view.oi) }}
+  </div>
+</section>
+
+<section class="card">
+  <h2>🔥 Pressão 24h <small>(liquidações da moeda)</small></h2>
+  {% if view.pressure %}
+  <table class="mercado-table">
+    <thead><tr><th>Total</th><th>Split longs/shorts</th><th>Leitura</th><th>Eventos</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>{{ view.pressure.total }}</td>
+        <td>{{ mm.pressure_bar(view.pressure) }}</td>
+        <td>{{ view.pressure.label }}</td>
+        <td>{{ view.pressure.events }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% else %}
+  <p><i>sem liquidações na janela</i></p>
+  {% endif %}
+</section>
+
+{{ mm.translation_block(view.translation) }}
+{{ mm.freshness_block(view.freshness) }}
+
+{% endblock %}

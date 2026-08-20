@@ -1,0 +1,80 @@
+{
+  "veredito": "NO-GO",
+  "n": 123,
+  "fills": 96,
+  "no_fill": 27,
+  "maker_net_total_pct": -16.6849,
+  "taker_net_total_pct": -16.9274,
+  "criterios": {
+    "c1_fill_rate": {
+      "value": 0.780488,
+      "threshold": ">= 0.50",
+      "pass": true
+    },
+    "c2_pf_agregado": {
+      "value": 0.474553,
+      "threshold": ">= 1.15",
+      "pass": false
+    },
+    "c3_delta_maker_taker_pct": {
+      "value": 0.2425,
+      "threshold": "> 0",
+      "pass": true
+    },
+    "c4_top10_winners_capturados": {
+      "value": 5,
+      "threshold": ">= 5",
+      "pass": true
+    },
+    "c5_convergencia_btc_eth": {
+      "value": {
+        "BTCUSDT": {
+          "n": 48,
+          "fills": 33,
+          "maker_net_pct": -8.0519,
+          "pf_executados": 0.298981
+        },
+        "ETHUSDT": {
+          "n": 75,
+          "fills": 63,
+          "maker_net_pct": -8.633,
+          "pf_executados": 0.574051
+        }
+      },
+      "threshold": "cada símbolo: maker_net >= 0 e PF >= 1.00",
+      "pass": false
+    }
+  },
+  "selecao_adversa": {
+    "taker_net_medio_quando_maker_preenche": -0.230954,
+    "taker_net_medio_quando_maker_nao_preenche": 0.19423,
+    "taker_gross_medio_quando_maker_preenche": -0.130954,
+    "taker_gross_medio_quando_maker_nao_preenche": 0.29423,
+    "mfe_dos_perdidos_pct": {
+      "n": 27,
+      "media": 0.525789,
+      "mediana": 0.4925,
+      "max": 1.1467,
+      "fonte": "momentum_trades.mfe_pct do trade taker pareado (sombra não rastreia MFE pré-fill)"
+    }
+  },
+  "fase": "F",
+  "estudo": "maker-fill-v1.1",
+  "gerado_em": "2026-08-04T00:10:30.672732+00:00",
+  "cutoff_exclusive": "2026-08-01",
+  "data_quality": {
+    "raw_rows": 587,
+    "synthetic_fixture_rows_removed": 464,
+    "clean_unique_rows": 123,
+    "baseline_trades": 123,
+    "baseline_cost_bps_values": [
+      10.0
+    ],
+    "top10_ranking_note": "gross = net + 10 bps constante; ranking por taker_net é idêntico",
+    "pareamentos_mfe_ambiguos": 14,
+    "pareamentos_mfe_afetando_perdidos": 0,
+    "pareamento_mfe_note": "mfe_dos_perdidos só é indeterminado em bucket ambíguo de status misto; 0 => métrica exata"
+  },
+  "criterios_source": "docs/pre_registros/PREREG_maker_fill_v11.md §5-§6",
+  "revisao": "2026-08-03: reporte §6 completado (PnL bruto médio fill/no-fill + MFE dos perdidos via trade taker pareado); critérios e veredito intocados"
+}

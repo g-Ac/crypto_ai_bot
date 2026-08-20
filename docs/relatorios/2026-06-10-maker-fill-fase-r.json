@@ -1,0 +1,176 @@
+{
+  "prereg": "docs/pre_registros/PREREG_maker_fill_v11.md",
+  "phase": "R (replay retroativo \u2014 so pode matar, nunca aprovar)",
+  "run_at": "2026-06-10T23:08:43",
+  "fee_profile": {
+    "maker": 0.02,
+    "taker": 0.05
+  },
+  "n_trades_db": 156,
+  "anchor_failed_ids": [],
+  "anchor_offsets": {
+    "-4": 2,
+    "0": 125,
+    "-1": 11,
+    "-3": 7,
+    "-8": 3,
+    "-7": 1,
+    "-2": 4,
+    "-14": 1,
+    "-5": 2
+  },
+  "main": {
+    "policy": {
+      "n_trades": 156,
+      "n_filled": 155,
+      "n_incomplete": 0,
+      "fill_rate": 0.9936,
+      "total_net_pct": 2.3882,
+      "pf_executados": 1.0584
+    },
+    "delta_net_pct_vs_taker": 5.6185,
+    "baseline_net_pct": -3.2303,
+    "top10_winners_filled": 10,
+    "adverse_selection": {
+      "avg_gross_baseline_filled": 0.0788,
+      "avg_gross_baseline_missed": 0.1615,
+      "avg_mfe_baseline_missed": 0.2451
+    },
+    "exit_reasons": {
+      "timeout": 46,
+      "sl_hit": 36,
+      "tp1_hit": 68,
+      "tp2_hit": 5,
+      "no_fill": 1
+    },
+    "by_symbol": {
+      "BTCUSDT": {
+        "n_trades": 87,
+        "n_filled": 86,
+        "n_incomplete": 0,
+        "fill_rate": 0.9885,
+        "total_net_pct": -0.0493,
+        "pf_executados": 0.9978,
+        "delta_net_pct_vs_taker": 6.3736
+      },
+      "ETHUSDT": {
+        "n_trades": 69,
+        "n_filled": 69,
+        "n_incomplete": 0,
+        "fill_rate": 1.0,
+        "total_net_pct": 2.4375,
+        "pf_executados": 1.1309,
+        "delta_net_pct_vs_taker": -0.7551
+      }
+    }
+  },
+  "sensitivity": {
+    "fill_window_1": {
+      "policy": {
+        "n_trades": 156,
+        "n_filled": 155,
+        "n_incomplete": 0,
+        "fill_rate": 0.9936,
+        "total_net_pct": 2.3882,
+        "pf_executados": 1.0584
+      },
+      "delta_net_pct_vs_taker": 5.6185,
+      "baseline_net_pct": -3.2303,
+      "top10_winners_filled": 10,
+      "adverse_selection": {
+        "avg_gross_baseline_filled": 0.0788,
+        "avg_gross_baseline_missed": 0.1615,
+        "avg_mfe_baseline_missed": 0.2451
+      },
+      "exit_reasons": {
+        "timeout": 46,
+        "sl_hit": 36,
+        "tp1_hit": 68,
+        "tp2_hit": 5,
+        "no_fill": 1
+      },
+      "by_symbol": {
+        "BTCUSDT": {
+          "n_trades": 87,
+          "n_filled": 86,
+          "n_incomplete": 0,
+          "fill_rate": 0.9885,
+          "total_net_pct": -0.0493,
+          "pf_executados": 0.9978,
+          "delta_net_pct_vs_taker": 6.3736
+        },
+        "ETHUSDT": {
+          "n_trades": 69,
+          "n_filled": 69,
+          "n_incomplete": 0,
+          "fill_rate": 1.0,
+          "total_net_pct": 2.4375,
+          "pf_executados": 1.1309,
+          "delta_net_pct_vs_taker": -0.7551
+        }
+      }
+    },
+    "maker_001": {
+      "n_trades": 156,
+      "n_filled": 155,
+      "n_incomplete": 0,
+      "fill_rate": 0.9936,
+      "total_net_pct": 4.6682,
+      "pf_executados": 1.1159
+    },
+    "maker_003": {
+      "n_trades": 156,
+      "n_filled": 155,
+      "n_incomplete": 0,
+      "fill_rate": 0.9936,
+      "total_net_pct": 0.1082,
+      "pf_executados": 1.0026
+    },
+    "structural_anchors_only": {
+      "policy": {
+        "n_trades": 136,
+        "n_filled": 135,
+        "n_incomplete": 0,
+        "fill_rate": 0.9926,
+        "total_net_pct": 1.3122,
+        "pf_executados": 1.0357
+      },
+      "delta_net_pct_vs_taker": 2.589,
+      "baseline_net_pct": -1.2768,
+      "top10_winners_filled": 10,
+      "adverse_selection": {
+        "avg_gross_baseline_filled": 0.0901,
+        "avg_gross_baseline_missed": 0.1615,
+        "avg_mfe_baseline_missed": 0.2451
+      },
+      "exit_reasons": {
+        "timeout": 36,
+        "sl_hit": 34,
+        "tp1_hit": 60,
+        "tp2_hit": 5,
+        "no_fill": 1
+      },
+      "by_symbol": {
+        "BTCUSDT": {
+          "n_trades": 74,
+          "n_filled": 73,
+          "n_incomplete": 0,
+          "fill_rate": 0.9865,
+          "total_net_pct": -2.1316,
+          "pf_executados": 0.8968,
+          "delta_net_pct_vs_taker": 2.9888
+        },
+        "ETHUSDT": {
+          "n_trades": 62,
+          "n_filled": 62,
+          "n_incomplete": 0,
+          "fill_rate": 1.0,
+          "total_net_pct": 3.4438,
+          "pf_executados": 1.2141,
+          "delta_net_pct_vs_taker": -0.3998
+        }
+      }
+    }
+  },
+  "verdict": "SOBREVIVE A FASE R (PF executados 1.0584) \u2014 nao aprova nada; Fase F (forward) julga."
+}

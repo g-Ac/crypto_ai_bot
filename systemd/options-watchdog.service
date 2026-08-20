@@ -1,0 +1,18 @@
+[Unit]
+Description=options_collector watchdog (detecta staleness e dispara recovery)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/crypto_ai_bot
+# Carrega .env do projeto: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+# OPTIONS_TELEGRAM_CHAT_ID (override) e OPTIONS_COLLECTOR_STALE_HOURS.
+EnvironmentFile=-/home/pi/crypto_ai_bot/.env
+ExecStart=/home/pi/crypto_ai_bot/.venv/bin/python /home/pi/crypto_ai_bot/scripts/watchdog_options.py
+StandardOutput=append:/home/pi/crypto_ai_bot/logs/watchdog_options.log
+StandardError=append:/home/pi/crypto_ai_bot/logs/watchdog_options.log
+# Stale sem recovery pode sair 1 sem deixar a unit permanentemente failed.
+SuccessExitStatus=0 1

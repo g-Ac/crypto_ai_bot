@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% import "_mercado_macros.html" as mm %}
+{% block title %}Mercado{% endblock %}
+{% block head %}{{ mm.styles() }}{% endblock %}
+{% block content %}
+
+<section class="card">
+  <div class="card-header">
+    <h1>📊 Mercado</h1>
+    <p>Componentes, não veredito · Leitura de {{ view.read_at }} ·
+       <a href="/raiox/mercado">↻ atualizar</a></p>
+  </div>
+
+  <h2>🌡️ Termômetro</h2>
+  <div class="met-grid">
+    {% for m in view.majors %}
+    {{ mm.met_pair(m.name ~ ' 24h / 7d', m.ret_24h, m.ret_7d) }}
+    {% endfor %}
+    {{ mm.met('Amplitude (verdes 24h)', view.breadth) }}
+    {{ mm.met('Range médio BTC 24h', view.vol_btc) }}
+    {{ mm.met('Taker buy BTC 24h', view.taker_btc) }}
+    {{ mm.met('LSR BTC global / top', view.lsr['global'] ~ ' / ' ~ view.lsr['top']) }}
+    {% for f in view.funding %}
+    {{ mm.met_signed('Funding ' ~ f.name, f.rate) }}
+    {% endfor %}
+    {{ mm.met_signed('Basis BTC', view.basis_btc) }}
+    {{ mm.met_signed('ΔOI BTC 24h', view.oi_btc) }}
+  </div>
+</section>
+
+<section class="card">
+  <h2>🔥 Pressão 24h <small>(liquidações, maior notional primeiro)</small></h2>
+  {% if view.pressure %}
+  <table class="mercado-table">
+    <thead><tr><th>Moeda</th><th>Total</th><th>Split longs/shorts</th><th>Leitura</th><th>Eventos</th></tr></thead>
+    <tbody>
+      {% for p in view.pressure %}
+      <tr>
+        <td><a href="/raiox/mercado/{{ p.symbol }}">{{ p.name }}</a></td>
+        <td>{{ p.total }}</td>
+        <td>{{ mm.pressure_bar(p) }}</td>
+        <td>{{ p.label }}</td>
+        <td>{{ p.events }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p><i>sem dados de liquidação na janela</i></p>
+  {% endif %}
+</section>
+
+{{ mm.translation_block(view.translation) }}
+{{ mm.freshness_block(view.freshness) }}
+
+{% endblock %}

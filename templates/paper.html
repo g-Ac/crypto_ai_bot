@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% import "_mercado_macros.html" as mm %}
+{% block title %}Paper — Trade Desk{% endblock %}
+{% block head %}{{ mm.styles() }}{% endblock %}
+{% block content %}
+<div class="paper-wrap">
+  {% if errors %}
+  <div class="paper-errors">{% for e in errors %}<div>&#9888; {{ e }}</div>{% endfor %}</div>
+  {% endif %}
+
+  <div class="paper-grid">
+    <div class="paper-chart-col">
+      <div class="paper-chart-head">
+        <select id="paper-symbol-nav">
+          {% for s in view.symbols %}
+          <option value="{{ s }}" {% if s == view.symbol %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <span class="paper-tfs">
+          <button data-tf="15m">15m</button>
+          <button data-tf="1h">1h</button>
+          <button class="active" data-tf="4h">4h</button>
+          <button data-tf="1d">1d</button>
+        </span>
+      </div>
+      <div id="paper-chart" data-symbol="{{ view.symbol }}"></div>
+      <p class="hint">clique no grafico preenche o nivel selecionado</p>
+    </div>
+
+    <form class="paper-form" method="post" action="/raiox/paper/criar">
+      <input type="hidden" name="symbol" value="{{ view.symbol }}">
+      <span class="paper-label">direcao</span>
+      <div class="dir-toggle">
+        <label><input type="radio" name="direction" value="long" {% if not form or form.direction != 'short' %}checked{% endif %}> long</label>
+        <label><input type="radio" name="direction" value="short" {% if form and form.direction == 'short' %}checked{% endif %}> short (tese)</label>
+      </div>
+      <label>entrada <input name="entry_price" id="f-entry" inputmode="decimal" required value="{{ form.entry_price if form else '' }}"></label>
+      <label>stop <input name="stop_price" id="f-stop" inputmode="decimal" required value="{{ form.stop_price if form else '' }}"></label>
+      <label>alvo <input name="target_price" id="f-target" inputmode="decimal" required value="{{ form.target_price if form else '' }}"></label>
+      <div id="rr-line" class="hint">R:R &#8212;</div>
+      <label>tese (obrigatoria) <textarea name="thesis" rows="2" required>{{ form.thesis if form else '' }}</textarea></label>
+      <label>tags <input name="tags" placeholder="pullback, zona-liq" value="{{ form.tags if form else '' }}"></label>
+      <button type="submit">Registrar tese</button>
+    </form>
+  </div>
+
+  <section class="paper-condicoes">
+    <h3>Condicoes agora &#8212; {{ view.symbol }} <small>sera gravado junto com a tese</small></h3>
+    {% if view.condicoes %}<small class="hint">Leitura de {{ view.condicoes.read_at }}</small>{% endif %}
+    {% if view.condicoes %}{% include "_paper_condicoes.html" %}{% else %}<p>n/d</p>{% endif %}
+  </section>
+
+  <section class="paper-abertos">
+    <h3>Abertos ({{ view.abertos|length }})</h3>
+    {% for t in view.abertos %}
+    <div class="paper-trade-row" data-created="{{ t.created_at }}">
+      <strong>{{ t.symbol }}</strong> <span class="badge {{ t.direction }}">{{ t.direction }}</span>
+      <span>entrada {{ t.entry_price }}</span>
+      {% if t.mfe_pct is defined %}<span class="positive">MFE {{ "%.1f"|format(t.mfe_pct) }}%</span>{% endif %}
+      {% if t.mae_pct is defined %}<span class="negative">MAE {{ "%.1f"|format(t.mae_pct) }}%</span>{% endif %}
+      <span class="hint">aberto ha {{ t.idade_min }} min{% if t.checked_min_ago is not none %} &middot; tracker ha {{ t.checked_min_ago }} min{% else %} &middot; aguardando 1o check do tracker{% endif %}</span>
+      {% if t.can_void %}
+      <form method="post" action="/raiox/paper/{{ t.id }}/anular"><button>anular</button></form>
+      {% endif %}
+      <form method="post" action="/raiox/paper/{{ t.id }}/fechar"><button>fechar agora</button></form>
+    </div>
+    {% else %}<p>nenhum trade aberto</p>{% endfor %}
+  </section>
+
+  <section class="paper-fechados">
+    <h3>Fechados recentes</h3>
+    {% for t in view.fechados %}
+    <div class="paper-trade-row">
+      <strong>{{ t.symbol }}</strong> <span class="badge {{ t.direction }}">{{ t.direction }}</span>
+      <span>{{ t.exit_reason }}</span>
+      <span class="{{ 'positive' if t.pnl_net_pct > 0 else 'negative' }}">net {{ "%.2f"|format(t.pnl_net_pct) }}%</span>
+    </div>
+    {% else %}<p>nenhum ainda &#8212; registre a primeira tese</p>{% endfor %}
+  </section>
+</div>
+<!-- lightweight-charts 4.2.0 (local, sem CDN) -->
+<script src="/static/js/lightweight-charts.standalone.production.js"></script>
+<script src="/static/js/paper.js"></script>
+{% endblock %}

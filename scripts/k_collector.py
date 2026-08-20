@@ -36,9 +36,18 @@ from urllib.request import Request, urlopen
 DB_PATH = Path("/home/pi/crypto_ai_bot/runtime/baseline/bot.db")
 
 SYMBOLS = [
+    # núcleo original (14) — coletando desde 2026-04
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
     "DOGEUSDT", "ADAUSDT", "HYPEUSDT", "LINKUSDT", "AVAXUSDT",
     "LTCUSDT", "TRXUSDT", "SUIUSDT", "1000PEPEUSDT",
+    # expansão 2026-06-17: EXP-100/101/102 fecharam o dado farto (14 símbolos, hourly);
+    # ampliar largura cross-sectional + memes p/ a tese de liquidação. Coleta forward,
+    # juízo ~13/07. Cobertura LSR/OI/funding validada na API antes de adicionar.
+    # memes (8):
+    "SPXUSDT", "TRUMPUSDT", "WIFUSDT", "FARTCOINUSDT", "PENGUUSDT",
+    "1000SHIBUSDT", "1000BONKUSDT", "1000FLOKIUSDT",
+    # alts alto-beta (6):
+    "WLDUSDT", "NEARUSDT", "ENAUSDT", "AAVEUSDT", "TIAUSDT", "TONUSDT",
 ]
 
 BASE_URL = "https://fapi.binance.com"
@@ -190,7 +199,11 @@ def http_get_json(path: str, params: dict) -> list:
 
 def parse_ratio_response(rows: list, source: str) -> list[dict]:
     parsed: list[dict] = []
+    if not isinstance(rows, list):
+        return parsed
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         try:
             ts_ms = int(r["timestamp"])
             ratio = float(r["longShortRatio"])
@@ -231,7 +244,11 @@ def parse_klines_response(rows: list, symbol: str) -> list[dict]:
 
 def parse_funding_response(rows: list, symbol: str) -> list[dict]:
     parsed: list[dict] = []
+    if not isinstance(rows, list):
+        return parsed
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         try:
             item = {
                 "symbol": r.get("symbol", symbol),
@@ -249,7 +266,11 @@ def parse_funding_response(rows: list, symbol: str) -> list[dict]:
 
 def parse_open_interest_response(rows: list, symbol: str) -> list[dict]:
     parsed: list[dict] = []
+    if not isinstance(rows, list):
+        return parsed
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         try:
             item = {
                 "symbol": r.get("symbol", symbol),
@@ -267,7 +288,11 @@ def parse_open_interest_response(rows: list, symbol: str) -> list[dict]:
 
 def parse_basis_response(rows: list, symbol: str) -> list[dict]:
     parsed: list[dict] = []
+    if not isinstance(rows, list):
+        return parsed
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         try:
             item = {
                 "symbol": r.get("pair", symbol),

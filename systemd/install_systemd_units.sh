@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# install_systemd_units.sh — instala os 3 timers do k_collector (watchdog, report, backup).
+# install_systemd_units.sh — instala os timers auxiliares de monitoramento:
+#   k_collector (watchdog, report, backup) + liquidation-watchdog + options-watchdog,
+#   mais a regra sudoers que deixa o liquidation-watchdog reiniciar o collector.
 #
 # Idempotente: re-rodar é seguro (daemon-reload + re-enable não duplica).
 # REVERSÍVEL: use uninstall_systemd_units.sh para desfazer.
@@ -10,7 +12,7 @@
 #   3. systemctl enable+start dos timers (precisa root)
 #
 # NÃO TOCA: cron do collector (que continua disparando o collector a cada hora).
-# Apenas adiciona os 3 timers auxiliares.
+# Apenas adiciona os 5 timers auxiliares.
 
 set -euo pipefail
 
@@ -30,12 +32,18 @@ UNITS=(
   "k-collector-report.timer"
   "k-collector-backup.service"
   "k-collector-backup.timer"
+  "liquidation-watchdog.service"
+  "liquidation-watchdog.timer"
+  "options-watchdog.service"
+  "options-watchdog.timer"
 )
 
 TIMERS=(
   "k-collector-watchdog.timer"
   "k-collector-report.timer"
   "k-collector-backup.timer"
+  "liquidation-watchdog.timer"
+  "options-watchdog.timer"
 )
 
 echo "==> Sanity check: arquivos de origem"
@@ -76,9 +84,23 @@ for timer in "${TIMERS[@]}"; do
   echo "  - ${timer} enabled+started"
 done
 
+echo "==> Instalando regra sudoers do liquidation-watchdog"
+SUDOERS_SRC="${SRC_DIR}/liquidation-watchdog.sudoers"
+SUDOERS_DEST="/etc/sudoers.d/liquidation-watchdog"
+if [[ -f "${SUDOERS_SRC}" ]]; then
+  if visudo -c -f "${SUDOERS_SRC}" >/dev/null; then
+    install -m 0440 -o root -g root "${SUDOERS_SRC}" "${SUDOERS_DEST}"
+    echo "  - sudoers instalado (liquidation-watchdog pode reiniciar o collector)"
+  else
+    echo "ERRO: sudoers invalido, NAO instalado: ${SUDOERS_SRC}" >&2
+  fi
+else
+  echo "WARN: ${SUDOERS_SRC} ausente — watchdog nao reiniciara o collector"
+fi
+
 echo ""
 echo "==> Status dos timers:"
-systemctl list-timers --no-pager | grep -E "(k-collector|NEXT)" || true
+systemctl list-timers --no-pager | grep -E "(k-collector|liquidation-watchdog|options-watchdog|NEXT)" || true
 
 echo ""
 echo "==> Done. Próximos disparos visíveis acima."
@@ -87,11 +109,15 @@ echo "Logs:"
 echo "  journalctl -u k-collector-watchdog.service -n 20"
 echo "  journalctl -u k-collector-report.service -n 20"
 echo "  journalctl -u k-collector-backup.service -n 20"
+echo "  journalctl -u liquidation-watchdog.service -n 20"
+echo "  journalctl -u options-watchdog.service -n 20"
 echo ""
 echo "Para forçar uma execução agora (teste):"
 echo "  sudo systemctl start k-collector-watchdog.service"
 echo "  sudo systemctl start k-collector-report.service"
 echo "  sudo systemctl start k-collector-backup.service"
+echo "  sudo systemctl start liquidation-watchdog.service"
+echo "  sudo systemctl start options-watchdog.service"
 echo ""
 echo "Para desinstalar:"
 echo "  sudo bash ${SRC_DIR}/uninstall_systemd_units.sh"

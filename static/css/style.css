@@ -845,3 +845,498 @@ td.heat-neg { background: var(--loss-bg); }
 @media (max-width: 480px) {
   .kpi-item { min-width: 100%; }
 }
+
+/* ============================================================
+   PREMIUM STYLE OVERRIDES & GLASSMORPHISM
+   ============================================================ */
+
+/* Modern Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(5, 7, 10, 0.4);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Glassmorphism for Panels & Cards */
+.panel, .card, .sys-card {
+  background: rgba(17, 24, 35, 0.65) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35) !important;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease !important;
+}
+.panel:hover, .card:hover {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Premium KPI Strip */
+.kpi-strip {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+  gap: 12px !important;
+  background: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+.kpi-item {
+  background: rgba(17, 24, 35, 0.65) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  padding: 14px 16px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease, box-shadow 0.2s ease !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  flex: none !important;
+}
+.kpi-item:first-child, .kpi-item:last-child {
+  border-radius: 12px !important;
+}
+.kpi-item:hover {
+  transform: translateY(-2px) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Glassmorphism for Topbar */
+.topbar {
+  background: rgba(5, 7, 10, 0.8) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Modern Controls & Inputs globally */
+select, input[type=text], input[type=number], .log-filter {
+  background: rgba(5, 7, 10, 0.75) !important;
+  color: #f0f4ff !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  outline: none !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+select:focus, input:focus {
+  border-color: rgba(0, 211, 149, 0.3) !important;
+  box-shadow: 0 0 8px rgba(0, 211, 149, 0.15) !important;
+}
+
+.btn, button.btn {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  color: rgba(240, 244, 255, 0.7) !important;
+  padding: 6px 14px !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 12.5px !important;
+  height: 32px !important;
+}
+.btn:hover, button.btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+}
+.btn.active, button.btn.active {
+  background: rgba(0, 211, 149, 0.08) !important;
+  border-color: rgba(0, 211, 149, 0.3) !important;
+  color: #00d395 !important;
+}
+
+/* Glass Tabs */
+.tabs {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+.tab {
+  border-bottom: 2px solid transparent !important;
+  padding: 10px 16px !important;
+  transition: all 0.2s ease !important;
+}
+.tab.active {
+  color: #00d395 !important;
+  border-bottom-color: #00d395 !important;
+}
+
+/* Table Enhancements */
+table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+th {
+  background: rgba(5, 7, 10, 0.3) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: rgba(240, 244, 255, 0.4) !important;
+  padding: 12px 16px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  letter-spacing: 0.5px !important;
+}
+td {
+  padding: 12px 16px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03) !important;
+  font-size: 13px !important;
+}
+tr:hover td {
+  background: rgba(255, 255, 255, 0.015) !important;
+}
+
+/* System Health Gauges */
+.gauge-card {
+  background: rgba(17, 24, 35, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+  transition: transform 0.2s ease !important;
+}
+.gauge-card:hover {
+  transform: translateY(-2px) !important;
+}
+
+/* Mobile responsive fixes */
+@media (max-width: 768px) {
+  .kpi-strip {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) !important;
+    gap: 8px !important;
+  }
+  .kpi-item {
+    padding: 10px 12px !important;
+  }
+}
+
+/* ============================================================
+   Paper — diario de teses (Fatia 4a do Trade Desk)
+   ============================================================ */
+
+/* ── Wrap + hint ─────────────────────────────────────────── */
+.paper-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.hint {
+  font-size: .72rem;
+  color: var(--text-3);
+  margin-top: var(--sp-2);
+}
+
+/* ── Errors banner ───────────────────────────────────────── */
+.paper-errors {
+  background: var(--loss-bg);
+  border: 1px solid rgba(255, 59, 107, .25);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: .82rem;
+  color: var(--loss);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+/* ── 2-col grid (chart ~58%, form rest) ──────────────────── */
+.paper-grid {
+  display: grid;
+  grid-template-columns: 58% 1fr;
+  gap: var(--sp-5);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .paper-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Chart column ────────────────────────────────────────── */
+.paper-chart-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.paper-chart-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.paper-chart-head select {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: .8rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color .15s;
+}
+.paper-chart-head select:focus { border-color: var(--border-active); }
+
+/* TF buttons — mirror raiox tf-buttons style */
+.paper-tfs {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.paper-tfs button {
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-sm);
+  font-size: .75rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all .15s;
+  line-height: 1.4;
+}
+.paper-tfs button:hover {
+  border-color: rgba(255,255,255,.12);
+  color: var(--text-1);
+}
+.paper-tfs button.active {
+  border-color: var(--border-active);
+  color: var(--profit);
+  background: rgba(0, 211, 149, .06);
+}
+
+/* Chart container — explicit height so LightweightCharts can render */
+#paper-chart {
+  height: 360px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0d0d0d;
+  position: relative;
+}
+
+/* Inline error overlay inside chart */
+.paper-chart-error {
+  position: absolute;
+  bottom: var(--sp-3);
+  left: var(--sp-3);
+  right: var(--sp-3);
+  background: var(--loss-bg);
+  border: 1px solid rgba(255, 59, 107, .25);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: .72rem;
+  color: var(--loss);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ── Registration form ────────────────────────────────────── */
+.paper-form {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  box-shadow: var(--shadow-card);
+}
+
+.paper-form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: .8rem;
+  color: var(--text-2);
+}
+
+.paper-form .paper-label {
+  font-size: .8rem;
+  color: var(--text-2);
+}
+
+.paper-form input[type="text"],
+.paper-form input[inputmode="decimal"],
+.paper-form input:not([type="radio"]):not([type="submit"]),
+.paper-form textarea {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: .85rem;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  transition: border-color .15s;
+  width: 100%;
+}
+
+.paper-form input:focus,
+.paper-form textarea:focus {
+  border-color: var(--border-active);
+}
+
+/* Highlight the active price input (set by JS on focus) */
+.paper-form input.price-active {
+  border-color: var(--info);
+  box-shadow: 0 0 0 2px rgba(94, 200, 255, .15);
+}
+
+.paper-form textarea {
+  resize: vertical;
+  min-height: 56px;
+  font-family: inherit;
+}
+
+.dir-toggle {
+  display: flex;
+  gap: var(--sp-4);
+  font-size: .85rem;
+  color: var(--text-1);
+}
+.dir-toggle label {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-1);
+  cursor: pointer;
+  font-size: .85rem;
+  color: var(--text-1);
+}
+
+.paper-form button[type="submit"] {
+  align-self: flex-start;
+  padding: var(--sp-2) var(--sp-5);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-active);
+  background: rgba(0, 211, 149, .08);
+  color: var(--profit);
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.paper-form button[type="submit"]:hover {
+  background: rgba(0, 211, 149, .16);
+}
+
+/* ── Condicoes section ────────────────────────────────────── */
+.paper-condicoes {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  box-shadow: var(--shadow-card);
+}
+.paper-condicoes h3 {
+  margin-bottom: var(--sp-3);
+  font-size: .9rem;
+  color: var(--text-2);
+}
+.paper-condicoes small {
+  font-size: .7rem;
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+/* ── Trade rows (abertos + fechados) ─────────────────────── */
+.paper-abertos,
+.paper-fechados {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  box-shadow: var(--shadow-card);
+}
+
+.paper-abertos h3,
+.paper-fechados h3 {
+  margin-bottom: var(--sp-4);
+  font-size: .9rem;
+  color: var(--text-2);
+}
+
+.paper-trade-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-2);
+  font-size: .82rem;
+  background: var(--bg-2);
+}
+.paper-trade-row:last-child { margin-bottom: 0; }
+
+/* Push action forms to the right end */
+.paper-trade-row form {
+  margin-left: auto;
+}
+.paper-trade-row form + form {
+  margin-left: 0;
+}
+
+.paper-trade-row button {
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-sm);
+  font-size: .72rem;
+  border: 1px solid var(--border);
+  background: var(--bg-3);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.paper-trade-row button:hover {
+  border-color: rgba(255,255,255,.12);
+  color: var(--text-1);
+}
+
+/* Void (anular) button — warn colour */
+.paper-trade-row form[action$="/anular"] button {
+  border-color: rgba(255, 184, 77, .25);
+  color: var(--warn);
+  background: var(--warn-bg);
+}
+.paper-trade-row form[action$="/anular"] button:hover {
+  background: rgba(255, 184, 77, .16);
+}
+
+/* ── Responsive tweaks ────────────────────────────────────── */
+@media (max-width: 600px) {
+  .paper-form {
+    padding: var(--sp-4);
+  }
+  .paper-condicoes,
+  .paper-abertos,
+  .paper-fechados {
+    padding: var(--sp-4);
+  }
+  .paper-trade-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .paper-trade-row form {
+    margin-left: 0;
+  }
+}

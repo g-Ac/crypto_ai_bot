@@ -1,0 +1,17 @@
+[Unit]
+Description=Crypto AI Bot Supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/home/pi/crypto_ai_bot/.env
+User=pi
+WorkingDirectory=/home/pi/crypto_ai_bot
+ExecStart=/home/pi/crypto_ai_bot/.venv/bin/python supervisor.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
