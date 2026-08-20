@@ -238,9 +238,69 @@ def test_by_symbol_classifica_pelo_liquido():
 
 
 # ── Contrato do payload ──────────────────────────────────────────────────────
+#
+# Banco e state SINTETICOS: rodar contra runtime/baseline/bot.db amarrava a suite
+# a esta maquina (runtime/ e gitignored — em clone limpo, worktree ou BOT_ID novo
+# as tabelas nem existem) e trocava asserções de CONTRATO por asserções de DADO
+# ("fee_usd > 0" e falso num runtime sem trades, mesmo com o codigo correto).
+# Com numeros conhecidos da para exigir valores EXATOS.
+
+# 3 trades: gross +30 USD, fee 45 USD => net -15 USD. O caso que motiva tudo.
+_TRADES = [
+    # (timestamp, symbol, direction, pnl_pct, pnl_usd, fee, net_pct, net_usd)
+    ("2026-08-01T10:00:00", "BTCUSDT", "LONG",   2.0,  20.0, 15.0,  0.5,   5.0),
+    ("2026-08-02T10:00:00", "ETHUSDT", "SHORT",  2.0,  20.0, 15.0,  0.5,   5.0),
+    ("2026-08-03T10:00:00", "BTCUSDT", "LONG",  -1.0, -10.0, 15.0, -2.5, -25.0),
+]
+_DECISIONS = [
+    # (outcome, blocked_by, n)
+    ("trade", "none", 3),            # viraram posicao
+    ("trade", "max_positions", 12),  # sinal foi de trade, mas NAO abriu
+    ("regime_blocked", "regime_blocked", 5),
+]
+_INITIAL_CAPITAL = 1000.0
+
 
 @pytest.fixture
-def status():
+def fake_runtime(tmp_path, monkeypatch):
+    """Banco + state sinteticos, isolados do runtime real."""
+    db_file = tmp_path / "bot.db"
+    monkeypatch.setattr(ds.db, "DB_FILE", str(db_file))
+    ds.db.init_db()  # cria tabelas e roda as migracoes de fee
+
+    conn = ds.db._get_conn()
+    for ts, sym, direction, pct, usd, fee, npct, nusd in _TRADES:
+        conn.execute(
+            "INSERT INTO momentum_trades (timestamp, symbol, direction, pnl_pct, "
+            "pnl_usd, total_fee_usd, net_pnl_pct, net_pnl_usd, capital_after) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (ts, sym, direction, pct, usd, fee, npct, nusd, 0),
+        )
+    for outcome, blocked_by, n in _DECISIONS:
+        for _ in range(n):
+            conn.execute(
+                "INSERT INTO momentum_decisions (timestamp, outcome, blocked_by) "
+                "VALUES (datetime('now'), ?, ?)",
+                (outcome, blocked_by),
+            )
+    conn.commit()
+    conn.close()
+
+    state = tmp_path / "momentum_state.json"
+    # fee do state DIVERGE do banco de proposito (15 vs 45): e o bug real —
+    # o state so acumula os trades com fee medida na hora.
+    state.write_text(json.dumps({
+        "capital": 1030.0, "positions": {}, "total_fee_usd": 15.0,
+        "total_pnl_usd": 30.0, "total_trades": 3,
+    }))
+    monkeypatch.setattr(ds, "MOMENTUM_STATE_FILE", str(state))
+    monkeypatch.setattr(ds, "MOMENTUM_INITIAL_CAPITAL", _INITIAL_CAPITAL)
+    monkeypatch.setattr(ds, "get_capital_status", lambda: {"Momentum": 1030.0})
+    return tmp_path
+
+
+@pytest.fixture
+def status(fake_runtime):
     return ds._build_status(include_logs=False, include_trades=False)
 
 
@@ -258,63 +318,102 @@ def test_payload_nao_carrega_mais_o_ai_brain(status):
 
 def test_capital_expoe_liquido_e_bruto_separados(status):
     momentum = status["capital"]["momentum"]
-    for field in ("value", "ret", "net_value", "net_ret", "fee_usd"):
-        assert field in momentum, field
-    # A distincao que o dashboard escondia: bruto e liquido divergem pela fee.
-    assert momentum["net_value"] < momentum["value"]
-    assert momentum["fee_usd"] > 0
-    # Coerencia: bruto - fee ~= liquido (folga p/ arredondamento por trade)
-    assert momentum["net_value"] == pytest.approx(
-        momentum["value"] - momentum["fee_usd"], abs=1.0
-    )
+    # gross 1030 (+3%) vs net 985 (-1,5%): sinais OPOSTOS no mesmo payload
+    assert momentum["value"] == 1030.0
+    assert momentum["ret"] == 3.0
+    assert momentum["net_value"] == 985.0     # 1000 + (-15) de net acumulado
+    assert momentum["net_ret"] == -1.5
+    assert momentum["fee_usd"] == 45.0
 
 
 def test_liquido_vem_do_banco_e_nao_do_state(status):
     """O state subestima a fee: acumula so os trades com fee medida na hora.
 
-    Em 2026-08-03 o state dizia 148,88 de fee onde o banco somava 286,25 —
-    derivar dali dava net -10,9%% em vez dos -24,7%% reais.
+    Aqui o state diz 15 e o banco soma 45. Se a implementacao voltar a ler o
+    state, fee_usd vira 15 e net_value vira 1015 — este teste reprova.
     """
-    conn = ds.db._get_conn()
-    try:
-        row = conn.execute(
-            "SELECT COALESCE(SUM(total_fee_usd), 0) AS fee, "
-            "COALESCE(SUM(COALESCE(net_pnl_usd, pnl_usd)), 0) AS net FROM momentum_trades"
-        ).fetchone()
-    finally:
-        conn.close()
-
     momentum = status["capital"]["momentum"]
-    assert momentum["fee_usd"] == pytest.approx(float(row["fee"]), abs=0.01)
-    assert status["summary"]["net_total_usd"] == pytest.approx(float(row["net"]), abs=0.01)
-
-    state_fee = ds._safe_float(
-        ds._read_json(ds.MOMENTUM_STATE_FILE, {}).get("total_fee_usd")
-    )
-    if state_fee and abs(state_fee - float(row["fee"])) > 1.0:
-        assert momentum["fee_usd"] != pytest.approx(state_fee, abs=0.01), \
-            "capital.fee_usd voltou a sair do state em vez do banco"
+    assert momentum["fee_usd"] == 45.0, "fee_usd voltou a sair do state"
+    assert momentum["net_value"] != 1015.0, "net derivado do state (capital - fee)"
+    assert status["summary"]["net_total_usd"] == -15.0
 
 
 def test_headline_do_portfolio_e_o_liquido(status):
-    assert status["summary"]["portfolio_value"] == status["capital"]["momentum"]["net_value"]
+    assert status["summary"]["portfolio_value"] == 985.0
+    assert status["summary"]["portfolio_ret"] == -1.5
+    assert status["summary"]["gross_value"] == 1030.0
+    assert status["summary"]["gross_ret"] == 3.0
     assert status["summary"]["is_net"] is True
-    assert "gross_value" in status["summary"]
 
 
-def test_funnel_do_momentum_substitui_o_do_scalping(status):
-    assert "scalping_funnel" not in status
+def test_metricas_do_payload_sao_liquidas(status):
+    """2 trades com net +5 e 1 com net -25: WR 66,7%, PF 0,4 — nunca o gross."""
+    metrics = status["metrics"]
+    assert metrics["total_trades"] == 3
+    assert metrics["win_rate"] == 66.7
+    assert metrics["profit_factor"] == 0.4     # 10 de ganho / 25 de perda
+    assert metrics["largest_loss"] == -2.5     # pelo gross seria -1.0
+
+
+def test_funnel_conta_opened_por_blocked_by_nao_por_outcome(status):
+    """outcome='trade' inclui sinais barrados depois (max_positions/cooldown).
+
+    Aqui sao 15 linhas com outcome='trade' para 3 posicoes reais: contar por
+    outcome daria opened=15 e um pass rate 5x maior que a realidade.
+    """
     funnel = status["funnel"]
-    assert set(funnel) >= {"total", "breakdown", "opened"}
-    assert funnel["total"] == sum(funnel["breakdown"].values())
+    assert "scalping_funnel" not in status
+    assert funnel["opened"] == 3, "opened saiu de outcome='trade', nao de blocked_by"
+    assert funnel["breakdown"]["max_positions"] == 12
+    assert funnel["breakdown"]["regime_blocked"] == 5
+    assert funnel["total"] == 20
+
+
+def test_by_symbol_e_liquido_e_percentual(status):
+    """avg_pnl_pct tem que ser MEDIA DE PERCENTUAIS — o codigo antigo punha USD/trade aqui."""
+    btc = next(r for r in status["by_symbol"] if r["symbol"] == "BTCUSDT")
+    assert btc["trades"] == 2
+    assert btc["wins"] == 1 and btc["losses"] == 1   # pelo gross seriam 1/1 tambem, mas...
+    assert btc["total_pnl"] == -20.0                 # ...no gross seria +10
+    assert btc["avg_pnl_pct"] == -1.0                # media de (+0.5, -2.5)
+    assert btc["avg_pnl_usd"] == -10.0               # o campo que guarda USD/trade
 
 
 def test_campos_que_o_frontend_le_continuam_presentes(status):
-    """Guarda contra remover campo que a UI consome (base.html, dashboard.js, system.html)."""
-    for key in ("paused", "instance", "capital", "stats_today", "summary",
-                "positions", "chart", "metrics", "by_symbol", "health",
-                "bot_status", "funnel", "insights"):
-        assert key in status, key
-    assert "total" in status["chart"]
+    """Guarda contra remover campo consumido pela UI.
+
+    Caminhos ANINHADOS, nao so chaves de topo: e assim que o frontend le, e foi
+    exatamente onde o rename errors_today->errors_recent quebrou o /legacy.
+    """
+    caminhos = [
+        # base.html
+        "bot_status.overall", "bot_status.last_cycle_ago", "paused",
+        "instance.version_tag", "instance.bot_id", "last_update",
+        "health.uptime", "funnel.total", "funnel.breakdown",
+        "summary.last_trade_ts",
+        # system.html
+        "bot_status.errors_recent", "capital.momentum.cb", "stats_today.momentum",
+        # dashboard.js
+        "summary.portfolio_value", "summary.portfolio_ret", "summary.today_pnl_usd",
+        "summary.week_pnl_usd", "summary.open_positions", "summary.exposure_pct",
+        "metrics.win_rate", "metrics.profit_factor", "metrics.max_drawdown_pct",
+        "chart.total", "capital.momentum.net_value", "capital.momentum.net_ret",
+        "capital.momentum.fee_usd", "metrics.per_system.momentum",
+        # index.html (/legacy)
+        "summary.best_system.key", "metrics.total_trades", "by_symbol",
+        "insights.system_leaderboard",
+    ]
+    for caminho in caminhos:
+        node = status
+        for parte in caminho.split("."):
+            assert isinstance(node, dict) and parte in node, f"faltou {caminho}"
+            node = node[parte]
     assert isinstance(status["by_symbol"], list)
     assert isinstance(status["insights"]["system_leaderboard"], list)
+
+
+def test_leaderboard_reporta_liquido_com_bruto_ao_lado(status):
+    row = status["insights"]["system_leaderboard"][0]
+    assert row["key"] == "momentum"
+    assert row["capital_value"] == 985.0 and row["return_pct"] == -1.5
+    assert row["gross_capital_value"] == 1030.0 and row["gross_return_pct"] == 3.0

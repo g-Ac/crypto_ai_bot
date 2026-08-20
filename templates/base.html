@@ -207,7 +207,8 @@
     pauseLabel.textContent = d.paused ? 'Paused' : 'Running';
 
     const ver = $('#footer-version');
-    if (d.instance?.version) ver.textContent = 'v' + d.instance.version + ' · ' + (d.instance.bot_id || '');
+    // o payload expoe version_tag (ex.: "baseline:c3ed087"); `version` nunca existiu
+    if (d.instance?.version_tag) ver.textContent = d.instance.version_tag;
     $('#footer-refresh').textContent = d.last_update || '';
   }
 

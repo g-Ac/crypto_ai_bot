@@ -259,7 +259,7 @@
     _set('sys-errors', b.errors_recent != null ? b.errors_recent : '---');
     _set('sys-uptime', h.uptime || '---');
     _set('sys-instance', d.instance?.bot_id || '---');
-    _set('sys-version', d.instance?.version || '---');
+    _set('sys-version', d.instance?.version_tag || '---');
 
     // Circuit breakers (LED cards)
     renderCBs(d);
