@@ -2,9 +2,10 @@
 # Deploy: commit local -> push GitHub -> pull no Pi -> restart servico
 set -e
 
-# IP local (mesma rede) ou Tailscale (rede externa)
-# Local: 192.168.0.24 | Tailscale: 100.99.44.92
-PI="pi@100.99.44.92"
+# Destino do deploy. Por padrao usa o hostname mDNS (funciona na mesma rede).
+# Para deploy de fora (VPN/Tailscale), exporte o endereco antes de rodar:
+#   export PI_HOST="pi@<ip-ou-host>"
+PI="${PI_HOST:-pi@cryptobot.local}"
 BOT_DIR="~/crypto_ai_bot"
 
 echo "=== [1/4] Commit e push para o GitHub ==="
