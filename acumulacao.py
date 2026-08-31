@@ -102,16 +102,20 @@ def salvar_diarios(rows, db_path=DB_DEFAULT, conn=None) -> int:
             conn.close()
 
 
-def ler_serie(symbol, db_path=DB_DEFAULT, conn=None) -> tuple[list[str], list[float]]:
-    """Serie diaria ordenada do banco. Retorna (datas, closes)."""
+def ler_serie(symbol, db_path=DB_DEFAULT, conn=None, com_volume=False):
+    """Serie diaria ordenada do banco. (datas, closes) — ou (datas, closes, volumes)."""
     fechar = conn is None
     conn = conn or _conn(db_path)
     try:
         ensure_schema(conn)
         rows = conn.execute(
-            "SELECT data, close FROM precos_diarios WHERE symbol=? ORDER BY data", (symbol,)
-        ).fetchall()
-        return [r["data"] for r in rows], [r["close"] for r in rows]
+            "SELECT data, close, volume_usd FROM precos_diarios WHERE symbol=? ORDER BY data",
+            (symbol,)).fetchall()
+        datas = [r["data"] for r in rows]
+        closes = [r["close"] for r in rows]
+        if com_volume:
+            return datas, closes, [r["volume_usd"] for r in rows]
+        return datas, closes
     finally:
         if fechar:
             conn.close()
@@ -149,7 +153,30 @@ def distancia_media(closes, n=200) -> float | None:
     return (closes[-1] - media) / media * 100.0
 
 
-def contexto_ativo(closes, janela=JANELA_PADRAO) -> dict:
+def percentil_volume(volumes, janela=JANELA_PADRAO) -> float | None:
+    """0-100: quantos % dos volumes da janela ficaram ABAIXO do atual.
+    Volume e a medida mais direta de liquidez com historico longo (OI e LSR so guardam
+    30 dias na API; liquidacao nao tem historico nenhum)."""
+    if not volumes:
+        return None
+    j = [v for v in (volumes[-janela:] if janela else volumes) if v is not None]
+    if not j:
+        return None
+    atual = j[-1]
+    return sum(1 for v in j if v < atual) / len(j) * 100.0
+
+
+def retorno_periodo(closes, dias=7) -> float | None:
+    """% de variacao do close nos ultimos `dias`. Negativo = caiu."""
+    if len(closes) <= dias or dias <= 0:
+        return None
+    antes = closes[-dias - 1]
+    if antes <= 0:
+        return None
+    return (closes[-1] - antes) / antes * 100.0
+
+
+def contexto_ativo(closes, janela=JANELA_PADRAO, volumes=None) -> dict:
     """Retrato do ativo em relacao a propria historia. NAO opina, NAO preve."""
     return {
         "preco": closes[-1] if closes else None,
@@ -157,6 +184,8 @@ def contexto_ativo(closes, janela=JANELA_PADRAO) -> dict:
         "drawdown_topo_pct": drawdown_do_topo(closes, janela),
         "percentil": percentil_preco(closes, janela),
         "dist_media_200d_pct": distancia_media(closes, 200),
+        "percentil_volume": percentil_volume(volumes, janela) if volumes else None,
+        "retorno_7d_pct": retorno_periodo(closes, 7),
     }
 
 
@@ -182,7 +211,11 @@ def fatos_do_ativo(symbol, db_path=DB_DEFAULT, conn=None) -> dict:
 #   {"tipo": "sempre"}                        -> DCA: compra todo aporte (o benchmark)
 #   {"tipo": "drawdown", "limiar_pct": 30}    -> so compra se caiu >= 30% do topo
 #   {"tipo": "percentil", "limiar": 30}       -> so compra se esta barato vs propria historia
-TIPOS_REGRA = {"sempre", "drawdown", "percentil"}
+#   {"tipo": "capitulacao", "vol_percentil_min": 90, "queda_min_pct": 5, "dias": 7}
+#       -> volume no topo do ano E preco caindo. MECANISMO: venda forcada (liquidacao,
+#          chamada de margem, panico) vende a qualquer preco e desloca o mercado. As unicas
+#          hipoteses que chegaram longe no lab tinham historia causal ANTES do backtest.
+TIPOS_REGRA = {"sempre", "drawdown", "percentil", "capitulacao"}
 
 
 def valida_regra(regra) -> list[str]:
@@ -200,6 +233,13 @@ def valida_regra(regra) -> list[str]:
         v = regra.get("limiar")
         if not isinstance(v, (int, float)) or not (0 <= v <= 100):
             return ["percentil exige limiar entre 0 e 100"]
+    if t == "capitulacao":
+        v = regra.get("vol_percentil_min")
+        if not isinstance(v, (int, float)) or not (0 <= v <= 100):
+            return ["capitulacao exige vol_percentil_min entre 0 e 100"]
+        q = regra.get("queda_min_pct")
+        if not isinstance(q, (int, float)) or q < 0:
+            return ["capitulacao exige queda_min_pct >= 0"]
     return []
 
 
@@ -217,6 +257,15 @@ def avalia_regra(ctx, regra) -> dict:
             return {"bateu": False, "motivo": "sem dado de drawdown"}
         return {"bateu": dd >= lim,
                 "motivo": f"drawdown {dd:.1f}% vs limiar {lim:.1f}%"}
+    if t == "capitulacao":
+        pv, ret = ctx.get("percentil_volume"), ctx.get("retorno_7d_pct")
+        if pv is None or ret is None:
+            return {"bateu": False, "motivo": "sem dado de volume ou de retorno"}
+        vol_ok = pv >= regra["vol_percentil_min"]
+        queda_ok = ret <= -regra["queda_min_pct"]
+        return {"bateu": vol_ok and queda_ok,
+                "motivo": f"volume p{pv:.0f} (min {regra['vol_percentil_min']:.0f}), "
+                          f"retorno 7d {ret:+.1f}% (max -{regra['queda_min_pct']:.1f}%)"}
     pc, lim = ctx.get("percentil"), regra["limiar"]
     if pc is None:
         return {"bateu": False, "motivo": "sem dado de percentil"}
@@ -225,7 +274,7 @@ def avalia_regra(ctx, regra) -> dict:
 
 # ───────────────────────── benchmark (o juiz honesto) ─────────────────────────
 def simula(datas, closes, regra, aporte=200.0, janela=JANELA_PADRAO,
-           fee_pct=FEE_PCT) -> dict:
+           fee_pct=FEE_PCT, volumes=None) -> dict:
     """Simula aportes mensais sob uma regra, no historico real.
 
     Contrato anti-lookahead (a regra que o momentum aprendeu do jeito caro): o contexto
@@ -248,7 +297,8 @@ def simula(datas, closes, regra, aporte=200.0, janela=JANELA_PADRAO,
             mes_anterior = mes
         if caixa <= 0:
             continue
-        ctx = contexto_ativo(closes[:i + 1], janela)   # <- so o passado
+        ctx = contexto_ativo(closes[:i + 1], janela,
+                             volumes[:i + 1] if volumes else None)   # <- so o passado
         if avalia_regra(ctx, regra)["bateu"]:
             liquido = caixa * (1 - fee_pct / 100.0)
             unidades += liquido / preco
@@ -266,12 +316,12 @@ def simula(datas, closes, regra, aporte=200.0, janela=JANELA_PADRAO,
 
 
 def compara_com_dca(datas, closes, regra, aporte=200.0, janela=JANELA_PADRAO,
-                    fee_pct=FEE_PCT) -> dict:
+                    fee_pct=FEE_PCT, volumes=None) -> dict:
     """A pergunta que decide tudo: a regra bate comprar todo mes sem pensar?
 
     Veredito mecanico. Se BATE-DCA nao aparecer, use DCA — e mais simples e ganhou.
     """
-    r = simula(datas, closes, regra, aporte, janela, fee_pct)
+    r = simula(datas, closes, regra, aporte, janela, fee_pct, volumes)
     dca = simula(datas, closes, {"tipo": "sempre"}, aporte, janela, fee_pct)
     diff = r["valor_final"] - dca["valor_final"]
     return {
@@ -284,7 +334,7 @@ def compara_com_dca(datas, closes, regra, aporte=200.0, janela=JANELA_PADRAO,
 
 
 def robustez_por_janela(datas, closes, regra, anos=3, aporte=200.0,
-                        janela=JANELA_PADRAO, fee_pct=FEE_PCT) -> dict:
+                        janela=JANELA_PADRAO, fee_pct=FEE_PCT, volumes=None) -> dict:
     """Walk-forward: a regra bate o DCA em VARIAS janelas, ou so numa sortuda?
 
     Lei nº 6 do lab ("walk-forward obrigatorio para qualquer filtro"): um unico
@@ -301,7 +351,8 @@ def robustez_por_janela(datas, closes, regra, anos=3, aporte=200.0,
     ini = 0
     while ini + passo <= len(datas):
         ds, cs = datas[ini:ini + passo], closes[ini:ini + passo]
-        o = compara_com_dca(ds, cs, regra, aporte, janela, fee_pct)
+        vs = volumes[ini:ini + passo] if volumes else None
+        o = compara_com_dca(ds, cs, regra, aporte, janela, fee_pct, vs)
         saidas.append({"de": ds[0], "ate": ds[-1], "diferenca_pct": o["diferenca_pct"],
                        "veredito": o["veredito"]})
         ini += 365   # janelas deslizantes de 1 ano

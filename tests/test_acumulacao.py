@@ -55,7 +55,7 @@ def test_contexto_ativo_devolve_retrato_sem_opiniao():
     assert ctx["drawdown_topo_pct"] == pytest.approx(20.0)
     # nada de "compre"/"venda"/"vai subir" no retrato
     assert set(ctx) == {"preco", "dias", "drawdown_topo_pct", "percentil",
-                        "dist_media_200d_pct"}
+                        "dist_media_200d_pct", "percentil_volume", "retorno_7d_pct"}
 
 
 # ─────────────────────── regua congelada ───────────────────────
@@ -268,3 +268,69 @@ def test_dca_contra_ele_mesmo_nunca_e_robusta():
     out = ac.robustez_por_janela(datas, closes, {"tipo": "sempre"}, anos=3)
     assert out["veredito"] == "NAO-ROBUSTA"
     assert out["diferenca_media_pct"] == pytest.approx(0.0)
+
+
+# ─────────────── liquidez / capitulacao (regra COM mecanismo) ───────────────
+
+def test_percentil_volume_no_topo():
+    assert ac.percentil_volume([1, 2, 3, 100]) == pytest.approx(75.0)
+
+
+def test_percentil_volume_ignora_buracos():
+    # volume_usd pode vir None do banco; nao pode estourar nem contar como zero
+    assert ac.percentil_volume([1, None, 2, 100]) == pytest.approx(66.67, abs=0.01)
+
+
+def test_percentil_volume_sem_dado():
+    assert ac.percentil_volume([]) is None and ac.percentil_volume([None]) is None
+
+
+def test_retorno_periodo_mede_queda():
+    # de 100 pra 90 em 2 dias = -10%
+    assert ac.retorno_periodo([100, 95, 90], dias=2) == pytest.approx(-10.0)
+
+
+def test_retorno_periodo_sem_historico_suficiente():
+    assert ac.retorno_periodo([100, 90], dias=7) is None
+
+
+def test_capitulacao_exige_volume_ALTO_e_preco_CAINDO():
+    regra = {"tipo": "capitulacao", "vol_percentil_min": 90, "queda_min_pct": 5, "dias": 7}
+    # volume alto + caiu forte -> compra
+    assert ac.avalia_regra({"percentil_volume": 95, "retorno_7d_pct": -8}, regra)["bateu"]
+    # volume alto mas SUBINDO -> nao e capitulacao, e euforia
+    assert not ac.avalia_regra({"percentil_volume": 95, "retorno_7d_pct": +8}, regra)["bateu"]
+    # caiu forte mas volume baixo -> nao e venda forcada, e so deriva
+    assert not ac.avalia_regra({"percentil_volume": 10, "retorno_7d_pct": -8}, regra)["bateu"]
+
+
+def test_capitulacao_sem_volume_nao_dispara():
+    regra = {"tipo": "capitulacao", "vol_percentil_min": 90, "queda_min_pct": 5, "dias": 7}
+    assert not ac.avalia_regra({"percentil_volume": None, "retorno_7d_pct": -8}, regra)["bateu"]
+
+
+def test_valida_regra_capitulacao_rejeita_parametro_ruim():
+    assert ac.valida_regra({"tipo": "capitulacao", "vol_percentil_min": 150,
+                            "queda_min_pct": 5})
+    assert ac.valida_regra({"tipo": "capitulacao", "vol_percentil_min": 90,
+                            "queda_min_pct": -1})
+
+
+def test_simula_com_volume_nao_enxerga_o_futuro():
+    """Mesmo contrato anti-lookahead da serie de preco, agora com volume junto."""
+    precos = [100, 100, 100, 100, 100, 100, 100, 80, 120, 130]
+    vols = [1, 1, 1, 1, 1, 1, 1, 500, 1, 1]
+    datas = [f"2020-{i+1:02d}-01" for i in range(len(precos))]
+    regra = {"tipo": "capitulacao", "vol_percentil_min": 80, "queda_min_pct": 5, "dias": 7}
+    curta = ac.simula(datas[:9], precos[:9], regra, aporte=100, fee_pct=0, volumes=vols[:9])
+    longa = ac.simula(datas, precos, regra, aporte=100, fee_pct=0, volumes=vols)
+    assert longa["compras"][:len(curta["compras"])] == curta["compras"]
+
+
+def test_ler_serie_com_volume(tmp_path):
+    db = str(tmp_path / "t.db")
+    ac.salvar_diarios([{"symbol": "BTCUSDT", "data": "2026-01-01", "close": 100.0,
+                        "high": 1.0, "low": 1.0, "volume_usd": 42.0}], db_path=db)
+    datas, closes, vols = ac.ler_serie("BTCUSDT", db_path=db, com_volume=True)
+    assert vols == [42.0]
+    assert len(ac.ler_serie("BTCUSDT", db_path=db)) == 2   # sem volume: 2-tupla
