@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raio-X · Pip-Boy (PREVIEW)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{
+    --bg:#080c08; --panel:#0d140d; --panel2:#101b10; --line:#1d3a24;
+    --g:#46ff9a; --g-dim:#2cbf73; --g-deep:#123420; --txt:#bdf7d4; --muted:#5f9c76;
+    --amber:#ffd166; --red:#ff6b6b; --tp:#5fe3c8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.5;
+    padding:18px;}
+  h1,h2,h3{font-family:'Share Tech Mono',monospace;font-weight:400;letter-spacing:.5px;margin:0}
+  h1{font-size:26px;color:var(--g)}
+  h2{font-size:16px;color:var(--g);text-transform:uppercase;letter-spacing:1px}
+  .dim{color:var(--muted)}
+  .scan{position:relative}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .preview-tag{display:inline-block;background:var(--g-deep);color:var(--g);
+    border:1px solid var(--g-dim);border-radius:6px;padding:3px 10px;font-size:12px;letter-spacing:1px}
+  button{font-family:inherit;cursor:pointer}
+</style>
+</head>
+<body>
+<style>
+  .topbar{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  .steps{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+  .step{flex:1;min-width:150px;background:var(--panel2);border:1px solid var(--line);
+    border-left:3px solid var(--line);border-radius:0 6px 6px 0;padding:8px 10px;font-size:12px}
+  .step.on{border-left-color:var(--g);color:var(--g)}
+  .step b{font-family:'Share Tech Mono';font-size:13px}
+  .grid{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+  select{background:#0a120a;color:var(--txt);border:1px solid var(--line);border-radius:6px;
+    padding:6px 8px;font-family:inherit;font-size:12px}
+  .count{color:var(--muted);font-size:12px;margin-left:auto;align-self:center}
+  .row{border:1px solid var(--line);border-radius:6px;padding:9px 11px;margin:7px 0;cursor:pointer;
+    display:flex;justify-content:space-between;gap:8px;transition:.12s}
+  .row:hover{border-color:var(--g-dim)}
+  .row.on{border-color:var(--g);background:#0c1c12}
+  .row .sym{color:var(--g)}
+  .win{color:var(--g)} .loss{color:var(--red)}
+  .open-card{border:1px solid var(--g-dim);border-left:4px solid var(--g);border-radius:0 8px 8px 0;
+    background:#0b1f14;padding:11px;margin-bottom:8px;box-shadow:0 0 12px rgba(70,255,154,.10)}
+  .open-card .live{color:var(--g);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .tfs{display:flex;gap:6px;margin:10px 0}
+  .tfs button{background:#0a120a;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 12px;font-size:12px}
+  .tfs button.on{background:var(--g-deep);color:var(--g);border-color:var(--g-dim)}
+  .verdict{border-radius:8px;padding:12px 14px;margin:6px 0;font-size:15px;border:1px solid var(--line)}
+  .verdict.w{background:#0c2418;border-color:var(--g-dim);color:var(--g)}
+  .verdict.l{background:#2a1212;border-color:#5e2626;color:var(--red)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;font-size:12px}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .swatch{width:16px;height:3px;border-radius:2px;display:inline-block}
+  .note{background:#241f0d;border:1px solid #5e511e;color:var(--amber);border-radius:6px;padding:7px 10px;font-size:12px;margin:8px 0}
+  .toolbtn{background:#0a120a;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:12px;margin-right:8px}
+  .toolbtn:hover{border-color:var(--g-dim)}
+  pre.summary{white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px;font-size:12.5px;margin-top:10px}
+  .sim label{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
+  .sim input{width:100%;background:#0a120a;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:7px;font-family:inherit}
+  .sim .go{background:var(--g-deep);color:var(--g);border:1px solid var(--g-dim);border-radius:6px;padding:8px 14px;margin-top:10px;width:100%;font-size:13px}
+  .sim-out{margin-top:10px;font-size:13px}
+  .gloss dt{color:var(--g);font-size:12.5px;margin-top:8px}
+  .gloss dd{margin:2px 0 0;color:var(--muted);font-size:12px}
+  .mini{font-size:11.5px;color:var(--muted)}
+</style>
+<div class="topbar">
+  <div>
+    <h1>&#129461; RAIO-X DOS TRADES</h1>
+    <div class="dim">Radiografia factual dos trades momentum. Sem sinal, sem recomenda&ccedil;&atilde;o.</div>
+  </div>
+  <span class="preview-tag" style="margin-left:auto">PREVIEW &middot; DADOS DE EXEMPLO</span>
+</div>
+<div class="steps" id="steps">
+  <div class="step on" data-s="1"><b>1 &middot; Escolha</b><br><span class="dim">clique num trade do feed</span></div>
+  <div class="step" data-s="2"><b>2 &middot; Entrada</b><br><span class="dim">veja onde o trade entrou</span></div>
+  <div class="step" data-s="3"><b>3 &middot; Sa&iacute;da</b><br><span class="dim">veja onde e por que saiu</span></div>
+  <div class="step" data-s="4"><b>4 &middot; Resultado</b><br><span class="dim">entenda o ganho/perda</span></div>
+</div>
+
+<div class="grid">
+  <div>
+    <div class="panel">
+      <h2>Feed</h2>
+      <div id="open-pos"></div>
+      <div class="filters">
+        <select id="f-sym"><option value="">Todos os s&iacute;mbolos</option></select>
+        <select id="f-res">
+          <option value="">Todos os resultados</option>
+          <option value="ganho">Ganhos (TP)</option>
+          <option value="perda">Perdas (SL)</option>
+        </select>
+        <span class="count" id="count"></span>
+      </div>
+      <div id="feed"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <div id="verdict" class="verdict dim" style="border-style:dashed">Selecione um trade no feed para come&ccedil;ar a an&aacute;lise.</div>
+      <div class="tfs" id="tfs"></div>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--g)"></i> Entrada</span>
+        <span><i class="swatch" style="background:var(--red)"></i> Stop (SL)</span>
+        <span><i class="swatch" style="background:var(--tp)"></i> TP1 / TP2 (alvos)</span>
+        <span class="dim">&#9650; entrou &nbsp; &#9679; saiu</span>
+      </div>
+      <div id="entry-note" class="note" style="display:none"></div>
+      <div id="chart" style="height:380px;border:1px solid var(--line);border-radius:6px"></div>
+      <div style="margin-top:10px">
+        <button class="toolbtn" id="copy-btn" style="display:none">&#128203; Copiar contexto</button>
+        <span id="copied" class="dim" style="display:none">copiado!</span>
+      </div>
+      <pre class="summary" id="summary" style="display:none"></pre>
+    </div>
+  </div>
+</div>
+<div class="grid" style="margin-top:16px">
+  <div class="panel sim">
+    <h2>Simulador what-if</h2>
+    <div class="mini">E se voc&ecirc; entrasse nesse trade com outros n&iacute;veis? Calcula sobre os candles de exemplo se bateria stop ou alvo. N&atilde;o envia nada &mdash; s&oacute; simula&ccedil;&atilde;o.</div>
+    <label>Dire&ccedil;&atilde;o</label>
+    <select id="s-dir" style="width:100%"><option value="LONG">LONG (aposta na alta)</option><option value="SHORT">SHORT (aposta na queda)</option></select>
+    <label>Pre&ccedil;o de entrada</label>
+    <input id="s-entry" type="number" step="0.01">
+    <label>Stop &mdash; quanto contra antes de sair (%)</label>
+    <input id="s-sl" type="number" step="0.1" value="0.9">
+    <label>Alvo &mdash; quanto a favor para realizar (%)</label>
+    <input id="s-tp" type="number" step="0.1" value="1.3">
+    <button class="go" id="s-go">Simular nos candles</button>
+    <div class="sim-out dim" id="s-out">Escolha um trade primeiro para carregar os candles.</div>
+  </div>
+
+  <div class="panel gloss">
+    <h2>Gloss&aacute;rio &middot; ajuda</h2>
+    <dl>
+      <dt>Entrada</dt><dd>Pre&ccedil;o em que o trade come&ccedil;ou. Linha verde no gr&aacute;fico.</dd>
+      <dt>Stop / SL</dt><dd>Limite de perda: se o pre&ccedil;o chega aqui, o trade sai no preju&iacute;zo. Linha vermelha.</dd>
+      <dt>TP1 / TP2</dt><dd>Alvos de lucro (take-profit). Linhas ciano. TP2 &eacute; o alvo mais distante.</dd>
+      <dt>PnL</dt><dd>Profit & Loss: o resultado em %. Positivo = ganho, negativo = perda.</dd>
+      <dt>MFE / MAE</dt><dd>Quanto o trade chegou a favor (MFE) e contra (MAE) no caminho, mesmo que tenha terminado diferente.</dd>
+      <dt>Regime</dt><dd>Estado do mercado lido pelo bot (ex.: TRENDING = em tend&ecirc;ncia).</dd>
+      <dt>Timeframe (15m/1h/4h/1d)</dt><dd>Tamanho de cada vela do gr&aacute;fico. 15m mostra detalhe; 1d mostra o todo.</dd>
+      <dt>Entrada estimada</dt><dd>O hor&aacute;rio de entrada &eacute; reconstru&iacute;do pela dura&ccedil;&atilde;o do trade &mdash; pode diferir um pouco do candle real.</dd>
+    </dl>
+  </div>
+</div>
+<script>
+const M15=900, H=3600, DAY=86400;
+const T0=Math.floor(Date.UTC(2026,5,8,12,0,0)/1000);
+const COL={g:'#46ff9a',red:'#ff6b6b',tp:'#5fe3c8',amber:'#ffd166'};
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function interp(wp,f){if(f<=0)return wp[0];if(f>=1)return wp[wp.length-1];const x=f*(wp.length-1),i=Math.floor(x),r=x-i;return wp[i]+(wp[i+1]-wp[i])*r;}
+function genCandles(tr,tfSec){
+  const exitT=tr.open?(T0+2*H+6*M15):tr.exitT;
+  const span=exitT-tr.entryT;
+  const bars=Math.max(12,Math.min(160,Math.round(span/tfSec)+10));
+  const startT=tr.entryT-4*tfSec;
+  const rnd=mulberry32(tr.id*7919+tfSec);
+  const amp=tr.entry*0.0012;
+  const out=[];let prev=interp(tr.path,0);
+  for(let i=0;i<bars;i++){
+    const f=(i)/(bars-1);
+    const mid=interp(tr.path,Math.max(0,(i-4)/(bars-5)));
+    const o=prev;
+    const c=mid+(rnd()-0.5)*amp;
+    const hi=Math.max(o,c)+rnd()*amp;
+    const lo=Math.min(o,c)-rnd()*amp;
+    out.push({time:startT+i*tfSec,open:+o.toFixed(2),high:+hi.toFixed(2),low:+lo.toFixed(2),close:+c.toFixed(2)});
+    prev=c;
+  }
+  return out;
+}
+const TRADES=[
+ {id:147,symbol:'ETHUSDT',dir:'LONG',entry:1691.47,sl:1676.55,tp1:1706.22,tp2:1713.85,
+  exitReason:'tp2_hit',exitPrice:1713.85,pnl:1.22,pnlSource:'net',regime:'TRENDING',
+  durationCandles:40,mfe:1.39,mae:-0.31,entryT:T0-40*M15,exitT:T0,
+  path:[1691.47,1686.0,1689.0,1701.0,1706.22,1710.0,1713.85]},
+ {id:146,symbol:'ETHUSDT',dir:'LONG',entry:1705.00,sl:1688.30,tp1:1719.0,tp2:1727.0,
+  exitReason:'sl_hit',exitPrice:1688.30,pnl:-0.98,pnlSource:'net',regime:'TRENDING',
+  durationCandles:18,mfe:0.30,mae:-0.98,entryT:T0-DAY-18*M15,exitT:T0-DAY,
+  path:[1705.0,1709.5,1707.0,1699.0,1692.0,1688.30]},
+ {id:145,symbol:'ETHUSDT',dir:'LONG',entry:1672.10,sl:1658.0,tp1:1686.0,tp2:1695.0,
+  exitReason:'tp1_hit',exitPrice:1686.0,pnl:0.83,pnlSource:'net',regime:'RANGING',
+  durationCandles:12,mfe:0.95,mae:-0.22,entryT:T0-2*DAY-12*M15,exitT:T0-2*DAY,
+  path:[1672.10,1669.0,1678.0,1686.0]},
+];
+const OPEN={id:0,symbol:'ETHUSDT',dir:'LONG',entry:1718.40,sl:1701.0,tp1:1733.0,tp2:1742.0,
+  regime:'TRENDING',candlesElapsed:6,open:true,entryT:T0+2*H,
+  path:[1718.40,1715.0,1721.0,1719.5,1723.0,1722.1]};
+</script>
+<script>
+const TF=['15m','1h','4h','1d'], TFSEC={'15m':900,'1h':3600,'4h':14400,'1d':86400};
+const RX2={chart:null,series:null,lines:[],current:null,tf:'15m',candles:[],filters:{sym:'',res:''},selId:null};
+const el=id=>document.getElementById(id);
+const val=id=>el(id).value;
+function fmt(s){return new Date(s*1000).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function tfMin(){return TFSEC[RX2.tf]/60;}
+function durTxt(tr){const m=tr.durationCandles*15;return m>=60?`~${(m/60).toFixed(1)}h (${tr.durationCandles} velas)`:`${m}min`;}
+function resClass(r){r=(r||'').toLowerCase();return r.includes('tp')?'ganho':r.includes('sl')?'perda':'outro';}
+
+function initChart(){
+  RX2.chart=LightweightCharts.createChart(el('chart'),{
+    height:380,layout:{background:{color:'#0a120a'},textColor:'#8fe6b3'},
+    grid:{vertLines:{color:'#13251a'},horzLines:{color:'#13251a'}},
+    timeScale:{timeVisible:true,borderColor:'#1d3a24'},rightPriceScale:{borderColor:'#1d3a24'}});
+  RX2.series=RX2.chart.addCandlestickSeries({upColor:COL.g,downColor:COL.red,wickUpColor:COL.g,wickDownColor:COL.red,borderVisible:false});
+  el('tfs').innerHTML=TF.map(t=>`<button data-tf="${t}"${t==='15m'?' class="on"':''}>${t}</button>`).join('');
+  el('tfs').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(!RX2.current)return;RX2.tf=b.dataset.tf;el('tfs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));loadChart();});
+  el('f-sym').onchange=e=>{RX2.filters.sym=e.target.value;renderFeed();};
+  el('f-res').onchange=e=>{RX2.filters.res=e.target.value;renderFeed();};
+  el('copy-btn').onclick=copyCtx;
+  el('s-go').onclick=simulate;
+}
+function renderOpen(){
+  el('open-pos').innerHTML=`<div class="open-card"><span class="live">&#9679;</span> <b>ABERTA</b> &middot; ${OPEN.symbol} ${OPEN.dir} &middot; entrou ${OPEN.entry}
+    <button class="toolbtn" id="live-btn" style="margin-top:6px">ver ao vivo &rarr;</button></div>`;
+  el('live-btn').onclick=()=>select(OPEN,true);
+}
+function populateSym(){const s=[...new Set(TRADES.map(t=>t.symbol).concat([OPEN.symbol]))].sort();
+  el('f-sym').innerHTML=`<option value="">Todos os s&iacute;mbolos</option>`+s.map(x=>`<option value="${x}"${x===RX2.filters.sym?' selected':''}>${x}</option>`).join('');}
+function renderFeed(){
+  const {sym,res}=RX2.filters;
+  const rows=TRADES.filter(t=>(!sym||t.symbol===sym)&&(!res||resClass(t.exitReason)===res));
+  el('feed').innerHTML=rows.map(t=>{const w=t.pnl>=0;return `<div class="row${String(t.id)===String(RX2.selId)?' on':''}" data-id="${t.id}">
+    <span><span class="sym">${t.symbol}</span> ${t.dir}</span>
+    <span class="${w?'win':'loss'}">${w?'+':''}${t.pnl.toFixed(2)}% &middot; ${t.exitReason}</span></div>`;}).join('')||`<div class="dim" style="padding:8px 0">nenhum trade para esse filtro</div>`;
+  el('feed').querySelectorAll('.row').forEach(r=>r.onclick=()=>select(TRADES.find(t=>String(t.id)===r.dataset.id),false));
+  el('count').textContent=rows.length===TRADES.length?`${TRADES.length} trades`:`${rows.length} de ${TRADES.length}`;
+}
+</script>
+<script>
+function lightSteps(){el('steps').querySelectorAll('.step').forEach(s=>s.classList.add('on'));}
+function select(tr,isOpen){
+  RX2.current=tr;RX2.selId=isOpen?null:String(tr.id);RX2.tf='15m';
+  el('tfs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.tf==='15m'));
+  renderFeed();lightSteps();
+  el('s-entry').value=tr.entry;
+  el('s-out').className='sim-out dim';el('s-out').textContent='Clique "Simular nos candles".';
+  const v=el('verdict');
+  if(isOpen){v.className='verdict';v.style.borderStyle='solid';
+    v.innerHTML=`&#9679; Posi&ccedil;&atilde;o ABERTA &middot; ${tr.symbol} ${tr.dir} &middot; entrada ${tr.entry} &middot; acompanhando ao vivo (exemplo).`;
+    el('entry-note').style.display='none';}
+  else{const vd=verdict(tr);v.className='verdict '+vd.cls;v.style.borderStyle='solid';v.innerHTML=vd.txt;
+    el('entry-note').style.display='block';
+    el('entry-note').innerHTML='&#9888; Entrada estimada &mdash; reconstru&iacute;da a partir da dura&ccedil;&atilde;o do trade; pode divergir do candle real.';}
+  el('copy-btn').style.display='inline-block';
+  el('summary').style.display='block';el('summary').textContent=summaryText(tr,isOpen);
+  loadChart();
+}
+function verdict(tr){
+  if(tr.exitReason==='tp2_hit')return{cls:'w',txt:`&#10003; Bateu o <b>TP2</b> (alvo cheio) &mdash; ganho de +${tr.pnl.toFixed(2)}% em ${durTxt(tr)}.`};
+  if(tr.exitReason==='tp1_hit')return{cls:'w',txt:`&#10003; Bateu o <b>TP1</b> (primeiro alvo) &mdash; ganho de +${tr.pnl.toFixed(2)}% em ${durTxt(tr)}.`};
+  if(tr.exitReason==='sl_hit')return{cls:'l',txt:`&#10007; Bateu o <b>stop</b> &mdash; perda de ${tr.pnl.toFixed(2)}% em ${durTxt(tr)}.`};
+  return{cls:'',txt:tr.exitReason};
+}
+function loadChart(){
+  const tr=RX2.current;if(!tr)return;
+  RX2.candles=genCandles(tr,TFSEC[RX2.tf]);
+  RX2.series.setData(RX2.candles);RX2.chart.timeScale().fitContent();
+  RX2.lines.forEach(l=>RX2.series.removePriceLine(l));RX2.lines=[];
+  const add=(p,c,t)=>{if(p!=null)RX2.lines.push(RX2.series.createPriceLine({price:p,color:c,lineWidth:1,title:t}));};
+  add(tr.entry,COL.g,'entrada');add(tr.sl,COL.red,'stop');add(tr.tp1,COL.tp,'TP1');add(tr.tp2,COL.tp,'TP2');
+  const m=[{time:tr.entryT,position:tr.dir==='LONG'?'belowBar':'aboveBar',color:COL.g,shape:tr.dir==='LONG'?'arrowUp':'arrowDown',text:tr.open?'entrada':'entrada estimada'}];
+  if(!tr.open)m.push({time:tr.exitT,position:tr.dir==='LONG'?'aboveBar':'belowBar',color:COL.red,shape:'circle',text:tr.exitReason});
+  RX2.series.setMarkers(m);
+}
+function summaryText(tr,isOpen){
+  if(isOpen)return `Posicao ABERTA · ${tr.symbol} ${tr.dir} · regime ${tr.regime}\nEntrada ${tr.entry} · SL ${tr.sl} · TP1 ${tr.tp1} · TP2 ${tr.tp2}\nVelas decorridas: ${tr.candlesElapsed}`;
+  return `Trade #${tr.id} · ${tr.symbol} ${tr.dir} · regime ${tr.regime}\nEntrada estimada ${tr.entry} → saida ${tr.exitPrice} (${tr.exitReason})\nSL ${tr.sl} · TP1 ${tr.tp1} · TP2 ${tr.tp2}\nDuracao ${durTxt(tr)} · resultado ${tr.pnl>=0?'+':''}${tr.pnl.toFixed(2)}% (${tr.pnlSource})\nMFE +${tr.mfe}% · MAE ${tr.mae}%`;
+}
+function copyCtx(){const t=el('summary').textContent;navigator.clipboard&&navigator.clipboard.writeText(t).then(()=>{el('copied').style.display='inline';setTimeout(()=>el('copied').style.display='none',1500);});}
+function simulate(){
+  const tr=RX2.current;if(!tr){el('s-out').textContent='Escolha um trade primeiro.';return;}
+  const dir=val('s-dir'),entry=+val('s-entry'),slP=+val('s-sl'),tpP=+val('s-tp');
+  if(!entry||!slP||!tpP){el('s-out').textContent='Preencha entrada, stop e alvo.';return;}
+  const cs=RX2.candles.filter(c=>c.time>=tr.entryT);
+  const slPx=dir==='LONG'?entry*(1-slP/100):entry*(1+slP/100);
+  const tpPx=dir==='LONG'?entry*(1+tpP/100):entry*(1-tpP/100);
+  let res=null,bars=0;
+  for(const c of cs){bars++;
+    if(dir==='LONG'){if(c.low<=slPx){res='SL';break;}if(c.high>=tpPx){res='TP';break;}}
+    else{if(c.high>=slPx){res='SL';break;}if(c.low<=tpPx){res='TP';break;}}}
+  let h;
+  if(res==='TP')h=`<span class="win">&#10003; Bateria o ALVO: +${tpP.toFixed(2)}% ap&oacute;s ${bars} velas (~${bars*tfMin()}min).</span>`;
+  else if(res==='SL')h=`<span class="loss">&#10007; Bateria o STOP: -${slP.toFixed(2)}% ap&oacute;s ${bars} velas.</span>`;
+  else{const last=cs[cs.length-1]||{close:entry};const pnl=((last.close-entry)/entry*100)*(dir==='LONG'?1:-1);
+    h=`<span class="dim">N&atilde;o bateu stop nem alvo na janela. Fim em ${last.close.toFixed(2)} &rarr; PnL ${pnl>=0?'+':''}${pnl.toFixed(2)}%.</span>`;}
+  el('s-out').className='sim-out';el('s-out').innerHTML=h+`<div class="mini">Sobre os candles de exemplo do trade #${tr.id}, em ${RX2.tf}.</div>`;
+}
+initChart();populateSym();renderOpen();renderFeed();select(TRADES[0],false);
+</script>
+</body>
+</html>
